@@ -2,7 +2,7 @@ from grasshopper.graph import GraphBuilder
 
 if __name__ == "__main__":
     # Create a new graph builder
-    builder = GraphBuilder()
+    builder = GraphBuilder(site_namespace="aiot")
 
     # Bind the site namespace to the graph
     builder.add_namespace(prefix="site", uri="urn:site/")

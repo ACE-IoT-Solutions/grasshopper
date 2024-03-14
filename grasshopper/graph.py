@@ -4,10 +4,6 @@ import re
 from rdflib import BNode, Graph, Literal, Namespace, URIRef  # noqa: F401
 from rdflib.namespace import OWL, RDF, RDFS, SH, SKOS  # noqa: F401
 
-# Namespaces - TODO: Better way to handle these?
-BACNET = Namespace("http://data.ashrae.org/bacnet/2020#")
-SITE = Namespace("urn:site/")
-
 
 class GraphBuilder(object):
     """
@@ -17,16 +13,18 @@ class GraphBuilder(object):
         represent network topology.
     """
 
-    def __init__(self, graph: Graph = None):
+    def __init__(self, site_namespace: str = "site", graph: Graph = None):
         """
         Initialize a GraphBuilder instance and optionally provide an existing graph.
         Bind the default namespaces to the graph.
         """
         self.graph = graph or Graph()
+        self.site_namespace = Namespace(f"urn:{site_namespace}/")
+        self.bacnet_namespace = Namespace("http://data.ashrae.org/bacnet/2020#")
 
         if hasattr(self.graph, "namespace_manager"):
-            self.graph.namespace_manager.bind("bacnet", BACNET, override=True)
-            self.graph.namespace_manager.bind("site", SITE, override=True)
+            self.graph.namespace_manager.bind("bacnet", self.bacnet_namespace, override=True)
+            self.graph.namespace_manager.bind("site", self.site_namespace, override=True)
 
     def generate_graph_hash(self) -> str:
         """
@@ -82,7 +80,7 @@ class GraphBuilder(object):
         Use common name?
         """
 
-        device_node = SITE[f"{device_address}_{device_identifier}"]
+        device_node = self.site_namespace[f"{device_address}_{device_identifier}"]
 
         if device_identifier >= 4194303:
             raise ValueError("Device ID must be less than 4194303")
@@ -95,7 +93,7 @@ class GraphBuilder(object):
                 triple=(
                     device_node,
                     RDF.type,
-                    BACNET["Device"],
+                    self.bacnet_namespace["Device"],
                 )
             )
 
@@ -110,27 +108,33 @@ class GraphBuilder(object):
         """
         Add a BACnet object to the graph.
         """
-        self.graph.add(
-            triple=(
-                SITE[f"{device_address}_{device_identifier}"],
-                BACNET["contains"],
-                SITE[f"{device_address}_{device_identifier}_{object_type}_{object_instance}"],
-            )
-        )
+        bacnet_point = {
+            "device_address": device_address,
+            "device_identifier": device_identifier,
+            "object_type": object_type,
+            "object_instance": object_instance,
+            "object_name": object_name,
+            "description": "A BACnet object",
+            "units": "unknown",
+        }
+
+        this_point = self.site_namespace[f"{device_address}_{device_identifier}_{object_type}_{object_instance}"]
 
         # Add a RDFS label for the object name
         self.graph.add(
             triple=(
-                SITE[f"{device_address}_{device_identifier}_{object_type}_{object_instance}"],
+                this_point,
                 RDFS.label,
                 Literal(f"{object_name}"),
             )
         )
 
-        self.graph.add(
-            triple=(
-                SITE[f"{device_address}_{device_identifier}_{object_type}_{object_instance}"],
-                RDF.type,
-                BACNET[object_type],
+        # Iterate over a list of object properties and add them to the object
+        for key, value in bacnet_point.items():
+            self.graph.add(
+                triple=(
+                    this_point,
+                    self.bacnet_namespace[key],
+                    Literal(value),
+                )
             )
-        )

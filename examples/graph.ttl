@@ -1,15 +1,25 @@
 @prefix bacnet: <http://data.ashrae.org/bacnet/2020#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix site: <urn:site/> .
+@prefix site: <urn:aiot/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-site:10.0.0.100_1000 a bacnet:Device ;
-    bacnet:contains site:10.0.0.100_1000_AnalogInput_1000 .
+site:10.0.0.100_1000 a bacnet:Device .
 
-site:10.0.0.101_1001 bacnet:contains site:10.0.0.101_1001_AnalogInput_1001 .
+site:10.0.0.100_1000_AnalogInput_1000 rdfs:label "Zone Temperature" ;
+    bacnet:description "A BACnet object" ;
+    bacnet:device_address "10.0.0.100" ;
+    bacnet:device_identifier 1000 ;
+    bacnet:object_instance 1000 ;
+    bacnet:object_name "Zone Temperature" ;
+    bacnet:object_type "AnalogInput" ;
+    bacnet:units "unknown" .
 
-site:10.0.0.100_1000_AnalogInput_1000 a bacnet:AnalogInput ;
-    rdfs:label "Zone Temperature" .
-
-site:10.0.0.101_1001_AnalogInput_1001 a bacnet:AnalogInput ;
-    rdfs:label "Room Temperature" .
+site:10.0.0.101_1001_AnalogInput_1001 rdfs:label "Room Temperature" ;
+    bacnet:description "A BACnet object" ;
+    bacnet:device_address "10.0.0.101" ;
+    bacnet:device_identifier 1001 ;
+    bacnet:object_instance 1001 ;
+    bacnet:object_name "Room Temperature" ;
+    bacnet:object_type "AnalogInput" ;
+    bacnet:units "unknown" .
 
