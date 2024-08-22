@@ -1,4 +1,4 @@
-from grasshopper.graph import GraphBuilder
+from grasshopper.utils.graph import GraphBuilder
 
 if __name__ == "__main__":
     # Create a new graph builder

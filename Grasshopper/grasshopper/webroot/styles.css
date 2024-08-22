@@ -1,0 +1,30 @@
+body {
+    font-family: Arial, sans-serif;
+}
+
+.container {
+    display: flex;
+}
+
+.sidemenu {
+    width: 20%;
+    border-right: 1px solid #ccc;
+    padding: 1em;
+}
+
+.sidemenu button {
+    display: block;
+    margin: 0.5em 0;
+    width: 100%;
+    padding: 0.5em;
+    cursor: pointer;
+}
+
+.main-content {
+    flex: 1;
+    padding: 1em;
+}
+
+.main-content img {
+    max-width: 100%;
+}
