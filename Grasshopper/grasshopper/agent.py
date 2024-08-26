@@ -74,9 +74,16 @@ def grasshopper(config_path, **kwargs):
     low_limit = config.get('low_limit', 0)
     high_limit = config.get('high_limit', 4194303)
     batch_broadcast_size = config.get('batch_broadcast_size', 10000)
-    agent_address = config.get('agent_address', "192.168.1.12/24:47808")
+    bacpypes_settings = config.get('bacpypes_settings', {
+        "name": "Excelsior",
+        "instance": 999,
+        "network": 0,
+        "address": "192.168.1.12/24:47808",
+        "vendoridentifier": 999,
+        "ttl": 30
+    })
     graph_store_limit = config.get('graph_store_limit', 30)
-    return Grasshopper(scan_interval_secs, low_limit, high_limit, batch_broadcast_size, agent_address, graph_store_limit, **kwargs)
+    return Grasshopper(scan_interval_secs, low_limit, high_limit, batch_broadcast_size, bacpypes_settings, graph_store_limit, **kwargs)
 
 
 class Grasshopper(Agent):
@@ -84,7 +91,7 @@ class Grasshopper(Agent):
     Document agent constructor here.
     """
 
-    def __init__(self, scan_interval_secs=seconds_in_day, low_limit=0, high_limit = 4194303, batch_broadcast_size = 10000, agent_address = "192.168.1.12/24:47808", 
+    def __init__(self, scan_interval_secs=seconds_in_day, low_limit=0, high_limit = 4194303, batch_broadcast_size = 10000, bacpypes_settings = None, 
         graph_store_limit=30, **kwargs):
         super(Grasshopper, self).__init__(enable_web=True, **kwargs)
         _log.debug("vip_identity: " + self.core.identity)
@@ -94,9 +101,18 @@ class Grasshopper(Agent):
         self.low_limit = low_limit
         self.high_limit = high_limit
         self.batch_broadcast_size = batch_broadcast_size
-        self.agent_address = agent_address
+        if bacpypes_settings is None:
+            bacpypes_settings = {
+                "name": "Excelsior",
+                "instance": 999,
+                "network": 0,
+                "address": "192.168.1.12/24:47808",
+                "vendoridentifier": 999,
+                "ttl": 30
+            }
+        self.bacpypes_settings = bacpypes_settings
         self.graph_store_limit = graph_store_limit
-        self.set_application(self.agent_address)
+        self.set_application(self.bacpypes_settings)
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
@@ -125,9 +141,16 @@ class Grasshopper(Agent):
             self.low_limit = contents.get("low_limit", 0)
             self.high_limit = contents.get("high_limit", 4194303)
             self.batch_broadcast_size = contents.get("batch_broadcast_size", 10000)
-            self.agent_address = contents.get("agent_address", "192.168.1.12/24:47808")
+            self.bacpypes_settings = contents.get("bacpypes_settings", {
+                "name": "Excelsior",
+                "instance": 999,
+                "network": 0,
+                "address": "192.168.1.12/24:47808",
+                "vendoridentifier": 999,
+                "ttl": 30
+            })
             self.graph_store_limit = contents.get("graph_store_limit", 30)
-            self.set_application(self.agent_address)
+            self.set_application(self.bacpypes_settings)
             if self.bacnet_analysis is not None:
                 self.bacnet_analysis.kill()
             self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
@@ -141,15 +164,12 @@ class Grasshopper(Agent):
         """
         _log.error(f"grequests error: {exception} with {request}")
 
-    def set_application(self, address):
+    def set_application(self, bacpypes_settings):
         """
         Set the application address for the BACnet analysis
         """
-        args = {
-            "address": address
-        }
-        args_namespace = argparse.Namespace(**args)
-        self.app = Application.from_args(args_namespace)
+        app_settings = argparse.Namespace(**bacpypes_settings)
+        self.app = Application.from_args(app_settings)
 
     def get_router_networks(self, g):
         """
@@ -213,16 +233,17 @@ class Grasshopper(Agent):
             v_copy = str(v)
             nx_graph.remove_node(v)
             nx.relabel_nodes(nx_graph, {u: v_copy}, copy=False) 
-        return nx
+        return nx_graph
     
-    def pass_networkx_to_pyvis(self, nx_graph, net):
+    def pass_networkx_to_pyvis(self, nx_graph, net:Network):
         for node in nx_graph.nodes:
             color = "blue" if "router/" in node else "red"
             size = 20 if "router/" in node else 10
             net.add_node(node, size=size, color=color)
 
-        for edge in nx_graph.edges:
-            net.add_edge(edge[0], edge[1])
+        for edge in nx_graph.edges(data=True):
+            label = edge[2].get("label", "")
+            net.add_edge(edge[0], edge[1], label=label)
 
 
     def who_is_broadcast(self):
