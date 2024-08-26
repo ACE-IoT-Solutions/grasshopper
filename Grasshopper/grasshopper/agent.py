@@ -80,7 +80,9 @@ def grasshopper(config_path, **kwargs):
         "network": 0,
         "address": "192.168.1.12/24:47808",
         "vendoridentifier": 999,
-        "ttl": 30
+        "foreign": None,
+        "ttl": 30,
+        "bbmd": None
     })
     graph_store_limit = config.get('graph_store_limit', 30)
     return Grasshopper(scan_interval_secs, low_limit, high_limit, batch_broadcast_size, bacpypes_settings, graph_store_limit, **kwargs)
@@ -108,7 +110,9 @@ class Grasshopper(Agent):
                 "network": 0,
                 "address": "192.168.1.12/24:47808",
                 "vendoridentifier": 999,
-                "ttl": 30
+                "foreign": None,
+                "ttl": 30,
+                "bbmd": None
             }
         self.bacpypes_settings = bacpypes_settings
         self.graph_store_limit = graph_store_limit
@@ -147,7 +151,9 @@ class Grasshopper(Agent):
                 "network": 0,
                 "address": "192.168.1.12/24:47808",
                 "vendoridentifier": 999,
-                "ttl": 30
+                "foreign": None,
+                "ttl": 30,
+                "bbmd": None
             })
             self.graph_store_limit = contents.get("graph_store_limit", 30)
             self.set_application(self.bacpypes_settings)

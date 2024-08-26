@@ -10,6 +10,8 @@
         "network": 0,
         "address": "192.168.1.12/24:47808",
         "vendoridentifier": 999,
-        "ttl": 30
+        "foreign": null,
+        "ttl": 30,
+        "bbmd": null
     }
 }
