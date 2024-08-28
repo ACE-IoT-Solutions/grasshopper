@@ -2,52 +2,64 @@ const host = window.location.protocol + '//' + window.location.host;
 
 console.log(host);
 
-document.addEventListener("DOMContentLoaded", function() {
-    const imageElement = document.getElementById('cameraImage');
-    const sidemenu = document.querySelector('.sidemenu');
-    let currentSelectedButton = null; 
+document.addEventListener('DOMContentLoaded', function() {
+    // Fetch available graphs on page load
+    fetchAvailableGraphs();
+});
 
-    sidemenu.addEventListener('click', function(e) {
-        if (e.target.tagName === 'BUTTON') {
-            const imageUrl = e.target.getAttribute('data-img-src');
-            imageElement.src = imageUrl;
-            imageElement.setAttribute('data-original-src', imageUrl);
-            
-            if (currentSelectedButton) {
-                currentSelectedButton.style.backgroundColor = "";
-            }
-            e.target.style.backgroundColor = "green";
-            currentSelectedButton = e.target;
-        }
-    });
+function fetchAvailableGraphs() {
 
     fetch(host + '/grasshopper_rpc/jsonrpc')
     .then(response => response.json())
     .then(data => {
-        const cameras = data.data;
-        cameras.forEach(camera => {
-            const btn = document.createElement('button');
-            btn.textContent = camera.name;
-            btn.setAttribute('data-img-src', host + camera.src);
-            sidemenu.appendChild(btn);
-        });
-        
-        const firstButton = sidemenu.querySelector('button');
-        if (firstButton) {
-            firstButton.click();
+        if (data.data) {
+            console.log(data.data)
+            populateGraphSelector(data.data);
+        } else {
+            console.error('Error fetching graphs:', data.error);
         }
     })
-    .catch(error => {
-        console.error("Error fetching camera data:", error);
+    .catch(error => console.error('Fetch error:', error));
+}
+
+function populateGraphSelector(graphs) {
+    const selector = document.getElementById('graph-selector');
+    graphs.forEach(graph => {
+        const option = document.createElement('option');
+        let datePart = graph.split('_')[2];
+        option.value = host+"/grasshopper/graphs/html/" + graph;
+        option.text = datePart;
+        selector.appendChild(option);
     });
+}
 
-    function refreshImage() {
-        const originalSrc = imageElement.getAttribute('data-original-src');
-        if (originalSrc) {
-            const refreshedSrc = originalSrc + '?timestamp=' + new Date().getTime();
-            imageElement.src = refreshedSrc;
-        }
+function showSelectedGraph() {
+    const selector = document.getElementById('graph-selector');
+    const selectedGraph = selector.value;
+    if (selectedGraph) {
+        document.getElementById('graph-frame').src = selectedGraph;
     }
+}
 
-    setInterval(refreshImage, 5000);
-});
+function goToHtmlGraph() {
+    const selector = document.getElementById('graph-selector');
+    const selectedLink = selector.value;
+    
+    if (selectedLink) {
+        window.open(selectedLink, '_blank');
+    } else {
+        alert("Please select a link from the dropdown menu.");
+    }
+}
+
+function goToTtlGraph() {
+    const selector = document.getElementById('graph-selector');
+    const selectedLink = selector.value;
+    
+    if (selectedLink) {
+        updatedLink = selectedLink.replace(/html/g, "ttl");
+        window.open(updatedLink, '_blank');
+    } else {
+        alert("Please select a link from the dropdown menu.");
+    }
+}

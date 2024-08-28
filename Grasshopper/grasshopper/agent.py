@@ -17,6 +17,7 @@ import logging
 import sys
 import os
 import argparse
+import asyncio
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
 import grequests
@@ -116,13 +117,21 @@ class Grasshopper(Agent):
             }
         self.bacpypes_settings = bacpypes_settings
         self.graph_store_limit = graph_store_limit
-        self.set_application(self.bacpypes_settings)
-
+        # asyncio.run(self.set_application(self.bacpypes_settings))
+        self.default_config = {
+            "scan_interval_secs": scan_interval_secs,
+            "low_limit": low_limit,
+            "high_limit": high_limit,
+            "batch_broadcast_size": batch_broadcast_size,
+            "graph_store_limit": graph_store_limit,
+            "bacpypes_settings": bacpypes_settings
+        }
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
         self.vip.config.set_default("config", self.default_config)
         # Hook self.configure up to changes to the configuration file "config".
         self.vip.config.subscribe(self.configure, actions=["NEW", "UPDATE"], pattern="config")
+        _log.debug("Init completed")
 
     def configure(self, config_name, action, contents):
         """
@@ -156,7 +165,7 @@ class Grasshopper(Agent):
                 "bbmd": None
             })
             self.graph_store_limit = contents.get("graph_store_limit", 30)
-            self.set_application(self.bacpypes_settings)
+            # asyncio.run(self.set_application(self.bacpypes_settings))
             if self.bacnet_analysis is not None:
                 self.bacnet_analysis.kill()
             self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
@@ -164,46 +173,54 @@ class Grasshopper(Agent):
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
             return
 
+        _log.debug("Config completed")
+
     def _grequests_exception_handler(self, request, exception):
         """
         Log exceptions from grequests
         """
         _log.error(f"grequests error: {exception} with {request}")
 
-    def set_application(self, bacpypes_settings):
+    async def set_application(self, bacpypes_settings):
         """
         Set the application address for the BACnet analysis
         """
         app_settings = argparse.Namespace(**bacpypes_settings)
-        self.app = Application.from_args(app_settings)
+        # self.app = Application.from_args(app_settings)
+        return Application.from_args(app_settings)
+        # _log.debug("set_application completed")
 
-    def get_router_networks(self, g):
+    async def get_router_networks(self, app, g):
         """
         Get the router to network information from the graph
         """
-        routers = self.app.nse.who_is_router_to_network()
+        _log.debug("get_router_networks")
+        routers = await app.nse.who_is_router_to_network()
         for adapter, i_am_router_to_network in routers:
             _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
             for net in i_am_router_to_network.iartnNetworkList:
                 g.add((BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], BACnetNS["router-to-network"],
                     BACnetURI["//network/"+str(net)]))
+        _log.debug("get_router_networks Completed")
                 
-    def get_device_objects(self, bacnet_graph):
+    async def get_device_objects(self, app, bacnet_graph):
         """
         Get the device objects from the graph
         """
+        _log.debug("get_device_objects")
         track_lower = self.low_limit
         while track_lower <= self.high_limit:
             track_upper = track_lower + self.batch_broadcast_size
             if track_upper > self.high_limit:
                 track_upper = self.high_limit
-            i_ams = self.app.who_is(track_lower, track_upper)
+            i_ams = await app.who_is(track_lower, track_upper)
             for i_am in i_ams:
                 device_address: Address = i_am.pduSource
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_graph = bacnet_graph.create_device(device_address, device_identifier)
                 bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["i-am"], BACnetURI["//network/"+str(device_address.addrNet)]))
             track_lower += self.batch_broadcast_size
+        _log.debug("get_device_objects Completed")
 
     def build_networkx_graph(self, g):
         """
@@ -251,6 +268,11 @@ class Grasshopper(Agent):
             label = edge[2].get("label", "")
             net.add_edge(edge[0], edge[1], label=label)
 
+    async def get_device_and_router(self, g, bacnet_graph):
+        _log.debug("Running Async for Who Is and Router to network")
+        app = await self.set_application(self.bacpypes_settings)
+        await self.get_router_networks(app, g)
+        await self.get_device_objects(app, bacnet_graph)
 
     def who_is_broadcast(self):
         """
@@ -261,27 +283,33 @@ class Grasshopper(Agent):
         now = datetime.now()
         # Create ttl graph
         bacnet_graph = BACnetGraph(g)
-        self.get_router_networks(g)
-        self.get_device_objects(bacnet_graph)
-        g.serialize(destination=f"graphs/ttl/bacnet_graph_{now}.ttl", format="turtle")
+        asyncio.run(self.get_device_and_router(g, bacnet_graph))
+        
+        rdf_path = f"grasshopper/webroot/grasshopper/graphs/ttl/bacnet_graph_{now}.ttl"
+        os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
+        g.serialize(destination=rdf_path, format="turtle")
 
         nx_graph = self.build_networkx_graph(g)
 
         net = Network(notebook=True, bgcolor="#222222", font_color="white", filter_menu=True)
         self.pass_networkx_to_pyvis(nx_graph, net)
         net.show_buttons(filter_=['physics'])
-        net.write_html(f"graphs/html/bacnet_graph_{now}.html")
+        net_path = f"grasshopper/webroot/grasshopper/graphs/html/bacnet_graph_{now}.html"
+        os.makedirs(os.path.dirname(net_path), exist_ok=True)
+        net.write_html(net_path)
 
     def jsonrpc(self, env, data):
         """
         Returns camera information for web interface
         """
+        _log.debug("////////////////JSONRPC")
         data = []
-        graph_html_roots = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'graphs/'))
-
+        graph_html_roots = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/grasshopper/graphs/html/'))
+        _log.debug("GRAPH URL: ", graph_html_roots)
         if os.path.exists(graph_html_roots):
             for filename in os.listdir(graph_html_roots):
                 data.append(filename)
+        _log.debug(data)
         return {'data' : data}
 
     @Core.receiver("onstart")
@@ -297,7 +325,6 @@ class Grasshopper(Agent):
         # Example publish to pubsub
         # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
         _log.debug("in onstart")
-        _log.debug(f"{self.scan_interval=}")
 
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent..
@@ -306,14 +333,6 @@ class Grasshopper(Agent):
 
         self.vip.web.register_path(r'^/grasshopper/.*', WEB_ROOT)
         self.vip.web.register_endpoint(r'/grasshopper_rpc/jsonrpc', self.jsonrpc)
-
-        graph_html_roots = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', f'graphs/')))
-        os.makedirs(graph_html_roots, exist_ok = True)
-        _log.debug(graph_html_roots)
-        self.vip.web.register_path(r'^/graphs/.*', graph_html_roots)
-        # Example RPC call
-        # self.vip.rpc.call("some_agent", "some_method", arg1, arg2)
-        # pass
 
     @Core.receiver("onstop")
     def onstop(self, sender, **kwargs):

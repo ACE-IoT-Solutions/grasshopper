@@ -3,25 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera Images</title>
+    <title>Graph Viewer</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<div class="container">
-    <!-- Side Menu -->
-    <div class="sidemenu">
-
+<body>
+    <div class="dropdown-container">
+        <select id="graph-selector" onchange="showSelectedGraph()">
+            <option value="">Select a graph</option>
+            <!-- Options will be populated here -->
+        </select>
+        <button onclick="goToHtmlGraph()">Go to HTML Graph</button>
+        <button onclick="goToTtlGraph()">Go to TTL Graph</button>
     </div>
-
-    <!-- Main Content Area -->
-    <div class="main-content">
-        <h2>Camera Images</h2>
-        <div>
-            <img id="cameraImage" src="" alt="Selected Camera Image">
-        </div>
+    <div id="graph-container">
+        <iframe id="graph-frame" src=""></iframe>
     </div>
-</div>
 
 <script src="script.js"></script>
 

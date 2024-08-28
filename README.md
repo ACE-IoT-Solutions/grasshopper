@@ -29,3 +29,16 @@ Troubleshooting Efficiency: Pinpoint issues rapidly by tracing communication pat
 Data-Driven Optimization: Track changes over time to analyze network performance and guide upgrade decisions.
 
 Greater Adaptability: Reduce reliance on specific vendors by understanding your network as a whole.
+
+## Setup
+
+1. Download the Volttron platform unto the host server and follow developer's instructions in setting it up.
+    - Along with the usual setup of running bootstrap.py and starting volttron, make sure to run the vcfg in the command line to set up the configuration
+    - In the configuration, enable the web interface for volttron
+
+2. Pull down the grasshopper agent into the directory of choice.
+    - The chosen IP Address will need to be set up on the os for the grasshopper agent to utilize
+    - Assuming that the web interface is enabled, it should be accessible from the volttron config host
+
+3. Install the agent
+    - Once the agent is running, it should automatically check the network once a day (default setting).
