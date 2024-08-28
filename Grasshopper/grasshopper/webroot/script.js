@@ -26,7 +26,7 @@ function populateGraphSelector(graphs) {
     const selector = document.getElementById('graph-selector');
     graphs.forEach(graph => {
         const option = document.createElement('option');
-        let datePart = graph.split('_')[2];
+        let datePart = graph.split('_')[2].split('.')[0];
         option.value = host+"/grasshopper/graphs/html/" + graph;
         option.text = datePart;
         selector.appendChild(option);
