@@ -16,10 +16,13 @@ __docformat__ = 'reStructuredText'
 import logging
 import sys
 import os
+import shutil
 import argparse
 import asyncio
+import gevent
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
+# from volttron.platform.web import Response
 import grequests
 from requests.auth import HTTPDigestAuth, HTTPBasicAuth
 from io import BytesIO
@@ -38,6 +41,8 @@ from bacpypes3.app import Application
 from bacpypes3.vendor import get_vendor_info
 
 from rdflib import Graph, Namespace  # type: ignore
+from rdflib.compare import to_isomorphic, graph_diff
+from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_graph
@@ -181,6 +186,10 @@ class Grasshopper(Agent):
         """
         _log.error(f"grequests error: {exception} with {request}")
 
+    # async def handle_event(self, event):
+    #     await asyncio.sleep(.1)
+    #     return "Paused async to handle event"
+
     async def set_application(self, bacpypes_settings):
         """
         Set the application address for the BACnet analysis
@@ -196,6 +205,7 @@ class Grasshopper(Agent):
         """
         _log.debug("get_router_networks")
         routers = await app.nse.who_is_router_to_network()
+        gevent.sleep(.1)
         for adapter, i_am_router_to_network in routers:
             _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
             for net in i_am_router_to_network.iartnNetworkList:
@@ -210,6 +220,7 @@ class Grasshopper(Agent):
         _log.debug("get_device_objects")
         track_lower = self.low_limit
         while track_lower <= self.high_limit:
+            gevent.sleep(.1)
             track_upper = track_lower + self.batch_broadcast_size
             if track_upper > self.high_limit:
                 track_upper = self.high_limit
@@ -218,7 +229,7 @@ class Grasshopper(Agent):
                 device_address: Address = i_am.pduSource
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_graph = bacnet_graph.create_device(device_address, device_identifier)
-                bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["i-am"], BACnetURI["//network/"+str(device_address.addrNet)]))
+                bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["device-on-network"], BACnetURI["//network/"+str(device_address.addrNet)]))
             track_lower += self.batch_broadcast_size
         _log.debug("get_device_objects Completed")
 
@@ -243,27 +254,76 @@ class Grasshopper(Agent):
                 return f"{str(s).split('#')[-1]}"
             else:
                 return s
-    
-        nx_graph = rdflib_to_networkx_graph(
+
+        nx_graph = rdflib_to_networkx_digraph(
             g, 
             edge_attrs=custom_edge_attrs,
             transform_s=custom_transform_node_str,
             transform_o=custom_transform_node_str,
         )
 
-        rdf_edges = [(u, v) for u, v, attr in nx_graph.edges(data=True) if RDFS._NS in attr.get('label', '')]
-        for u, v in rdf_edges:
-            v_copy = str(v)
-            nx_graph.remove_node(v)
-            nx.relabel_nodes(nx_graph, {u: v_copy}, copy=False) 
-        return nx_graph
-    
-    def pass_networkx_to_pyvis(self, nx_graph, net:Network):
-        for node in nx_graph.nodes:
-            color = "blue" if "router/" in node else "red"
-            size = 20 if "router/" in node else 10
-            net.add_node(node, size=size, color=color)
+        is_directed = nx_graph.is_directed()
+        print(f"Is the graph directed? {is_directed}")
 
+        remove_nodes = []
+        rdf_edges = {}
+        device_address_edges = []
+        data = {}
+        for u, v, attr in nx_graph.edges(data=True):
+            label = attr.get("label", "")
+            if RDFS._NS in label:
+                print("rdfs: ", u, v)
+                rdf_edges[u] = v
+                remove_nodes.append(u)
+                remove_nodes.append(v)
+            elif 'device-address' in label:
+                device_address_edges.append((u, v))
+            elif 'device-instance' in label:
+                if u in data:
+                    data[u]['device instance'] = str(v)
+                else:
+                    data[u] = {'device instance': str(v)}
+                remove_nodes.append(v)
+            elif str(label) == 'a':
+                if u in data:
+                    data[u]['bacnet type'] = str(v)
+                else:
+                    data[u] = {'bacnet type': str(v)}
+                remove_nodes.append(v)
+            elif label not in ['device-on-network', 'router-to-network']:
+                remove_nodes.append(v)
+            elif label == 'device-on-network' and 'network/None' in v:
+                remove_nodes.append(v)
+                remove_nodes.append(u)
+
+        for u, v in device_address_edges:
+            if u in data:
+                data[u]['device address'] = str(rdf_edges[v])
+            else:
+                data[u] = {'device address': str(rdf_edges[v])}
+
+        nx_graph.remove_nodes_from(remove_nodes)
+        
+        return nx_graph, data
+    
+    def pass_networkx_to_pyvis(self, nx_graph, net:Network, data):
+        for node in nx_graph.nodes:
+            if "router/" in node:
+                color = "cyan"
+                size = 30
+                title = "Router Node"
+            elif "network/" in node:
+                color = "green"
+                size = 20
+                title = "Network Node"
+            else:
+                color = "red"
+                size = 10
+                title = str(data.get(node, {}))
+
+            net.add_node(node, size=size, title=title, data=data.get(node, {}), color=color)
+
+        print("edges: ", len(nx_graph.edges))
         for edge in nx_graph.edges(data=True):
             label = edge[2].get("label", "")
             net.add_edge(edge[0], edge[1], label=label)
@@ -289,28 +349,88 @@ class Grasshopper(Agent):
         os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
         g.serialize(destination=rdf_path, format="turtle")
 
-        nx_graph = self.build_networkx_graph(g)
+        nx_graph, node_data = self.build_networkx_graph(g)
 
         net = Network(notebook=True, bgcolor="#222222", font_color="white", filter_menu=True)
-        self.pass_networkx_to_pyvis(nx_graph, net)
+        self.pass_networkx_to_pyvis(nx_graph, net, node_data)
         net.show_buttons(filter_=['physics'])
         net_path = f"grasshopper/webroot/grasshopper/graphs/html/bacnet_graph_{now}.html"
         os.makedirs(os.path.dirname(net_path), exist_ok=True)
         net.write_html(net_path)
 
+        html_lib_route = "grasshopper/webroot/grasshopper/graphs/html/lib"
+        if not os.path.exists(html_lib_route):
+            if os.path.exists("lib"):
+                shutil.move("lib", html_lib_route)
+
     def jsonrpc(self, env, data):
         """
         Returns camera information for web interface
         """
-        _log.debug("////////////////JSONRPC")
+        _log.debug("JSONRPC")
         data = []
-        graph_html_roots = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/grasshopper/graphs/html/'))
-        _log.debug("GRAPH URL: ", graph_html_roots)
-        if os.path.exists(graph_html_roots):
-            for filename in os.listdir(graph_html_roots):
-                data.append(filename)
-        _log.debug(data)
+        graph_ttl_roots = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/grasshopper/graphs/ttl/'))
+        if os.path.exists(graph_ttl_roots):
+            for filename in os.listdir(graph_ttl_roots):
+                if filename.endswith('.ttl'):
+                    data.append(filename)
         return {'data' : data}
+
+    def compare_rdf_graphs(self, env, data):
+        """
+        Takes requested rdf graphs to compare and returns resulting pyvis display
+        """
+        def pass_networkx_to_pyvis(nx_graph, net:Network, data, color, image=None):
+            shape = "image" if image else "dot"
+            for node in nx_graph.nodes:
+                if "router/" in node:
+                    size = 30
+                    title = "Router Node"
+                elif "network/" in node:
+                    size = 20
+                    title = "Network Node"
+                else:
+                    size = 10
+                    title = str(data.get(node, {}))
+                if image:
+                    net.add_node(node, size=size, title=title, shape=shape, image=image, data=data.get(node, {}), color=color)
+                else:
+                    net.add_node(node, size=size, title=title, data=data.get(node, {}), color=color)
+            print("edges: ", len(nx_graph.edges))
+            for edge in nx_graph.edges(data=True):
+                label = edge[2].get("label", "")
+                net.add_edge(edge[0], edge[1], label=label)
+        
+        if env['REQUEST_METHOD'].upper() != 'POST':
+            return {"status": False}
+        print(data)
+        ttl_graph1 = data.get("graph1", None)
+        ttl_graph2 = data.get("graph2", None)
+        if not ttl_graph1 or not ttl_graph2:
+            return {"status": False}
+        ttl_graph1_path = f"grasshopper/webroot/grasshopper/graphs/ttl/{ttl_graph1}"
+        ttl_graph2_path = f"grasshopper/webroot/grasshopper/graphs/ttl/{ttl_graph2}"
+        g1 = Graph()
+        g2 = Graph()
+        g1.parse(ttl_graph1_path, format="ttl")
+        g2.parse(ttl_graph2_path, format="ttl")
+
+        iso_g1 = to_isomorphic(g1)
+        iso_g2 = to_isomorphic(g2)
+
+        in_both, in_first, in_second = graph_diff(iso_g1, iso_g2)
+
+        nx_graph_in_both, node_data_in_both = self.build_networkx_graph(in_both)
+        nx_graph_in_first, node_data_in_first = self.build_networkx_graph(in_first)
+        nx_graph_in_second, node_data_in_second = self.build_networkx_graph(in_second)
+
+        net = Network(notebook=True, bgcolor="#222222", font_color="white", filter_menu=False)
+        pass_networkx_to_pyvis(nx_graph_in_both, net, node_data_in_both, "grey")
+        pass_networkx_to_pyvis(nx_graph_in_first, net, node_data_in_first, "red", "../../imgs/minus.png")
+        pass_networkx_to_pyvis(nx_graph_in_second, net, node_data_in_second, "green", "../../imgs/plus.png")
+        net.show_buttons(filter_=['physics'])
+        net.write_html(f"grasshopper/webroot/grasshopper/graphs/html/compare.html")
+        return {"status": True}
 
     @Core.receiver("onstart")
     def onstart(self, sender, **kwargs):
@@ -333,6 +453,7 @@ class Grasshopper(Agent):
 
         self.vip.web.register_path(r'^/grasshopper/.*', WEB_ROOT)
         self.vip.web.register_endpoint(r'/grasshopper_rpc/jsonrpc', self.jsonrpc)
+        self.vip.web.register_endpoint(r'/grasshopper_rpc/compare_rdf_graphs', self.compare_rdf_graphs)
 
     @Core.receiver("onstop")
     def onstop(self, sender, **kwargs):

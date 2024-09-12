@@ -14,14 +14,38 @@
             <option value="">Select a graph</option>
             <!-- Options will be populated here -->
         </select>
+        <!-- <div>COMPARE TO:</div> -->
+        <select id="graph-selector-2" onchange="showSecondaryGraph()">
+            <option value="">Select a graph</option>
+        </select>
         <button onclick="goToHtmlGraph()">Go to HTML Graph</button>
         <button onclick="goToTtlGraph()">Go to TTL Graph</button>
+        <button onclick="setCompare()">Enable/Disable Compare</button>
+
+        <button id=compare_graphs_btn onclick="compareHtmlGraph()">Compare HTML Graphs</button>
     </div>
     <div id="graph-container">
         <iframe id="graph-frame" src=""></iframe>
+        <iframe id="graph-frame-2" src=""></iframe>
+        <p>"TEST"</p>
+        <div id="info">
+            <h2>Node Information</h2>
+            <table id="node-info">
+                <thead>
+                    <tr><th>Field</th><th>Value</th></tr>
+                </thead>
+                <tbody id="table-body">
+                    <!-- Dynamic content will be inserted here -->
+                </tbody>
+            </table>
+        </div>
     </div>
 
 <script src="script.js"></script>
 
 </body>
+<footer>
+<a href="https://www.flaticon.com/free-icons/plus" title="plus icons">Plus icons created by kliwir art - Flaticon</a>
+<a href="https://www.flaticon.com/free-icons/minus" title="minus icons">Minus icons created by Muhammad_Usman - Flaticon</a>
+</footer>
 </html>

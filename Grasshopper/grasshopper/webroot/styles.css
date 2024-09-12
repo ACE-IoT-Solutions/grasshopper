@@ -1,6 +1,6 @@
 #graph-container {
     width: 100%;
-    height: 600px;
+    height: 800px;
 }
 
 iframe {
@@ -22,4 +22,17 @@ button {
     margin: 0.5em 0;
     padding: 0.5em;
     cursor: pointer;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+table, th, td {
+    border: 1px solid white;
+}
+th, td {
+    padding: 8px;
+    text-align: left;
 }
