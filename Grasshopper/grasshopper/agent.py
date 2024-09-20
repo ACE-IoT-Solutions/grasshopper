@@ -186,10 +186,6 @@ class Grasshopper(Agent):
         """
         _log.error(f"grequests error: {exception} with {request}")
 
-    # async def handle_event(self, event):
-    #     await asyncio.sleep(.1)
-    #     return "Paused async to handle event"
-
     async def set_application(self, bacpypes_settings):
         """
         Set the application address for the BACnet analysis
@@ -221,6 +217,7 @@ class Grasshopper(Agent):
         track_lower = self.low_limit
         while track_lower <= self.high_limit:
             gevent.sleep(.1)
+            _log.debug(f"Currently Processing at {track_lower}")
             track_upper = track_lower + self.batch_broadcast_size
             if track_upper > self.high_limit:
                 track_upper = self.high_limit
@@ -230,6 +227,7 @@ class Grasshopper(Agent):
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_graph = bacnet_graph.create_device(device_address, device_identifier)
                 bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["device-on-network"], BACnetURI["//network/"+str(device_address.addrNet)]))
+                bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["vendor_id"], BACnetURI["//vendor/"+str(i_am.vendorID)]))
             track_lower += self.batch_broadcast_size
         _log.debug("get_device_objects Completed")
 
@@ -334,6 +332,13 @@ class Grasshopper(Agent):
         await self.get_router_networks(app, g)
         await self.get_device_objects(app, bacnet_graph)
 
+    def start_get_device_and_router(self, g, bacnet_graph):
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(self.get_device_and_router(g, bacnet_graph))
+        finally:
+            loop.close()
+
     def who_is_broadcast(self):
         """
         Broadcasts a Who-Is message to the BACnet network
@@ -343,7 +348,7 @@ class Grasshopper(Agent):
         now = datetime.now()
         # Create ttl graph
         bacnet_graph = BACnetGraph(g)
-        asyncio.run(self.get_device_and_router(g, bacnet_graph))
+        gevent.spawn(self.start_get_device_and_router(g, bacnet_graph))
         
         rdf_path = f"grasshopper/webroot/grasshopper/graphs/ttl/bacnet_graph_{now}.ttl"
         os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
@@ -367,7 +372,7 @@ class Grasshopper(Agent):
         """
         Returns camera information for web interface
         """
-        _log.debug("JSONRPC")
+        _log.debug("JSONRPC running to fetch data")
         data = []
         graph_ttl_roots = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/grasshopper/graphs/ttl/'))
         if os.path.exists(graph_ttl_roots):
@@ -380,6 +385,7 @@ class Grasshopper(Agent):
         """
         Takes requested rdf graphs to compare and returns resulting pyvis display
         """
+        _log.debug("Started RDF Graph Comparison")
         def pass_networkx_to_pyvis(nx_graph, net:Network, data, color, image=None):
             shape = "image" if image else "dot"
             for node in nx_graph.nodes:
@@ -430,6 +436,7 @@ class Grasshopper(Agent):
         pass_networkx_to_pyvis(nx_graph_in_second, net, node_data_in_second, "green", "../../imgs/plus.png")
         net.show_buttons(filter_=['physics'])
         net.write_html(f"grasshopper/webroot/grasshopper/graphs/html/compare.html")
+        _log.debug("RDF Graph Compared Completed")
         return {"status": True}
 
     @Core.receiver("onstart")
