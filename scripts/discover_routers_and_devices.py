@@ -241,7 +241,7 @@ async def main() -> None:
         
         # Check device objects
         print("lower bounds: ", args.lower, "   upper bounds: ", args.upper)
-        await get_device_objects(args.lower, args.upper, 10000, app, bacnet_graph)
+        await get_device_objects(args.lower, args.upper, 10000, app, bacnet_graph,)
 
         # dump the graph
         if args.output:
