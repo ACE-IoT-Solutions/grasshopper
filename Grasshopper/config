@@ -1,0 +1,17 @@
+{
+    "scan_interval_secs": 86400,
+    "low_limit": 0,
+    "high_limit": 4194303,
+    "batch_broadcast_size": 10000,
+    "graph_store_limit": 30,
+    "bacpypes_settings": {
+        "name": "Excelsior",
+        "instance": 999,
+        "network": 0,
+        "address": "192.168.1.12/24:47808",
+        "vendoridentifier": 999,
+        "foreign": null,
+        "ttl": 30,
+        "bbmd": null
+    }
+}
