@@ -3,12 +3,10 @@ Copyright 2023 ACE IoT Solutions
 Licensed under the MIT License (MIT)
 Created by Justice Lee
 
-This agent is used to analyze images from a camera using YOLOv8, and publish the results to the VOLTTRON message bus.
-The agent is configured using the config file, and the camera information is stored in the config file.
-The agent will periodically scan the cameras and publish the results to the message bus.
-The agent also provides a web interface to view the camera images and the pre filtered results of the analysis.
-
-
+This agent is used to analyze the BacNet Network using bacpypes3 and return an overall view of the network.
+The agent is configured using the config file, with the bacnet settings stored in the config file.
+The agent will periodically scan the network and publish the responsive devices detected in a graphical view.
+The agent also provides a web interface to view each scan of the network as found.
 """
 
 __docformat__ = 'reStructuredText'
@@ -65,8 +63,8 @@ def grasshopper(config_path, **kwargs):
 
     :param config_path: Path to a configuration file.
     :type config_path: str
-    :returns: Yolo
-    :rtype: Yolo
+    :returns: Grasshopper
+    :rtype: Grasshopper
     """
     try:
         config = utils.load_config(config_path)

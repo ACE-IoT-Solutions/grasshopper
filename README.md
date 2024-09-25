@@ -43,11 +43,11 @@ Greater Adaptability: Reduce reliance on specific vendors by understanding your 
 3. Install the agent
     - The agent can be installed using the VOLTTRON™️ Control Panel, or by running the following command from the VOLTTRON™️ root directory:
 
-```python scripts/install-agent.py -s YoloOcc -i yoloocc -t yoloocc -f```
+```python scripts/install-agent.py -s Grasshopper -i grasshopper -t grasshopper -f```
 
     - Then adding the configuration file to the VOLTTRON™️ configuration store:
 
-```volttron-ctl config store yoloocc config <path to config file>```
+```volttron-ctl config store grasshopper config <path to config file>```
 
     - Once the agent is running, it should automatically check the network once a day (default setting).
 
