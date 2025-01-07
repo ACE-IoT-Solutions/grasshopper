@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "grasshopper"
+version = "0.1.0"
+description = "Grasshopper is an open-source project designed to tackle the complex world of smart building networks."
+authors = ["Justin Scott <jscott3201@gmail.com>"]
+readme = "README.md"
+packages = [{ include = "grasshopper" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+rdflib = "^7.0.0"
+bacpypes3 = "^0.0.86"
+pydantic = "^2.6.4"
+pyvis = "^0.3.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
