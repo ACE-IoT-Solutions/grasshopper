@@ -223,7 +223,10 @@ export default {
       hiddenSubnetIds: [],
 
       selectedNodeType: null,
-      host: window.location.protocol + '//' + window.location.host
+      host: window.location.protocol + '//' + window.location.host,
+
+      highlightedNodeId: null,
+      highlightedNodeOriginalStyle: null,
     };
   },
   methods: {
@@ -557,7 +560,7 @@ export default {
               shape: 'image',
               image: image,
               label: strippedLabel,
-              font: { align: 'left', color: "white" },
+              font: { align: 'left', color: "white", background: "none" },
               mass: mass,
             };
           }
@@ -570,7 +573,7 @@ export default {
             shape: 'image',
             image: image,
             label: strippedLabel,
-            font: { align: 'left', color: "white" },
+            font: { align: 'left', color: "white", background: "none" },
             mass: mass,
           };
         }
@@ -578,6 +581,7 @@ export default {
       return {
         shape: 'dot',
         label: label,
+        font: { align: 'left', color: "white", background: "none" },
       };
     },
     getNodeConfig(label, data) {
@@ -677,21 +681,26 @@ export default {
     formatData(data) {
       const formattedData = [];
 
-      Object.keys(data).forEach((key) => {
+      Object.keys(data).forEach((originalKey) => {
+        let displayKey = originalKey;
 
-        const words = key.split(/[-_]/);
+        // rename
+        if (originalKey.toLowerCase() === "http://data.ashrae.org/bacnet/2020#rdf_diff_source") {
+          displayKey = "source";
+        }
+
+        const words = displayKey.split(/[-_]/);
 
         const capitalizedWords = words.map(word => {
           if (word.toLowerCase() === "id") {
             return "ID";
           }
-
           return word.charAt(0).toUpperCase() + word.slice(1);
         });
 
         const title = capitalizedWords.join(' ');
 
-        let value = data[key];
+        let value = data[originalKey];
 
         if (typeof value === 'string' && value.startsWith('bacnet://vendor/')) {
           value = value.replace(/^bacnet:\/\/vendor\//, '');
@@ -703,6 +712,43 @@ export default {
       });
 
       return formattedData;
+    },
+    highlightNode(nodeId) {
+      if (this.highlightedNodeId) {
+        this.unhighlightNode();
+      }
+
+      const currentNode = this.network.body.data.nodes.get(nodeId);
+      this.highlightedNodeOriginalStyle = {
+        font: currentNode.font || null,
+        borderWidth: currentNode.borderWidth || null
+      };
+
+      this.network.body.data.nodes.update({
+        id: nodeId,
+        font: {
+          color: "white",
+          background: "rgba(193, 210, 0, 0.6)",
+          borderRadius: "15px"
+        },
+        borderWidth: 4
+      });
+
+      this.highlightedNodeId = nodeId;
+    },
+    unhighlightNode() {
+      console.log("Unhighlight node called");
+      if (!this.highlightedNodeId) return;
+
+      // restore
+      this.network.body.data.nodes.update({
+        id: this.highlightedNodeId,
+        font: this.highlightedNodeOriginalStyle.font,
+        borderWidth: this.highlightedNodeOriginalStyle.borderWidth
+      });
+
+      this.highlightedNodeId = null;
+      this.highlightedNodeOriginalStyle = null;
     },
     generate() {
       const container = this.$refs.networkContainer;
@@ -782,8 +828,13 @@ export default {
 
       this.network.on("click", (params) => {
 
+        if (!params.nodes.length) {
+          this.unhighlightNode();
+        }
+
         if (params.nodes.length > 0) {
           const nodeId = params.nodes[0];
+          this.highlightNode(nodeId);
           const clickedNode = data.nodes.find((node) => node.id === nodeId);
 
           if (clickedNode) {
