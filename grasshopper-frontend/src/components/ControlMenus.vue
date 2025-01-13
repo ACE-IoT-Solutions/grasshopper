@@ -123,7 +123,7 @@
         <div v-if="store.menuType == 'setup'" class="container" style="align-content: space-evenly;">
             <div style="display: flex; align-items: center; justify-content: center; gap: 20px">
                 <v-select v-model="setupGraph" label="Select a Graph" variant="solo-filled" density="compact" hide-details="auto" :items="store.setupGraphs"></v-select>
-                <v-btn @click="goToGraph()" :loading="setupLoad" variant="tonal" size="small" append-icon="mdi-arrow-right" color="#c1d200">Go To</v-btn>
+                <v-btn @click="goToGraph()" :loading="setupLoad" variant="tonal" size="small" append-icon="mdi-arrow-right" color="#c1d200">Load</v-btn>
             </div>
             <hr class="line" />
             <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 20px;">
