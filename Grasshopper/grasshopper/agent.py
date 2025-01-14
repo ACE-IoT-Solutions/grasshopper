@@ -163,6 +163,11 @@ class Grasshopper(Agent):
         self.http_server = None
         self.agent_data_path = None
 
+        self.configure_server_setup()
+        if self.bacnet_analysis is not None:
+            self.bacnet_analysis.kill()
+        self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
+
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
         self.vip.config.set_default("config", self.default_config)
@@ -209,6 +214,8 @@ class Grasshopper(Agent):
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
             return
+        
+        self.configure_server_setup()
 
         _log.debug("Config completed")
 
@@ -531,21 +538,10 @@ class Grasshopper(Agent):
         app.api.add_resource(BBMDConfig, '/bbmds')
         app.api.add_resource(SubnetConfig, '/subnets')
 
-
-    @Core.receiver("onstart")
-    def onstart(self, sender, **kwargs):
+    def configure_server_setup(self):
         """
-        This is method is called once the Agent has successfully connected to the platform.
-        This is a good place to setup subscriptions if they are not dynamic or
-        do any other startup activities that require a connection to the message bus.
-        Called after any configurations methods that are called at startup.
-
-        Usually not needed if using the configuration store.
+        Runs to setup web server and processes when configuration changes
         """
-        # Example publish to pubsub
-        # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
-        _log.debug("in onstart")
-
         def ensure_folders_exist(agent_data_path, folder_names):
             for folder in folder_names:
                 folder_path = os.path.join(agent_data_path, folder)
@@ -594,13 +590,26 @@ class Grasshopper(Agent):
         folders = ["ttl", "compare"]
         ensure_folders_exist(agent_data_path, folders)
 
+
+    @Core.receiver("onstart")
+    def onstart(self, sender, **kwargs):
+        """
+        This is method is called once the Agent has successfully connected to the platform.
+        This is a good place to setup subscriptions if they are not dynamic or
+        do any other startup activities that require a connection to the message bus.
+        Called after any configurations methods that are called at startup.
+
+        Usually not needed if using the configuration store.
+        """
+        # Example publish to pubsub
+        # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
+        _log.debug("in onstart")
+
+        
+
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent..
         # WEB_ROOT = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/')))
-
-        if self.bacnet_analysis is not None:
-            self.bacnet_analysis.kill()
-        self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
         
 
     @Core.receiver("onstop")
