@@ -15,15 +15,36 @@
         <hr class="line" />
         <h4 class="title">{{ store.fileName }}</h4>
         <hr class="line" />
-        <div ref="config"></div>
         <div class="config-close">
-            <v-btn
-                variant="plain"
-                color="#FFFD94"
-                @click="storeConfig()"
-                >Save Config
-            </v-btn>
+            <v-menu open-on-hover>
+                <template v-slot:activator="{ props }">
+                    <v-btn
+                        v-if="store.fileName"
+                        v-bind="props"
+                        variant="plain"
+                        :ripple="false"
+                        id="no-background-hover"
+                        size="small"
+                        density="compact"
+                        color="#FFFD94"
+                        append-icon="mdi-cog"
+                    >
+                        Config Options
+                    </v-btn>
+                </template>
+
+                <v-list>
+                    <v-list-item
+                    v-for="(item, index) in saveOptions"
+                    :key="index"
+                    @click="item.action"
+                    >
+                    <v-list-item-title>{{ item.title }}</v-list-item-title>
+                    </v-list-item>
+                </v-list>
+             </v-menu>
         </div>
+        <div ref="config"></div>
     </div>
 </template>
 
@@ -44,12 +65,23 @@ export default {
             }
         }
     },
+    data() {
+        return {
+            saveOptions: [
+                { title: "Save as Default", action: () => this.storeConfig() } ,
+                { title: "Reset", action: () => this.resetConfig() }
+            ],
+        };
+    },
     methods: {
         close() {
             this.$emit("close");
         },
         storeConfig() {
             this.$emit("storeConfig");
+        },
+        resetConfig() {
+            this.$emit("resetConfig");
         },
     },
     mounted() {
