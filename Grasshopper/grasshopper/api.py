@@ -15,7 +15,7 @@ import networkx as nx
 from pyvis.network import Network
 from bacpypes3.rdf.core import BACnetNS
 from pyvis.network import Network
-from flask import Blueprint, jsonify, request, send_file, abort
+from flask import Blueprint, jsonify, request, send_file, abort, current_app
 from flask_restx import Namespace, Resource, fields
 from .restplus import api
 from .serializers import file_list, compare_ttl_files
@@ -38,10 +38,16 @@ def process_compare_rdf_queue():
             processing_task = task
             ttl_filename_1 = task.get('ttl_1')
             ttl_filename_2 = task.get('ttl_2')
+            agent_data_path = task.get('agent_data_path')
             print(f"{task=}")
             print(f"task ttl1 get {task.get('ttl_1')} and task ttl2 get {task.get('ttl_2')}")
-            ttl_filepath_1 = get_file_path(ttl_filename_1)
-            ttl_filepath_2 = get_file_path(ttl_filename_2)
+            ttl_filepath_1 = os.path.join(agent_data_path, f'ttl/{ttl_filename_1}')
+            ttl_filepath_2 = os.path.join(agent_data_path, f'ttl/{ttl_filename_2}')
+            if not os.path.exists(ttl_filepath_1):
+                raise FileNotFoundError(f"The file '{ttl_filename_1}' does not exist in the current directory.")
+            
+            if not os.path.exists(ttl_filepath_1):
+                raise FileNotFoundError(f"The file '{ttl_filename_2}' does not exist in the current directory.")
 
             g1 = Graph()
             g2 = Graph()
@@ -80,8 +86,7 @@ def process_compare_rdf_queue():
                 gevent.sleep(0)
                 combined_graph.add((s, p, o))
 
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            compare_folder_path = os.path.join(current_dir, 'compare')
+            compare_folder_path = os.path.join(agent_data_path, 'compare')
             combined_filename = f"{ttl_filename_1.replace('.ttl', '')}_vs_{ttl_filename_2.replace('.ttl', '')}.ttl"
             combined_filepath = os.path.join(compare_folder_path, combined_filename)
             combined_graph.serialize(destination=combined_filepath, format='ttl')
@@ -179,7 +184,7 @@ def pass_networkx_to_pyvis(nx_graph, net:Network, node_data, edge_data):
 
 
 def get_file_path(file_name, folder = 'ttl'):
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    current_dir = current_app.config.get('agent_data_path')
     folder_path = os.path.join(current_dir, folder)
     if not os.path.exists(folder_path):
         raise FileNotFoundError(f"The folder '{folder}' does not exist in the current directory.")
@@ -191,7 +196,7 @@ def get_file_path(file_name, folder = 'ttl'):
     return None
 
 def list_files_in_dir(folder = 'ttl'):
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    current_dir = current_app.config.get('agent_data_path')
     folder_path = os.path.join(current_dir, folder)
     files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
     return files
@@ -208,7 +213,8 @@ class TTL(Resource):
     def get(self):
         """Gets ttl list"""
         data = []
-        graph_ttl_roots = os.path.abspath(os.path.join(os.path.dirname(__file__), 'ttl/'))
+        agent_data_path = current_app.config.get('agent_data_path')
+        graph_ttl_roots = os.path.join(agent_data_path, 'ttl/')
         if os.path.exists(graph_ttl_roots):
             for filename in os.listdir(graph_ttl_roots):
                 if filename.endswith('.ttl'):
@@ -223,8 +229,8 @@ class TTL(Resource):
         def allowed_file(filename):
             return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        ttl_dir = os.path.join(current_dir, 'ttl')
+        agent_data_path = current_app.config.get('agent_data_path')
+        ttl_dir = os.path.join(agent_data_path, 'ttl')
         if 'file' not in request.files:
             return {"error": "No file part in the request"}, HTTPStatus.BAD_REQUEST
 
@@ -312,7 +318,14 @@ class ttl_compare_queue(Resource):
                 (task.get("ttl_1") == ttl_filename_2 and task.get("ttl_2") == ttl_filename_1):
                 return "Task already in queue ", HTTPStatus.BAD_REQUEST
 
-        compare_rdf_queue.put({"id": str(uuid.uuid4()),"ttl_1": ttl_filename_1, "ttl_2": ttl_filename_2})
+        compare_rdf_queue.put(
+            {
+                "id": str(uuid.uuid4()),
+                "ttl_1": ttl_filename_1, 
+                "ttl_2": ttl_filename_2,
+                "agent_data_path": current_app.config.get('agent_data_path')
+            }
+        )
         return "File accepted", HTTPStatus.ACCEPTED
 
     def get(self):
@@ -342,7 +355,7 @@ class ttl_compare_queue(Resource):
 
         return {"status": "success", "message": f"Task {task_id} removed from the queue"}, HTTPStatus.OK
 
-# /compare_rdf_graphs
+
 @api.route('/ttl_compare')
 class ttl_compare(Resource):
     @api.marshal_with(file_list)
@@ -350,57 +363,6 @@ class ttl_compare(Resource):
         """Get list of comparison ttl files"""
         file_list = list_files_in_dir(folder = 'compare')
         return {"file_list": file_list}
-
-    # @api.expect(compare_ttl_files)
-    # def post(self):
-    #     """Create a new ttl compare file and returns json"""
-    #     data = request.json
-    #     ttl_filename_1 = data.get('ttl_1')
-    #     ttl_filename_2 = data.get('ttl_2')
-    #     ttl_filepath_1 = get_file_path(ttl_filename_1)
-    #     ttl_filepath_2 = get_file_path(ttl_filename_2)
-    #     if not ttl_filepath_1 or not ttl_filepath_2:
-    #         return "File not found", HTTPStatus.NOT_FOUND
-
-    #     g1 = Graph()
-    #     g2 = Graph()
-    #     g1.parse(ttl_filepath_1, format='ttl')
-    #     g2.parse(ttl_filepath_2, format='ttl')
-
-    #     iso_g1 = to_isomorphic(g1)
-    #     iso_g2 = to_isomorphic(g2)
-    #     in_both, in_first, in_second = graph_diff(iso_g1, iso_g2)
-
-    #     combined_graph = Graph()
-
-    #     for s, p, o in in_first:
-    #         combined_graph.add((s, p, o))
-    #         triple_id = Literal(f"{s} {p} {o}")
-    #         combined_graph.add((triple_id, BACnetNS["rdf_diff_source"], Literal(ttl_filename_1)))
-        
-    #     for s, p, o in in_second:
-    #         combined_graph.add((s, p, o))
-    #         triple_id = Literal(f"{s} {p} {o}")
-    #         combined_graph.add((triple_id, BACnetNS["rdf_diff_source"], Literal(ttl_filename_2)))
-
-    #     for s, p, o in in_both:
-    #         combined_graph.add((s, p, o))
-
-    #     current_dir = os.path.dirname(os.path.abspath(__file__))
-    #     compare_folder_path = os.path.join(current_dir, 'compare')
-    #     combined_filename = f"{ttl_filename_1.replace('.ttl', '')}_vs_{ttl_filename_2.replace('.ttl', '')}.ttl"
-    #     combined_filepath = os.path.join(compare_folder_path, combined_filename)
-    #     combined_graph.serialize(destination=combined_filepath, format='ttl')
-
-    #     nx_graph, node_data, edge_data = build_networkx_graph(combined_graph)
-
-    #     net = Network()
-    #     pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
-    #     net_data = {
-    #         "nodes": net.nodes,
-    #         "edges": net.edges
-    #     }
-    #     return jsonify(net_data)
 
 
 

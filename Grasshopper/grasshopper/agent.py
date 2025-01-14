@@ -160,30 +160,8 @@ class Grasshopper(Agent):
             "webapp_settings": webapp_settings
         }
         self.config_store_lock = gevent.lock.BoundedSemaphore()
-        app = create_app()
-        self.setup_routes(app)
-        certfile = webapp_settings.get('certfile')
-        keyfile = webapp_settings.get('keyfile')
-        if certfile and keyfile:
-            ssl_context = SSLContext(PROTOCOL_TLS_SERVER)
-            try:
-                ssl_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
-                self.http_server = WSGIServer((webapp_settings.get('host'), webapp_settings.get('port')), app, log=_log, ssl_context=ssl_context)
-            except Exception as e:
-                print(f"Failed to setup ssl_context: {e}")
-                raise
-        else:
-            self.http_server = WSGIServer((webapp_settings.get('host'), webapp_settings.get('port')), app, log=_log)
-
-        if self.http_server is None:
-            _log.error("error: server not started successfully")
-            self.vip.health.set_status(STATUS_BAD)
-            return -1
-        else:
-            self.http_server.start()
-        _log.info("SERVER STARTED")
-        address, port = self.http_server.address
-        _log.info(f"Starting server on {address}:{port}")
+        self.http_server = None
+        self.agent_data_path = None
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
@@ -227,33 +205,7 @@ class Grasshopper(Agent):
                 "keyfile": None
             })
             self.graph_store_limit = contents.get("graph_store_limit", None)
-            if self.bacnet_analysis is not None:
-                self.bacnet_analysis.kill()
-            app = create_app()
-            self.setup_routes(app)
-            certfile = self.webapp_settings.get('certfile')
-            keyfile = self.webapp_settings.get('keyfile')
-            if certfile and keyfile:
-                ssl_context = SSLContext(PROTOCOL_TLS_SERVER)
-                try:
-                    ssl_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
-                    self.http_server = WSGIServer((self.webapp_settings.get('host'), self.webapp_settings.get('port')), app, log=_log, ssl_context=ssl_context)
-                except Exception as e:
-                    print(f"Failed to setup ssl_context: {e}")
-                    raise
-            else:
-                self.http_server = WSGIServer((self.webapp_settings.get('host'), self.webapp_settings.get('port')), app, log=_log)
-                
-            if self.http_server is None:
-                _log.error("error: server not started successfully")
-                self.vip.health.set_status(STATUS_BAD)
-                return -1
-            else:
-                self.http_server.start()
-            _log.info("SERVER STARTED")
-            address, port = self.http_server.address
-            _log.info(f"Starting server on {address}:{port}")
-            self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
+            
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
             return
@@ -499,8 +451,8 @@ class Grasshopper(Agent):
             latest_file = max(valid_files, key=extract_datetime)
             return latest_file
         
-        base_rdf_path = "grasshopper/ttl/base.ttl"
-        recent_ttl_file = find_latest_file("grasshopper/ttl")
+        base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
+        recent_ttl_file = find_latest_file(os.path.join(self.agent_data_path, "ttl"))
 
         graph = Graph()
 
@@ -508,13 +460,13 @@ class Grasshopper(Agent):
             graph.parse(base_rdf_path, format='ttl')
         
         if recent_ttl_file:
-            graph.parse(f"grasshopper/ttl/{recent_ttl_file}", format='ttl')
+            graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
 
         now = datetime.now()
 
         gevent.spawn(self.start_get_device_and_router(graph))
         
-        rdf_path = f"grasshopper/ttl/bacnet_graph_{now}.ttl"
+        rdf_path = os.path.join(self.agent_data_path, f"ttl/bacnet_graph_{now}.ttl")
         os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
         graph.serialize(destination=rdf_path, format="turtle")
 
@@ -594,21 +546,61 @@ class Grasshopper(Agent):
         # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
         _log.debug("in onstart")
 
-        def ensure_folders_exist(folder_names):
+        def ensure_folders_exist(agent_data_path, folder_names):
             for folder in folder_names:
-                folder_path = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), folder)))
+                folder_path = os.path.join(agent_data_path, folder)
                 if not os.path.exists(folder_path):
                     os.makedirs(folder_path)
                     print(f"Folder '{folder}' created.")
                 else:
                     print(f"Folder '{folder}' already exists.")
 
+        def get_agent_data_path(original_path):
+            agent_name = os.path.basename(original_path)
+            agent_data = f"{agent_name}.agent-data"
+            modified_path = os.path.join(original_path, agent_data)
+            return modified_path
+
+        current_dir = os.getcwd()
+        agent_data_path = get_agent_data_path(current_dir)
+        self.agent_data_path = agent_data_path
+        app = create_app()
+        app.config['agent_data_path'] = agent_data_path
+        self.setup_routes(app)
+        certfile = self.webapp_settings.get('certfile')
+        keyfile = self.webapp_settings.get('keyfile')
+        if certfile and keyfile:
+            ssl_context = SSLContext(PROTOCOL_TLS_SERVER)
+            try:
+                ssl_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
+                self.http_server = WSGIServer((self.webapp_settings.get('host'), self.webapp_settings.get('port')), app, log=_log, ssl_context=ssl_context)
+            except Exception as e:
+                print(f"Failed to setup ssl_context: {e}")
+                raise
+        else:
+            self.http_server = WSGIServer((self.webapp_settings.get('host'), self.webapp_settings.get('port')), app, log=_log)
+
+        if self.http_server is None:
+            _log.error("error: server not started successfully")
+            self.vip.health.set_status(STATUS_BAD)
+            return -1
+        else:
+            self.http_server.start()
+        _log.info("SERVER STARTED")
+        address, port = self.http_server.address
+        _log.info(f"Starting server on {address}:{port}")
+        
+
         folders = ["ttl", "compare"]
-        ensure_folders_exist(folders)
+        ensure_folders_exist(agent_data_path, folders)
 
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent..
         # WEB_ROOT = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/')))
+
+        if self.bacnet_analysis is not None:
+            self.bacnet_analysis.kill()
+        self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
         
 
     @Core.receiver("onstop")
