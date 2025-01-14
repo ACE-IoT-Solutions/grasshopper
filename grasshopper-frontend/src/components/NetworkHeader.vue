@@ -1,15 +1,8 @@
 <template>
     <div>
         <div class="network-header">
-            <!-- <v-select
-                label="Select a Graph"
-                variant="solo-filled"
-                density="compact"
-                class="main-select"
-                hide-details="auto"
-            ></v-select> -->
             <RouterLink to="/" class="nav-link">
-                <img style="width: 70%;"src="/assets/grasshopper.svg" alt="Grasshopper Logo" />
+                <img style="width: 70%;" src="/assets/grasshopper.svg" alt="Grasshopper Logo" />
             </RouterLink>
             <div class="buttons" style="margin-right: 1.5vw; gap: 20px; align-items: center;">
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('compare', 'Compare Graphs')" style="text-decoration: none;">Compare Graphs</v-btn>
@@ -27,8 +20,13 @@
                     size="small"
                     density="compact"
                     color="#94D8FF"
+                    alt="Regenerate Graph"
                 >
-                    <v-icon>mdi-autorenew</v-icon>
+                    <v-tooltip text="Regenerate Graph" bottom delay="1000">
+                        <template v-slot:activator="{ props }">
+                            <v-icon v-bind="props">mdi-autorenew</v-icon>
+                        </template>
+                    </v-tooltip>
                 </v-btn>
                 <div class="text-center">
                     <v-menu
@@ -88,11 +86,11 @@ export default {
         return {
             downloadOptions: [
                 {
-                title: "TTL",
+                title: "Download TTL",
                 action: () => this.exportTtl(),
                 },
                 {
-                title: "JSON",
+                title: "Download JSON",
                 action: () => this.exportToFile("json"),
                 },
             ],
@@ -111,13 +109,13 @@ export default {
                 data: node.data
             }));
 
-            const edges = this.store.currentGraph.edges.map(edge => ({
-                from: edge.from,
-                label: edge.label,
-                to: edge.to
-            }));
+            // const edges = this.store.currentGraph.edges.map(edge => ({
+            //     from: edge.from,
+            //     label: edge.label,
+            //     to: edge.to
+            // }));
 
-            const data = [...nodes, ...edges];
+            // const data = [...nodes, ...edges];
 
             excelParser().exportDataFromJSON(
                 nodes,
