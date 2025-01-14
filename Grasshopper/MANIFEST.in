@@ -1,1 +1,1 @@
-recursive-include grasshopper/webroot *
+recursive-include grasshopper/dist *
