@@ -58,9 +58,10 @@ Grasshopper is an open-source project designed to tackle the complex world of sm
    - If you have VOLTTRON’s web interface enabled, the Grasshopper Agent’s interface should be accessible from the configured VOLTTRON host.
 
 3. **Build the Grasshopper Frontend**  
-   - Navigate to the Grasshopper frontend folder (commonly named something like `frontend` or `grasshopper-frontend`).  
-   - Run the appropriate build command (e.g., `npm run build` or `yarn build`) to generate the `dist` folder.  
-   - Move (or copy) the newly created `dist` folder into the Grasshopper Agent’s main folder (e.g., `agent/grasshopper`) so the agent can serve its frontend assets.
+   - Navigate to the Grasshopper frontend folder (`grasshopper-frontend`).  
+   - Run `npm run build` to generate the `dist` folder.
+   - The newly created `dist` folder should appear in the Grasshopper Agent’s main folder (e.g., `agent/grasshopper`). 
+   - In the event it does not appear, move (or copy) the newly created `dist` folder into the Grasshopper Agent’s main folder from the frontend (`grasshopper-frontend/dist`) so the agent can serve its frontend assets.
 
 4. **Install the Grasshopper Agent**  
    - From the VOLTTRON root directory, run the following command to install the agent:
@@ -72,6 +73,10 @@ Grasshopper is an open-source project designed to tackle the complex world of sm
      volttron-ctl config store grasshopper config <path to config file>
      ```
    - Once the agent is installed and running, it should automatically check the network once a day (by default).
+   - Another option is to run the same installation from the volttron env. Once activated, run the following to install the same agent. If --force option is added, the agent will be overwritten. However, ttl files and compare files will remain persistent and will not be removed during this process.
+     ```bash
+     vctl install <path to grasshopper/Grasshopper files> --vip-identity grasshopper --tag gh
+     ```
 
 ---
 
