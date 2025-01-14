@@ -737,7 +737,6 @@ export default {
       this.highlightedNodeId = nodeId;
     },
     unhighlightNode() {
-      console.log("Unhighlight node called");
       if (!this.highlightedNodeId) return;
 
       // restore
