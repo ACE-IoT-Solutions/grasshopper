@@ -164,9 +164,6 @@ class Grasshopper(Agent):
         self.agent_data_path = None
 
         self.configure_server_setup()
-        if self.bacnet_analysis is not None:
-            self.bacnet_analysis.kill()
-        self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
@@ -182,11 +179,10 @@ class Grasshopper(Agent):
 
         Is called every time the configuration in the store changes.
         """
+        _log.debug("Configuring Agent")
         config = self.default_config.copy()
         config.update(contents)
 
-
-        _log.debug("Configuring Agent")
         try:
             self.scan_interval_secs = contents.get("scan_interval_secs", 86400)
             self.low_limit = contents.get("low_limit", 0)
@@ -216,6 +212,10 @@ class Grasshopper(Agent):
             return
         
         self.configure_server_setup()
+
+        if self.bacnet_analysis is not None:
+            self.bacnet_analysis.kill()
+        self.bacnet_analysis = self.core.periodic(self.scan_interval_secs, self.who_is_broadcast)
 
         _log.debug("Config completed")
 
@@ -257,7 +257,8 @@ class Grasshopper(Agent):
             try:
                 config = self.vip.config.get(DEVICE_STATE_CONFIG)
                 _log.debug(f"config_retrieve_bbmd_devices config: {config}")
-            except KeyError:
+            except KeyError as ke:
+                _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("bbmd_devices", [])
 
@@ -283,7 +284,8 @@ class Grasshopper(Agent):
             try:
                 config = self.vip.config.get(DEVICE_STATE_CONFIG)
                 _log.debug(f"config_retrieve_subnets config: {config}")
-            except KeyError:
+            except KeyError as ke:
+                _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("subnets", [])
 
@@ -304,6 +306,7 @@ class Grasshopper(Agent):
         _log.debug("get_router_networks")
         for i in range(0, 65535):
             gevent.sleep(0)
+            _log.debug(f"Currently Processing network {i}")
             if any(graph.triples((None, BACnetNS["router-to-network"], BACnetURI["//network/"+str(i)]))):
                 routers = await app.nse.who_is_router_to_network(network=i)
                 for adapter, i_am_router_to_network in routers:
@@ -363,7 +366,7 @@ class Grasshopper(Agent):
         track_lower = self.low_limit
         while track_lower <= self.high_limit:
             gevent.sleep(0.1)
-            _log.debug(f"Currently Processing at {track_lower}")
+            _log.debug(f"Currently Processing devices at {track_lower}")
             track_upper = get_known_device_end_range(graph, track_lower)
             if track_upper > self.high_limit:
                 track_upper = self.high_limit
@@ -542,6 +545,7 @@ class Grasshopper(Agent):
         """
         Runs to setup web server and processes when configuration changes
         """
+        _log.debug('configure_server_setup')
         def ensure_folders_exist(agent_data_path, folder_names):
             for folder in folder_names:
                 folder_path = os.path.join(agent_data_path, folder)
@@ -604,8 +608,18 @@ class Grasshopper(Agent):
         # Example publish to pubsub
         # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
         _log.debug("in onstart")
-
         
+        # Set up device config
+        _log.info(f"Setting up Device Config")
+        config_list = self.vip.config.list()
+        if DEVICE_STATE_CONFIG not in config_list:
+            _log.info(f"config: {DEVICE_STATE_CONFIG} not found")
+            self.vip.config.set(
+                config_name = DEVICE_STATE_CONFIG,
+                contents={"bbmd_devices": [], "subnets": []}
+            )
+        else:
+            _log.info(f"config: {DEVICE_STATE_CONFIG} found")
 
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent..
