@@ -3,9 +3,10 @@
     :class="
       store.menuType === 'compare' ||
       store.menuType === 'subnet' ||
-      store.menuType === 'bbmd'
+      store.menuType === 'bbmd' ||
+      (store.configSelect && store.menuType == 'setup')
         ? 'alt-menu'
-        : 'menu'
+        : store.menuType == 'delete' ? 'delete-menu' : 'menu'
     "
     style="z-index: 1000"
   >
@@ -14,7 +15,8 @@
       :style="
         store.menuType === 'compare' ||
         store.menuType === 'subnet' ||
-        store.menuType === 'bbmd'
+        store.menuType === 'bbmd' ||
+        (store.configSelect && store.menuType == 'setup')
           ? 'height: 10%;'
           : 'height: 20%;'
       "
@@ -92,7 +94,7 @@
         >
       </div>
     </div>
-    <div v-if="store.menuType == 'delete'" class="container">
+    <div v-if="store.menuType == 'delete'" class="delete-container">
       <div
         style="
           display: flex;
@@ -145,6 +147,34 @@
           size="small"
           color="red"
           :disabled="!deletedCompareGraph"
+          >Delete</v-btn
+        >
+      </div>
+      <hr class="line" style="margin: 15px 0px" />
+      <div
+        style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 20px;
+        "
+      >
+        <v-select
+          v-model="config"
+          label="Select Config"
+          variant="solo-filled"
+          density="compact"
+          hide-details="auto"
+          :items="store.configList"
+          clearable
+        ></v-select>
+        <v-btn
+          @click="deleteConfig()"
+          :loading="configLoad"
+          variant="tonal"
+          size="small"
+          color="red"
+          :disabled="!config"
           >Delete</v-btn
         >
       </div>
@@ -232,8 +262,7 @@
       <v-alert
         v-if="subnetAdded"
         type="success"
-        class="alt-success"
-        style="translate: 1% 50%"
+        class="success"
         closable
         @click:close="subnetAdded = false"
       >
@@ -242,8 +271,7 @@
       <v-alert
         v-if="subnetDeleted"
         type="success"
-        class="alt-success"
-        style="translate: 1% 225%"
+        class="success"
         closable
         @click:close="subnetDeleted = false"
       >
@@ -324,8 +352,7 @@
       <v-alert
         v-if="bbmdAdded"
         type="success"
-        class="alt-success"
-        style="translate: 1% 50%"
+        class="success"
         closable
         @click:close="bbmdAdded = false"
       >
@@ -334,8 +361,7 @@
       <v-alert
         v-if="bbmdDeleted"
         type="success"
-        class="alt-success"
-        style="translate: 1% 225%"
+        class="success"
         closable
         @click:close="bbmdDeleted = false"
       >
@@ -348,12 +374,7 @@
       style="align-content: space-evenly"
     >
       <div
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 20px;
-        "
+        :class="store.configSelect ? 'setup-config' : 'setup-default'"
       >
         <v-select
           v-model="setupGraph"
@@ -364,7 +385,18 @@
           :items="store.setupGraphs"
           clearable
         ></v-select>
+        <v-select
+          v-if="store.configSelect"
+          v-model="config"
+          label="Select a Config (Optional)"
+          variant="solo-filled"
+          density="compact"
+          hide-details="auto"
+          :items="store.configList"
+          clearable
+        ></v-select>
         <v-btn
+          v-if="!store.configSelect"
           @click="goToGraph()"
           :loading="setupLoad"
           variant="tonal"
@@ -374,6 +406,18 @@
           :disabled="!setupGraph"
           >Load</v-btn
         >
+        <div v-if="store.configSelect" style="display: flex; justify-content: center;">
+          <v-btn
+            @click="config == null ? (goToGraph(), store.setPhysicsConfig(this.store.defaultConfig)) : graphWithConfig()"
+            :loading="setupLoad"
+            variant="tonal"
+            size="small"
+            append-icon="mdi-arrow-right"
+            color="#c1d200"
+            :disabled="!setupGraph"
+            >Load</v-btn
+          >
+        </div>
       </div>
       <hr class="line" />
       <div
@@ -425,6 +469,59 @@
         @click:close="uploadSuccess = false"
       >
         File uploaded succesfully.
+      </v-alert>
+    </div>
+    <div v-if="store.menuType == 'config'" class="container">
+      <v-text-field
+        v-if="store.menuTitle == 'Save Config'"
+        v-model="configTitle"
+        label="Config Name"
+        density="compact"
+        variant="solo-filled"
+        :rules="configRules"
+        clearable
+      ></v-text-field>
+      <v-select
+        v-if="store.menuTitle == 'Load Config'"
+        v-model="config"
+        label="Select Config"
+        variant="solo-filled"
+        density="compact"
+        :items="store.configList"
+        clearable
+      ></v-select>
+      <div style="display: flex; justify-content: center;">
+        <v-btn
+          v-if="store.menuTitle == 'Save Config'"
+          @click="saveConfig()"
+          :loading="configLoad"
+          variant="tonal"
+          size="small"
+          append-icon="mdi-content-save"
+          color="#94D8FF"
+          :disabled="!configTitle"
+          >Save
+        </v-btn>
+        <v-btn
+          v-if="store.menuTitle == 'Load Config'"
+          @click="loadConfig()"
+          :loading="configLoad"
+          variant="tonal"
+          size="small"
+          append-icon="mdi-arrow-right"
+          color="#c1d200"
+          :disabled="!config"
+          >Load
+        </v-btn>
+      </div>
+      <v-alert
+        v-if="configSuccess"
+        type="success"
+        class="success"
+        closable
+        @click:close="configSuccess = false"
+      >
+        Config saved.
       </v-alert>
     </div>
   </div>
@@ -482,6 +579,14 @@ export default {
       bbmdAdded: false,
       bbmdDeleted: false,
       valid: false,
+      config: null,
+      configTitle: null,
+      configLoad: false,
+      configRules: [
+        v => !!v || 'Title cannot be empty',
+        v => /^[^.]+$/.test(v) || 'Title cannot reference a file type',
+      ],
+      configSuccess: false,
     }
   },
   computed: {
@@ -507,8 +612,11 @@ export default {
 
     this.store.menuType === 'compare' ||
     this.store.menuType === 'subnet' ||
-    this.store.menuType === 'bbmd'
+    this.store.menuType === 'bbmd' ||
+    (this.store.configSelect && this.store.menuType == 'setup')
       ? (animateClass = '.alt-menu')
+      : this.store.menuType === 'delete'
+      ? (animateClass = '.delete-menu')
       : (animateClass = '.menu')
 
     gsap.from(animateClass, {
@@ -519,15 +627,94 @@ export default {
     })
   },
   methods: {
-    // checkFormValidity() {
-    //     this.valid = this.compareGraph1 && this.compareGraph2;
-    // },
     checkFileName() {
       if (this.fileUpload && this.fileUpload.name === 'base.ttl') {
         this.showWarning = true
       } else {
         this.showWarning = false
       }
+    },
+    async saveConfig() {
+      this.configLoad = true;
+
+      const jsonBlob = new Blob(
+        [JSON.stringify(this.store.configToSave, null, 2)],
+        { type: 'application/json' }
+      );
+
+      const formData = new FormData();
+      formData.append('file', jsonBlob, `${this.configTitle}.json`);
+
+      await axios
+      .post(`${this.host}/api/operations/network_config`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      )
+      .then(() => {
+        this.store.triggerReload();
+        this.configSuccess = true;
+        this.configTitle = null;
+        this.configLoad = false;
+      })
+      .catch(error => {
+        console.log(error);
+      });
+    },
+    async loadConfig() {
+      this.configLoad = true;
+
+      await axios
+        .get(`${this.host}/api/operations/network_config/${this.config}`, {
+          responseType: 'json',
+        })
+        .then(response => {
+          this.store.setCurrentConfig(this.config);
+          this.store.setPhysicsConfig(response.data);
+          this.store.setControlMenu(null, null);
+          this.store.setReload();
+          this.configLoad = false;
+        })
+        .catch(error => {
+          console.log(error);
+          this.configLoad = false;
+        });
+    },
+    async deleteConfig() {
+      this.configLoad = true;
+      await axios
+        .delete(`${this.host}/api/operations/network_config/${this.config}`)
+        // eslint-disable-next-line no-unused-vars
+        .then(response => {
+          this.configLoad = false
+          this.store.triggerReload()
+          this.fileDeleted = this.config
+          this.deleteSuccess = true
+          this.config = null
+        })
+        .catch(error => {
+          console.log(error)
+          this.deleteLoad = false
+        })
+    },
+    async graphWithConfig() {
+      this.setupLoad = true
+
+      await axios
+        .get(`${this.host}/api/operations/network_config/${this.config}`, {
+          responseType: 'json',
+        })
+        .then(response => {
+          this.store.setPhysicsConfig(response.data);
+          this.store.setCurrentConfig(this.config);
+          this.goToGraph();
+        })
+        .catch(error => {
+          console.log(error);
+        })
     },
     async goToGraph() {
       this.setupLoad = true
@@ -553,10 +740,9 @@ export default {
         ttl_2: this.compareGraph2,
       }
 
-      // const fileName = this.compareGraph1.replace('.ttl', '') + '_vs_' + this.compareGraph2;
-
       await axios
         .post(`${this.host}/api/operations/ttl_compare_queue`, payload)
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
           this.store.setControlMenu(null, null)
           this.compareGraph1 = null
@@ -592,6 +778,7 @@ export default {
 
       await axios
         .post(`${this.host}/api/operations/ttl`, formData)
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
           // console.log(response);
           // this.store.setControlMenu(null, null);
@@ -610,9 +797,8 @@ export default {
 
       await axios
         .delete(`${this.host}/api/operations/ttl_file/${this.deletedGraph}`)
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.deleteLoad = false
           this.store.triggerReload()
           this.fileDeleted = this.deletedGraph
@@ -631,9 +817,8 @@ export default {
         .delete(
           `${this.host}/api/operations/ttl_compare/${this.deletedCompareGraph}`,
         )
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.deleteCompareLoad = false
           this.store.triggerReload()
           this.fileDeleted = this.deletedCompareGraph
@@ -652,9 +837,8 @@ export default {
         .post(`${this.host}/api/operations/subnets`, {
           ip_address: this.newSubnet,
         })
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.addSubnetLoad = false
           this.store.triggerReload()
           this.newSubnet = null
@@ -676,9 +860,8 @@ export default {
 
       await axios
         .delete(`${this.host}/api/operations/subnets`, { data: payload })
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.deleteSubnetLoad = false
           this.store.triggerReload()
           this.subnetToDelete = null
@@ -696,9 +879,8 @@ export default {
         .post(`${this.host}/api/operations/bbmds`, {
           ip_address: this.newBbmd,
         })
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.addBbmdLoad = false
           this.store.triggerReload()
           this.newBbmd = null
@@ -720,9 +902,8 @@ export default {
 
       await axios
         .delete(`${this.host}/api/operations/bbmds`, { data: payload })
+        // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.deleteBbmdLoad = false
           this.store.triggerReload()
           this.bbmdToDelete = null
@@ -815,10 +996,38 @@ export default {
   position: absolute;
   // top: 95%;
   width: 90%;
-  translate: 1% 150%;
+  translate: 0%;
+  top: 5%;
 }
 .alt-success {
   position: absolute;
   width: 90%;
+}
+.setup-default {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+.setup-config {
+  display: contents;
+}
+.delete-menu {
+  height: 35vh;
+  width: 30vw;
+  background-color: #212121;
+  border-radius: 15px;
+  position: absolute;
+  top: 25%;
+  left: 35%;
+  box-shadow: 0px 4px 1px rgba(0, 0, 0, 0.5);
+}
+.delete-container {
+  margin: 20px;
+  height: 60%;
+  display: grid;
+  align-items: center;
+  align-content: space-evenly;
+  overflow: scroll;
 }
 </style>
