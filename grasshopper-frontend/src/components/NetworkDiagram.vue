@@ -88,7 +88,7 @@
           variant="plain"
           size="small"
           id="settings"
-          >Info
+          >Config
         </v-btn>
         <v-btn
           v-if="showHiddenMenuButton"
@@ -104,8 +104,6 @@
 
 <script>
 import { Network } from "vis-network";
-// import { nodes, edges } from "./ExampleNodes.json";
-import axios from "axios";
 import NodeCard from '../components/NodeCard.vue';
 import SearchCard from '../components/SearchCard.vue';
 import HiddenItemsMenu from '../components/HiddenItemsMenu.vue';
@@ -123,6 +121,12 @@ export default {
   },
   mounted() {
     this.generate();
+  },
+  watch: {
+    // eslint-disable-next-line no-unused-vars
+    'store.physicsConfig'(newVal, oldVal) {
+      this.network.physics.options = newVal;
+    },
   },
   computed: {
     showHideText() {
@@ -341,6 +345,7 @@ export default {
         }
 
         // applies node exception based on setType
+        // eslint-disable-next-line no-prototype-builtins
         if (setType && ignore.hasOwnProperty(setType) && ignore[setType]) {
           continue;
         }
@@ -370,6 +375,7 @@ export default {
           // other node connected by this edge
           const otherNodeId = edgeData.from === currentNodeId ? edgeData.to : edgeData.from;
 
+          // eslint-disable-next-line no-prototype-builtins
           if (setType && ignore.hasOwnProperty(setType) && ignore[setType]) {
             return;
           }
@@ -402,6 +408,7 @@ export default {
       if (!this.selectedEdge) return;
 
       const edgeId = this.selectedEdge;
+      // eslint-disable-next-line no-unused-vars
       const edgeData = this.network.body.data.edges.get(edgeId);
 
       // Hide the edge
@@ -463,6 +470,7 @@ export default {
 
       // Restore the visibility of nodes
       Object.keys(setVisibility[showId].nodes).forEach(nodeId => {
+        // eslint-disable-next-line no-unused-vars
         const nodeVisibility = setVisibility[showId].nodes[nodeId];
         this.network.body.data.nodes.update({
           id: nodeId,
@@ -676,7 +684,9 @@ export default {
     },
     storeConfig() {
       delete this.network.physics.options.repulsion.avoidOverlap;
-      this.store.setPhysicsConfig(this.network.physics.options);
+
+      this.store.setSavableConfig(this.network.physics.options);
+      this.store.setControlMenu('config', 'Save Config');
     },
     formatData(data) {
       const formattedData = [];
