@@ -13,5 +13,11 @@
         "foreign": null,
         "ttl": 30,
         "bbmd": null
+    },
+    "webapp_settings": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "certfile": null,
+        "keyfile": null
     }
 }

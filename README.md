@@ -58,6 +58,7 @@ Grasshopper is an open-source project designed to tackle the complex world of sm
    - If you have VOLTTRON’s web interface enabled, the Grasshopper Agent’s interface should be accessible from the configured VOLTTRON host.
 
 3. **Build the Grasshopper Frontend**  
+   - On the server, ensure that NPM and Node.js are installed.  
    - Navigate to the Grasshopper frontend folder (`grasshopper-frontend`).  
    - Run `npm run build` to generate the `dist` folder.
    - The newly created `dist` folder should appear in the Grasshopper Agent’s main folder (e.g., `agent/grasshopper`). 
@@ -73,9 +74,9 @@ Grasshopper is an open-source project designed to tackle the complex world of sm
      volttron-ctl config store grasshopper config <path to config file>
      ```
    - Once the agent is installed and running, it should automatically check the network once a day (by default).
-   - Another option is to run the same installation from the volttron env. Once activated, run the following to install the same agent. If --force option is added, the agent will be overwritten. However, ttl files and compare files will remain persistent and will not be removed during this process.
+   - Another option is to run the same installation from the volttron env. Once activated, run the following to install the same agent. If --force option is added, the agent will be overwritten. However, ttl files and compare files will remain persistent and will not be removed during this process. Example:
      ```bash
-     vctl install <path to grasshopper/Grasshopper files> --vip-identity grasshopper --tag gh
+     vctl install <path to grasshopper/Grasshopper files> --vip-identity grasshopper --tag gh --force
      ```
 
 ---
@@ -98,6 +99,11 @@ A sample configuration file is provided in the repository. The config file is a 
   - **`foreign`**: BBMD address if registering the app as a foreign device.
   - **`ttl`**: Foreign device subscription time-to-live.
   - **`bbmd`**: BBMD address if registering the app as a BBMD.
+- **`webapp_settings`**: Dictionary settings for the webapp, which includes:
+  - **`host`**: IP host for the web app.
+  - **`port`**: Port for web app.
+  - **`certfile`**: Cert file route.
+  - **`keyfile`**: Key file route.
 
 ### Example Configuration
 
@@ -117,5 +123,11 @@ A sample configuration file is provided in the repository. The config file is a 
         "foreign": null,
         "ttl": 30,
         "bbmd": null
+    },
+    "webapp_settings": {
+      "host": "0.0.0.0",
+      "port": 5000,
+      "certfile": null,
+      "keyfile": null
     }
 }
