@@ -3,7 +3,6 @@
     <NetworkHeader :store="store" />
     <NetworkDiagram :store="store" :key="store.diagramKey" />
     <ControlMenus v-if="store.controlMenu" :store="store"/>
-    <!-- <CompareLoad v-if="store.compareLoad" /> -->
     <CompareLoad v-if="store.compareLoad && store.currentTask != null" :store="store" />
     <div v-if="store.controlMenu" class="overlay"></div>
   </div>
@@ -24,14 +23,11 @@ export default {
     CompareLoad,
   },
   watch: {
+    // eslint-disable-next-line no-unused-vars
     'store.reloadKey'(newVal, oldVal) {
       this.fetchAll();
+      this.fetchConfig();
     },
-    // 'store.currentTask'(newVal, oldVal) {
-    //   if (newVal != oldVal) {
-    //     this.runFetchCycle();
-    //   }
-    // }
   },
   setup() {
     return {}
@@ -46,6 +42,7 @@ export default {
     //   this.fetchAll();
     // }, this.refresh);
     // this.runFetchCycle();
+    this.fetchConfig();
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -147,7 +144,6 @@ export default {
           }
         )
         .then((response) => {
-          // console.log(response);
 
           this.store.setQueue(response.data.processing_task, response.data.queue);
 
@@ -165,6 +161,30 @@ export default {
         this.fetchBbmds(),
         this.fetchQueue()
       ]);
+    },
+
+    async fetchConfig() {
+      await axios
+        .get(
+          `${this.host}/api/operations/network_config`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+
+          if (response.data.data.length === 0) {
+            this.store.setConfigSelect(false);
+            this.store.setPhysicsConfig(this.store.defaultConfig);
+          } else {
+            this.store.setConfigSelect(true);
+            this.store.setConfigList(response.data.data);
+          }
+          
+        })
+        .catch((error) => {
+          console.log(error);
+        });
     },
   },
 }
