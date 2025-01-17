@@ -6,7 +6,7 @@
             </RouterLink>
             <div class="buttons" style="margin-right: 1.5vw; gap: 20px; align-items: center;">
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('compare', 'Compare Graphs')" style="text-decoration: none;">Compare Graphs</v-btn>
-                <v-btn variant="plain" size="small" @click="store.setControlMenu('delete', 'Delete Graph')">Delete Graph</v-btn>
+                <v-btn variant="plain" size="small" @click="store.setControlMenu('delete', 'Delete')">Delete</v-btn>
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('bbmd', 'BBMD')">BBMD</v-btn>
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('subnet', 'Subnet')">Subnet</v-btn>
                 <v-btn variant="outlined" size="small" @click="store.setControlMenu('setup', 'Setup')" color="#CDCDCD">Graph Setup</v-btn>
@@ -99,36 +99,36 @@ export default {
     },
     methods: {
         exportToFile(type) {
-        if (type === 'csv') {
-            
-            const nodes = this.store.currentGraph.nodes.map(node => ({
-                id: node.id,
-                label: node.label,
-                color: node.color,
-                shape: node.shape,
-                data: node.data
-            }));
+            if (type === 'csv') {
+                
+                const nodes = this.store.currentGraph.nodes.map(node => ({
+                    id: node.id,
+                    label: node.label,
+                    color: node.color,
+                    shape: node.shape,
+                    data: node.data
+                }));
 
-            // const edges = this.store.currentGraph.edges.map(edge => ({
-            //     from: edge.from,
-            //     label: edge.label,
-            //     to: edge.to
-            // }));
+                // const edges = this.store.currentGraph.edges.map(edge => ({
+                //     from: edge.from,
+                //     label: edge.label,
+                //     to: edge.to
+                // }));
 
-            // const data = [...nodes, ...edges];
+                // const data = [...nodes, ...edges];
 
-            excelParser().exportDataFromJSON(
-                nodes,
-                `${this.store.fileName}`,
-                'csv'
-            );
-        } else if (type === 'json') {
-            excelParser().exportDataFromJSON(
-                this.store.currentGraph,
-                `${this.store.fileName}`,
-                type
-            );
-        }
+                excelParser().exportDataFromJSON(
+                    nodes,
+                    `${this.store.fileName}`,
+                    'csv'
+                );
+            } else if (type === 'json') {
+                excelParser().exportDataFromJSON(
+                    this.store.currentGraph,
+                    `${this.store.fileName}`,
+                    type
+                );
+            }
         },
         async exportTtl() {
             await axios
