@@ -13,9 +13,10 @@
             </v-btn>
         </div>
         <hr class="line" />
-        <h4 class="title">{{ store.fileName }}</h4>
+        <h4 class="title">File: {{ store.fileName }}</h4>
         <hr class="line" />
-        <div class="config-close">
+        <div class="config-row">
+            <h4 class="title">Config: {{ store.currentConfig }}</h4>
             <v-menu open-on-hover>
                 <template v-slot:activator="{ props }">
                     <v-btn
@@ -29,7 +30,7 @@
                         color="#FFFD94"
                         append-icon="mdi-cog"
                     >
-                        Config Options
+                        Options
                     </v-btn>
                 </template>
 
@@ -44,6 +45,7 @@
                 </v-list>
              </v-menu>
         </div>
+        <hr class="line" />
         <div ref="config"></div>
     </div>
 </template>
@@ -68,8 +70,11 @@ export default {
     data() {
         return {
             saveOptions: [
-                { title: "Save as Default", action: () => this.storeConfig() } ,
-                { title: "Reset", action: () => this.resetConfig() }
+                { title: "Save", action: () => this.storeConfig() } ,
+                { title: "Load", action: () => this.loadConfig() },
+                { title: "Reset to Last Save", action: () => this.resetConfig() },
+                { title: "Reload with Default", action: () => this.defaultConfig() },
+                { title: "Delete a Config", action: () => this.deleteConfig() },
             ],
         };
     },
@@ -81,7 +86,18 @@ export default {
             this.$emit("storeConfig");
         },
         resetConfig() {
-            this.$emit("resetConfig");
+            this.store.setReload();
+        },
+        deleteConfig() {
+            this.store.setControlMenu('delete', 'Delete')
+        },
+        loadConfig() {
+            this.store.setControlMenu('config', 'Load Config')
+        },
+        defaultConfig() {
+            this.store.setPhysicsConfig(this.store.defaultConfig);
+            this.store.setCurrentConfig('Default');
+            this.store.setReload();
         },
     },
     mounted() {
@@ -121,5 +137,10 @@ export default {
     }
     .title {
         color: #FFFD94;
+    }
+    .config-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
     }
 </style>
