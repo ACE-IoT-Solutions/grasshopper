@@ -163,8 +163,6 @@ class Grasshopper(Agent):
         self.http_server = None
         self.agent_data_path = None
 
-        self.configure_server_setup()
-
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
         self.vip.config.set_default("config", self.default_config)
@@ -632,6 +630,7 @@ class Grasshopper(Agent):
         This method is called when the Agent is about to shutdown, but before it disconnects from
         the message bus.
         """
+        _log.debug("in onstop")
         self.http_server.stop()
 
         #Kill executor and currently running tasks
