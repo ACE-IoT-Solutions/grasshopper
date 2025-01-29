@@ -625,6 +625,9 @@ export default {
       y: -50,
       ease: 'power2.out',
     })
+
+    this.decodeCookie();
+    
   },
   methods: {
     checkFileName() {
@@ -642,8 +645,10 @@ export default {
         { type: 'application/json' }
       );
 
+      const fileName = `${this.configTitle}.json`;
+
       const formData = new FormData();
-      formData.append('file', jsonBlob, `${this.configTitle}.json`);
+      formData.append('file', jsonBlob, fileName);
 
       await axios
       .post(`${this.host}/api/operations/network_config`,
@@ -656,6 +661,9 @@ export default {
       )
       .then(() => {
         this.store.triggerReload();
+        this.store.setCurrentConfig(fileName);
+        this.store.setPhysicsConfig(this.store.configToSave);
+        this.storeConfig(fileName);
         this.configSuccess = true;
         this.configTitle = null;
         this.configLoad = false;
@@ -675,6 +683,7 @@ export default {
           this.store.setCurrentConfig(this.config);
           this.store.setPhysicsConfig(response.data);
           this.store.setControlMenu(null, null);
+          this.storeConfig(this.config);
           this.store.setReload();
           this.configLoad = false;
         })
@@ -710,6 +719,7 @@ export default {
         .then(response => {
           this.store.setPhysicsConfig(response.data);
           this.store.setCurrentConfig(this.config);
+          this.storeConfig(this.config);
           this.goToGraph();
         })
         .catch(error => {
@@ -913,6 +923,23 @@ export default {
           console.log(error)
           this.deleteBbmdLoad = false
         })
+    },
+    storeConfig(config) {
+      const date = new Date();
+      date.setTime(date.getTime() + (30 * 24 * 60 * 60 * 1000));
+      
+      document.cookie = `volttron_config=${config}; expires=${date.toUTCString()} path=/`;
+    },
+    decodeCookie() {
+      const cookie = decodeURIComponent(document.cookie);
+      // console.log(cookie);
+
+      for (const c of cookie.split(';')) {
+        const [key, value] = c.trim().split('=');
+        if (key === 'volttron_config') {
+          this.config = value;
+        }
+      }
     },
   },
 }
