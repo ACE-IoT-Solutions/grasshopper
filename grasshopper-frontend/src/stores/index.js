@@ -14,7 +14,12 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     deleteList: [],
     deleteCompareList: [],
     compareLoad: false,
-    physicsConfig: {
+    configList: [],
+    configSelect: false,
+    currentConfig: "Default",
+    configToSave: null,
+    physicsConfig: {},
+    defaultConfig: {
       "enabled": true,
       "barnesHut": {
         "theta": 0.5,
@@ -126,5 +131,17 @@ export const useGrasshopperStore = defineStore("grasshopper", {
       this.currentTask = task;
       this.compareQueue = list;
     },
+    setConfigList(list) {
+      this.configList = list;
+    },
+    setConfigSelect(value) {
+      this.configSelect = value;
+    },
+    setCurrentConfig(config) {
+      this.currentConfig = config;
+    },
+    setSavableConfig(config) {
+      this.configToSave = config;
+    }
   },
 });
