@@ -397,3 +397,69 @@ class ttl_compare_file(Resource):
             return jsonify({"message": f"File {ttl_filename} deleted successfully"})
         else:
             return jsonify({"error": "File not found"}), HTTPStatus.NOT_FOUND
+
+
+@api.route('/network_config')
+class Network_config(Resource):
+    def get(self):
+        """Gets network config list"""
+        data = []
+        agent_data_path = current_app.config.get('agent_data_path')
+        network_config_roots = os.path.join(agent_data_path, 'network_config')
+        if os.path.exists(network_config_roots):
+            for filename in os.listdir(network_config_roots):
+                if filename.endswith('.json'):
+                    data.append(filename)
+        return jsonify({"data": data})
+
+    @api.expect(file_upload_parser)
+    def post(self):
+        """Upload network config json file"""
+        ALLOWED_EXTENSIONS = {'json'}
+
+        def allowed_file(filename):
+            return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+        agent_data_path = current_app.config.get('agent_data_path')
+        network_config_path = os.path.join(agent_data_path, 'network_config')
+        if 'file' not in request.files:
+            return {"error": "No file part in the request"}, HTTPStatus.BAD_REQUEST
+
+        file = request.files['file']
+        if file.filename == '':
+            return {"error": "No selected file"}, HTTPStatus.BAD_REQUEST
+
+        if file and allowed_file(file.filename):
+            file_path = os.path.join(network_config_path, file.filename)
+            file.save(file_path)
+            return {"message": f"File {file.filename} uploaded successfully", "file_path": file_path}, HTTPStatus.CREATED
+        else:
+            return {"error": "File type not allowed"}, HTTPStatus.BAD_REQUEST
+
+
+@api.route('/network_config/<network_config_filename>')
+class network_config_file(Resource):
+    def get(self, network_config_filename):
+        """Download network config json file"""
+        network_config_filepath = get_file_path(network_config_filename, 'network_config')
+        if not network_config_filepath:
+            return "File not found", HTTPStatus.NOT_FOUND
+
+        try:
+            return send_file(network_config_filepath, as_attachment=True)
+        except FileNotFoundError:
+            abort(404, description="File not found")
+        except Exception as e:
+            abort(500, description=str(e))
+
+    def delete(self, network_config_filename):
+        """Delete network config json file"""
+        network_config_filepath = get_file_path(network_config_filename, 'network_config')
+        if not network_config_filepath:
+            return "File not found", HTTPStatus.NOT_FOUND
+
+        if os.path.exists(network_config_filepath):
+            os.remove(network_config_filepath)
+            return jsonify({"message": "File deleted successfully"})
+        else:
+            return jsonify({"error": "File not found"}), HTTPStatus.NOT_FOUND
