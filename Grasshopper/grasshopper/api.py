@@ -20,6 +20,8 @@ from flask_restx import Namespace, Resource, fields
 from .restplus import api
 from .serializers import file_list, compare_ttl_files
 from .parser import file_upload_parser
+import csv
+from io import StringIO, BytesIO
 
 
 api = Namespace('operations', __name__, url_prefix='/operations')
@@ -463,3 +465,62 @@ class network_config_file(Resource):
             return jsonify({"message": "File deleted successfully"})
         else:
             return jsonify({"error": "File not found"}), HTTPStatus.NOT_FOUND
+
+
+@api.route('/csv_export/<ttl_filename>')
+class csv_export_file(Resource):
+    def get(self, ttl_filename):
+        """Export ttl file to csv"""
+        ttl_filepath = get_file_path(ttl_filename)
+        if not ttl_filepath:
+            return "File not found", HTTPStatus.NOT_FOUND
+
+        g = Graph()
+        g.parse(ttl_filepath, format="ttl")
+        nx_graph, node_data, edge_data = build_networkx_graph(g)
+
+        for u, v, attr in nx_graph.edges(data=True):
+            edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
+            if "device-on-network" in edge_label:
+                if "router" in str(u):
+                    node_data[str(u)]['subnet'] = '/'.join(str(v).split('/')[-2:])
+                else:
+                    node_data[str(u)]['network-id'] = [str(v).split('/')[-1]]
+            if "router-to-network" in edge_label:
+                if "network-id" in node_data[str(u)]:
+                    node_data[str(u)]['network-id'].append(str(v).split('/')[-1])
+                else:
+                    node_data[str(u)]['network-id'] = [str(v).split('/')[-1]]
+
+        output_str = StringIO()
+        writer = csv.writer(output_str)
+
+        # Write header
+        writer.writerow(["Device Id", "Device Address", "Network Id",
+            "Subnet", "Vendor Id", "Type"])
+
+        # Write Rows
+        for node in nx_graph.nodes:
+            device_type = node_data.get(str(node), {}).get('type', '')
+            if device_type in ["Device", "Router"]:
+                device_id = str(node).split('/')[-1]
+                device_address = node_data.get(str(node), {}).get('device-address', '')
+                network_id = node_data.get(str(node), {}).get('network-id', [])
+                subnets = node_data.get(str(node), {}).get('subnet', '')
+                vendor_id = node_data.get(str(node), {}).get('vendor-id', '').split('/')[-1]
+                
+                writer.writerow(
+                    [
+                        device_id,
+                        device_address,
+                        network_id,
+                        subnets,
+                        vendor_id,
+                        device_type
+                    ]
+                )
+        output_str.seek(0)
+        output_bytes = BytesIO(output_str.getvalue().encode('utf-8'))
+
+        output_bytes.name = f"{ttl_filename}.csv"
+        return send_file(output_bytes, mimetype='text/csv', as_attachment=True, download_name=output_bytes.name)
