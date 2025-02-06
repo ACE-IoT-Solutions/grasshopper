@@ -93,6 +93,10 @@ export default {
                 title: "Download JSON",
                 action: () => this.exportToFile("json"),
                 },
+                {
+                title: "Download CSV",
+                action: () => this.exportCsv(),
+                },
             ],
             host: window.location.protocol + '//' + window.location.host,
         };
@@ -148,6 +152,36 @@ export default {
                 link.href = downloadUrl;
 
                 link.setAttribute('download', `${this.store.fileName}`);
+
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+
+                URL.revokeObjectURL(downloadUrl);
+            
+            })
+            .catch((error) => {
+                console.log(error);
+            });
+        },
+        async exportCsv() {
+            await axios
+            .get(
+            `${this.host}/api/operations/csv_export/${this.store.fileName}`,
+            {
+                headers: {
+                    Accept: 'text/csv'
+                },
+                responseType: 'blob'
+            })
+            .then((response) => {
+                const blob = new Blob([response.data], { type: 'text/csv' });
+
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+
+                link.setAttribute('download', `${this.store.fileName.replace('.ttl', '.csv')}`);
 
                 document.body.appendChild(link);
                 link.click();
