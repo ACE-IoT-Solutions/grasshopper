@@ -22,6 +22,7 @@ import json
 import ipaddress
 import signal
 import re
+import traceback
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
 # from volttron.platform.web import Response
@@ -459,24 +460,28 @@ class Grasshopper(Agent):
             latest_file = max(valid_files, key=extract_datetime)
             return latest_file
         
-        base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
-        recent_ttl_file = find_latest_file(os.path.join(self.agent_data_path, "ttl"))
+        try:
+            base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
+            recent_ttl_file = find_latest_file(os.path.join(self.agent_data_path, "ttl"))
 
-        graph = Graph()
+            graph = Graph()
 
-        if os.path.exists(base_rdf_path):
-            graph.parse(base_rdf_path, format='ttl')
-        
-        if recent_ttl_file:
-            graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
+            if os.path.exists(base_rdf_path):
+                graph.parse(base_rdf_path, format='ttl')
+            
+            if recent_ttl_file:
+                graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
 
-        now = datetime.now()
+            now = datetime.now()
 
-        gevent.spawn(self.start_get_device_and_router(graph))
-        
-        rdf_path = os.path.join(self.agent_data_path, f"ttl/bacnet_graph_{now}.ttl")
-        os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
-        graph.serialize(destination=rdf_path, format="turtle")
+            gevent.spawn(self.start_get_device_and_router(graph))
+            
+            rdf_path = os.path.join(self.agent_data_path, f"ttl/bacnet_graph_{now}.ttl")
+            os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
+            graph.serialize(destination=rdf_path, format="turtle")
+        except Exception as e:
+            _log.error(f"Error in who_is_broadcast: {e}")
+            _log.error(traceback.format_exc())
 
 
     def setup_routes(self, app):
