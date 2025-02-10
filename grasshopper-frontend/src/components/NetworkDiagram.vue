@@ -829,9 +829,16 @@ export default {
         }
       };
 
+      options.physics.enabled = true;
+
       this.network = new Network(container, data, options);
 
+
       this.network.on("stabilizationIterationsDone", () => {
+        // console.log(this.store.physicsConfig.enabled);
+
+        // this.network.options.physics.enabled = this.store.physicsConfig.enabled;
+        
         this.loaded = true;
       });
 
