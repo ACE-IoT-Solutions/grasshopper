@@ -205,6 +205,11 @@ async def main() -> None:
             help="upper bound of who-is range (optional)"
         )
         parser.add_argument(
+            "properties",
+            action="store_true",
+            help="Scan for points of device"
+        )
+        parser.add_argument(
             "-o",
             "--output",
             help="output to a file",
@@ -241,7 +246,7 @@ async def main() -> None:
         
         # Check device objects
         print("lower bounds: ", args.lower, "   upper bounds: ", args.upper)
-        await get_device_objects(args.lower, args.upper, 10000, app, bacnet_graph,)
+        await get_device_objects(args.lower, args.upper, 10000, app, bacnet_graph, args.properties)
 
         # dump the graph
         if args.output:
