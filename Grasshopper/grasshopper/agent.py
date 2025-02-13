@@ -41,7 +41,8 @@ from bacpypes3.primitivedata import ObjectIdentifier
 from bacpypes3.basetypes import PropertyIdentifier
 from bacpypes3.apdu import AbortReason, AbortPDU, ErrorRejectAbortNack
 from bacpypes3.app import Application
-from bacpypes3.vendor import get_vendor_info
+from bacpypes3.vendor import get_vendor_info, VendorInfo
+from bacpypes3.local.networkport import NetworkPortObject
 
 from rdflib import Graph, Namespace, RDF, Literal  # type: ignore
 from rdflib.compare import to_isomorphic, graph_diff
@@ -204,7 +205,10 @@ class Grasshopper(Agent):
                 "certfile": None,
                 "keyfile": None
             })
-            self.graph_store_limit = contents.get("graph_store_limit", None)
+            vendorid = self.bacpypes_settings.get("vendoridentifier", 999)
+            if vendorid != 999:
+                self.vendor_info = VendorInfo(vendorid)
+                self.vendor_info.register_object_class(56, NetworkPortObject)
             
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
