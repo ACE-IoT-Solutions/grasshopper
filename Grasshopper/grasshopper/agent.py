@@ -23,6 +23,8 @@ import ipaddress
 import signal
 import re
 import traceback
+import rdflib
+from typing import Set
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
 # from volttron.platform.web import Response
@@ -299,6 +301,26 @@ class Grasshopper(Agent):
         app_settings = argparse.Namespace(**bacpypes_settings)
         _log.debug(f"Application config: {app_settings}")
         return Application.from_args(app_settings)
+    
+    def get_networks_from_graph(self, g: rdflib.Graph) -> Set[int]:
+        """Return a set of network numbers from the graph"""
+        networks = set()
+        for t in g.triples((None, BACnetNS["device-on-network"], None)):
+            if "network" in t[2]:
+                networks.add(int(t[2].split('/')[-1]))
+        return networks
+
+    def get_device_ips(self, g: rdflib.Graph) -> Set[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+        """Return a set of device IPs from the graph"""
+        device_ips = set()
+        for t in g.triples((None, rdflib.RDF.type, BACnetNS["Device"])):
+            for t2 in g.triples((t[0], BACnetNS["device-address"], None)):
+                try:
+                    ip = ipaddress.ip_address(t2[2].value)
+                    device_ips.add(ip)
+                except:
+                    pass
+        return device_ips
 
     async def get_router_networks(self, app, graph, interfaces):
         """
@@ -307,28 +329,28 @@ class Grasshopper(Agent):
         Valid network ranges go from 1 to 65,534
         """
         _log.debug("get_router_networks")
-        for i in range(0, 65535):
+        network_ids = self.get_networks_from_graph(graph)
+        for network_id in network_ids:
             gevent.sleep(0)
-            _log.debug(f"Currently Processing network {i}")
-            if any(graph.triples((None, BACnetNS["router-to-network"], BACnetURI["//network/"+str(i)]))):
-                routers = await app.nse.who_is_router_to_network(network=i)
-                for adapter, i_am_router_to_network in routers:
-                    _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
-                    self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], RDF.type, BACnetNS.Router)
-                    for net in i_am_router_to_network.iartnNetworkList:
-                        self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], BACnetNS["router-to-network"],
-                            BACnetURI["//network/"+str(net)])
+            _log.debug(f"Currently Processing network {network_id}")
+            routers = await app.nse.who_is_router_to_network(network=network_id)
+            for adapter, i_am_router_to_network in routers:
+                _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
+                self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], RDF.type, BACnetNS.Router)
+                for net in i_am_router_to_network.iartnNetworkList:
+                    self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], BACnetNS["router-to-network"],
+                        BACnetURI["//network/"+str(net)])
 
-                    ip = ipaddress.ip_address(i_am_router_to_network.pduSource)
-                    not_in_network = True
-                    for interface in interfaces:
-                        if ip in interface.network:
-                            not_in_network = False
-                            self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], 
-                                BACnetNS["device-on-network"], BACnetURI["//subnet/"+str(interface.network)])
-                    if not_in_network:
-                        self.overwrite_triple(graph, BACnetURI["//Grasshopper"], BACnetNS["router-to-network"], 
-                            BACnetURI["//router/"+str(i_am_router_to_network.pduSource)])
+                ip = ipaddress.ip_address(i_am_router_to_network.pduSource)
+                not_in_network = True
+                for interface in interfaces:
+                    if ip in interface.network:
+                        not_in_network = False
+                        self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], 
+                            BACnetNS["device-on-network"], BACnetURI["//subnet/"+str(interface.network)])
+                if not_in_network:
+                    self.overwrite_triple(graph, BACnetURI["//Grasshopper"], BACnetNS["router-to-network"], 
+                        BACnetURI["//router/"+str(i_am_router_to_network.pduSource)])
                 
         _log.debug("get_router_networks Completed")
                 
