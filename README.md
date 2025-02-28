@@ -59,7 +59,7 @@ Grasshopper is an open-source project designed to tackle the complex world of sm
 
 3. **Build the Grasshopper Frontend**  
    - Navigate to the Grasshopper frontend folder (`grasshopper-frontend`).  
-   - In the frontend folder, ensure that NPM and Node are installed at the latest versions.
+   - In the frontend folder, ensure that NPM (>=11.1.0) and Node(>=23.9.0) are installed at the latest versions.
    - Run `npm i` to install all dependencies.
    - Run `npm run build` to generate the `dist` folder.
    - The newly created `dist` folder should appear in the Grasshopper Agent’s main folder (e.g., `agent/grasshopper`). 
