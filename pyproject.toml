@@ -12,6 +12,9 @@ rdflib = "^7.0.0"
 bacpypes3 = "^0.0.86"
 pydantic = "^2.6.4"
 pyvis = "^0.3.2"
+fastapi = "^0.112.1"
+uvicorn = "^0.29.0"
+python-multipart = "^0.0.9"
 
 
 [build-system]
