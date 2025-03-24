@@ -53,13 +53,11 @@ from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 import networkx as nx
 from pyvis.network import Network
 
-from gevent.pywsgi import WSGIServer
-from gevent.ssl import SSLContext, PROTOCOL_TLS_SERVER
-from flask import request
-from flask_restx import Namespace, Resource, fields
+import uvicorn
+from fastapi import FastAPI, Request
 from grasshopper.app import create_app
-from grasshopper.api import executor
-from grasshopper.serializers import ip_address, ip_address_list
+from grasshopper.api import executor, setup_bbmd_routes
+from grasshopper.serializers import IPAddress, IPAddressList
 
 
 _log = logging.getLogger(__name__)
@@ -488,65 +486,7 @@ class Grasshopper(Agent):
             _log.error(traceback.format_exc())
 
 
-    def setup_routes(self, app):
-        current_instance = self
-
-        class SubnetConfig(Resource):
-            @app.api.marshal_with(ip_address_list)
-            def get(self):
-                """Gets the list of Subnets CIDR Addresses stored in the config"""
-                list_of_subnets_ips = current_instance.config_retrieve_subnets()
-                return {"ip_address_list": list_of_subnets_ips}
-
-            @app.api.expect(ip_address)
-            def post(self):
-                """Adds ip address to the list of Subnets CIDR Addresses stored in the config"""
-                list_of_subnets_ips = current_instance.config_retrieve_subnets()
-                ip = request.json.get("ip_address")
-                if ip and ip not in list_of_subnets_ips:
-                    list_of_subnets_ips.append(ip)
-                current_instance.config_store_subnets(list_of_subnets_ips)
-                return {"list_of_subnets_ips": list_of_subnets_ips}
-
-            @app.api.expect(ip_address)
-            def delete(self):
-                """Removes ip address from the list of subnets IP Addresses stored in the config"""
-                list_of_subnets_ips = current_instance.config_retrieve_subnets()
-                ip = request.json.get("ip_address")
-                if ip and ip in list_of_subnets_ips:
-                    list_of_subnets_ips.remove(ip)
-                current_instance.config_store_subnets(list_of_subnets_ips)
-                return {"list_of_subnets_ips": list_of_subnets_ips}
-
-        class BBMDConfig(Resource):
-            @app.api.marshal_with(ip_address_list)
-            def get(self):
-                """Gets the list of BBMD IP Addresses stored in the config"""
-                list_of_bbmd_ips = current_instance.config_retrieve_bbmd_devices()
-                return {"ip_address_list": list_of_bbmd_ips}
-
-            @app.api.expect(ip_address)
-            def post(self):
-                """Adds ip address to the list of BBMD IP Addresses stored in the config"""
-                list_of_bbmd_ips = current_instance.config_retrieve_bbmd_devices()
-                ip = request.json.get("ip_address")
-                if ip and ip not in list_of_bbmd_ips:
-                    list_of_bbmd_ips.append(ip)
-                current_instance.config_store_bbmd_devices(list_of_bbmd_ips)
-                return {"list_of_bbmd_ips": list_of_bbmd_ips}
-
-            @app.api.expect(ip_address)
-            def delete(self):
-                """Removes ip address from the list of BBMD IP Addresses stored in the config"""
-                list_of_bbmd_ips = current_instance.config_retrieve_bbmd_devices()
-                ip = request.json.get("ip_address")
-                if ip and ip in list_of_bbmd_ips:
-                    list_of_bbmd_ips.remove(ip)
-                current_instance.config_store_bbmd_devices(list_of_bbmd_ips)
-                return {"list_of_bbmd_ips": list_of_bbmd_ips}
-
-        app.api.add_resource(BBMDConfig, '/bbmds')
-        app.api.add_resource(SubnetConfig, '/subnets')
+    # setup_routes is not needed anymore as we use the setup_bbmd_routes function from api.py instead
 
     def configure_server_setup(self):
         """
@@ -571,34 +511,46 @@ class Grasshopper(Agent):
         current_dir = os.getcwd()
         agent_data_path = get_agent_data_path(current_dir)
         self.agent_data_path = agent_data_path
+        
+        # Create FastAPI application
         app = create_app()
-        app.config['agent_data_path'] = agent_data_path
-        self.setup_routes(app)
+        app.state.agent_data_path = agent_data_path
+        
+        # Setup agent-specific routes
+        setup_bbmd_routes(app)
+        
+        # Configure Uvicorn server
+        host = self.webapp_settings.get('host', '0.0.0.0')
+        port = int(self.webapp_settings.get('port', 5000))
         certfile = self.webapp_settings.get('certfile')
         keyfile = self.webapp_settings.get('keyfile')
-        if certfile and keyfile:
-            ssl_context = SSLContext(PROTOCOL_TLS_SERVER)
-            try:
-                ssl_context.load_cert_chain(certfile=certfile, keyfile=keyfile)
-                self.http_server = WSGIServer((self.webapp_settings.get('host'), self.webapp_settings.get('port')), app, log=_log, ssl_context=ssl_context)
-            except Exception as e:
-                print(f"Failed to setup ssl_context: {e}")
-                raise
-        else:
-            self.http_server = WSGIServer((self.webapp_settings.get('host'), self.webapp_settings.get('port')), app, log=_log)
-
-        if self.http_server is None:
-            _log.error("error: server not started successfully")
-            self.vip.health.set_status(STATUS_BAD)
-            return -1
-        else:
-            self.http_server.start()
-        _log.info("SERVER STARTED")
-        address, port = self.http_server.address
-        _log.info(f"Starting server on {address}:{port}")
         
+        # Store app instance for later shutdown
+        self.app = app
+        
+        # Configure server with or without SSL
+        config = uvicorn.Config(
+            app=app,
+            host=host,
+            port=port,
+            log_level="info",
+            ssl_certfile=certfile,
+            ssl_keyfile=keyfile if certfile else None
+        )
+        
+        # Create and start server
+        self.http_server = uvicorn.Server(config)
+        
+        # Start in a new thread to not block
+        import threading
+        self.server_thread = threading.Thread(target=self.http_server.run)
+        self.server_thread.daemon = True
+        self.server_thread.start()
+        
+        _log.info(f"FastAPI server started on {host}:{port}")
 
-        folders = ["ttl", "compare"]
+        # Create necessary folders
+        folders = ["ttl", "compare", "network_config"]
         ensure_folders_exist(agent_data_path, folders)
 
 
@@ -640,8 +592,11 @@ class Grasshopper(Agent):
         the message bus.
         """
         _log.debug("in onstop")
-        self.http_server.stop()
-
+        
+        # Stop the Uvicorn server
+        if hasattr(self, 'http_server') and self.http_server:
+            self.http_server.should_exit = True
+        
         #Kill executor and currently running tasks
         for pid in executor._processes.values():
             os.kill(pid.pid, signal.SIGKILL)

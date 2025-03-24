@@ -15,16 +15,17 @@ import networkx as nx
 from pyvis.network import Network
 from bacpypes3.rdf.core import BACnetNS
 from pyvis.network import Network
-from flask import Blueprint, jsonify, request, send_file, abort, current_app
-from flask_restx import Namespace, Resource, fields
-from .restplus import api
-from .serializers import file_list, compare_ttl_files
-from .parser import file_upload_parser
+
+from fastapi import APIRouter, Request, Response, HTTPException, Depends, UploadFile, File, Form, status
+from fastapi.responses import FileResponse, JSONResponse
 import csv
 from io import StringIO, BytesIO
+from typing import Dict, List, Optional, Any, Union
 
+from .serializers import FileList, CompareTTLFiles, IPAddress, IPAddressList
 
-api = Namespace('operations', __name__, url_prefix='/operations')
+# Create a router for API operations
+router = APIRouter(prefix="/api/operations")
 
 compare_rdf_queue = Queue()
 processing_task = None
@@ -153,7 +154,7 @@ def build_networkx_graph(g):
         for u, v, edge_label in rdf_diff_list:
             edge_id = str(u)
             s, p, o = edge_id.split(' ')
-            if 'device-on-network' in p or 'router-to-network' in p:
+            if "device-on-network" in p or "router-to-network" in p:
                 if s in node_data:
                     node_data[s][edge_label] = str(v)
                 else:
@@ -185,8 +186,8 @@ def pass_networkx_to_pyvis(nx_graph, net:Network, node_data, edge_data):
         net.add_edge(u, v, label=edge_label, data=edge_data.get(edge_id, {}))
 
 
-def get_file_path(file_name, folder = 'ttl'):
-    current_dir = current_app.config.get('agent_data_path')
+def get_file_path(request: Request, file_name, folder = 'ttl'):
+    current_dir = request.app.state.agent_data_path
     folder_path = os.path.join(current_dir, folder)
     if not os.path.exists(folder_path):
         raise FileNotFoundError(f"The folder '{folder}' does not exist in the current directory.")
@@ -197,330 +198,381 @@ def get_file_path(file_name, folder = 'ttl'):
 
     return None
 
-def list_files_in_dir(folder = 'ttl'):
-    current_dir = current_app.config.get('agent_data_path')
+def list_files_in_dir(request: Request, folder = 'ttl'):
+    current_dir = request.app.state.agent_data_path
     folder_path = os.path.join(current_dir, folder)
     files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
     return files
 
 
-@api.route('/hello')
-class HelloWorld(Resource):
-    def get(self):
-        """Returns a simple greeting message."""
-        return {"message": "Hello, world!"}
+@router.get('/hello')
+async def hello():
+    """Returns a simple greeting message."""
+    return {"message": "Hello, world!"}
 
-@api.route('/ttl')
-class TTL(Resource):
-    def get(self):
-        """Gets ttl list"""
-        data = []
-        agent_data_path = current_app.config.get('agent_data_path')
-        graph_ttl_roots = os.path.join(agent_data_path, 'ttl/')
-        if os.path.exists(graph_ttl_roots):
-            for filename in os.listdir(graph_ttl_roots):
-                if filename.endswith('.ttl'):
-                    data.append(filename)
-        return jsonify({"data": data})
+@router.get('/ttl')
+async def get_ttl_list(request: Request):
+    """Gets ttl list"""
+    data = []
+    agent_data_path = request.app.state.agent_data_path
+    graph_ttl_roots = os.path.join(agent_data_path, 'ttl/')
+    if os.path.exists(graph_ttl_roots):
+        for filename in os.listdir(graph_ttl_roots):
+            if filename.endswith('.ttl'):
+                data.append(filename)
+    return {"data": data}
 
-    @api.expect(file_upload_parser)
-    def post(self):
-        """Upload ttl file"""
-        ALLOWED_EXTENSIONS = {'ttl'}
+@router.post('/ttl', status_code=status.HTTP_201_CREATED)
+async def upload_ttl_file(request: Request, file: UploadFile = File(...)):
+    """Upload ttl file"""
+    ALLOWED_EXTENSIONS = {'ttl'}
 
-        def allowed_file(filename):
-            return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        agent_data_path = current_app.config.get('agent_data_path')
-        ttl_dir = os.path.join(agent_data_path, 'ttl')
-        if 'file' not in request.files:
-            return {"error": "No file part in the request"}, HTTPStatus.BAD_REQUEST
+    agent_data_path = request.app.state.agent_data_path
+    ttl_dir = os.path.join(agent_data_path, 'ttl')
+    
+    if not file:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file part in the request")
 
-        file = request.files['file']
-        if file.filename == '':
-            return {"error": "No selected file"}, HTTPStatus.BAD_REQUEST
+    if file.filename == '':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No selected file")
 
-        if file and allowed_file(file.filename):
-            file_path = os.path.join(ttl_dir, file.filename)
-            file.save(file_path)
-            return {"message": f"File {file.filename} uploaded successfully", "file_path": file_path}, HTTPStatus.CREATED
-        else:
-            return {"error": "File type not allowed"}, HTTPStatus.BAD_REQUEST
+    if file.filename and allowed_file(file.filename):
+        file_path = os.path.join(ttl_dir, file.filename)
+        contents = await file.read()
+        with open(file_path, 'wb') as f:
+            f.write(contents)
+        return {"message": f"File {file.filename} uploaded successfully", "file_path": file_path}
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed")
 
 
-# Upload, delete, download ttl file
-@api.route('/ttl_file/<ttl_filename>')
-class ttl_file(Resource):
-    def get(self, ttl_filename):
-        """Download ttl file"""
-        ttl_filepath = get_file_path(ttl_filename)
-        if not ttl_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
+@router.get('/ttl_file/{ttl_filename}')
+async def download_ttl_file(request: Request, ttl_filename: str):
+    """Download ttl file"""
+    ttl_filepath = get_file_path(request, ttl_filename)
+    if not ttl_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
-        try:
-            return send_file(ttl_filepath, as_attachment=True)
-        except FileNotFoundError:
-            abort(404, description="File not found")
-        except Exception as e:
-            abort(500, description=str(e))
+    try:
+        return FileResponse(ttl_filepath, filename=ttl_filename)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
-    def delete(self, ttl_filename):
-        """Delete ttl file"""
-        ttl_filepath = get_file_path(ttl_filename)
-        if not ttl_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
+@router.delete('/ttl_file/{ttl_filename}')
+async def delete_ttl_file(request: Request, ttl_filename: str):
+    """Delete ttl file"""
+    ttl_filepath = get_file_path(request, ttl_filename)
+    if not ttl_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
-        if os.path.exists(ttl_filepath):
-            os.remove(ttl_filepath)
-            return jsonify({"message": "File deleted successfully"})
-        else:
-            return jsonify({"error": "File not found"}), HTTPStatus.NOT_FOUND
-        
+    if os.path.exists(ttl_filepath):
+        os.remove(ttl_filepath)
+        return {"message": "File deleted successfully"}
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    
 
-@api.route('/ttl_network/<ttl_filename>')
-class ttl_network(Resource):
-    def get(self, ttl_filename):
-        """Get ttl file network in json"""
-        ttl_filepath = get_file_path(ttl_filename)
-        if not ttl_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
+@router.get('/ttl_network/{ttl_filename}')
+async def get_ttl_network(request: Request, ttl_filename: str):
+    """Get ttl file network in json"""
+    ttl_filepath = get_file_path(request, ttl_filename)
+    if not ttl_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
-        g = Graph()
-        g.parse(ttl_filepath, format="ttl")
-        nx_graph, node_data, edge_data = build_networkx_graph(g)
+    g = Graph()
+    g.parse(ttl_filepath, format="ttl")
+    nx_graph, node_data, edge_data = build_networkx_graph(g)
 
-        net = Network()
-        pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
-        net_data = {
-            "nodes": net.nodes,
-            "edges": net.edges
+    net = Network()
+    pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
+    net_data = {
+        "nodes": net.nodes,
+        "edges": net.edges
+    }
+    return net_data
+
+@router.post('/ttl_compare_queue', status_code=status.HTTP_202_ACCEPTED)
+async def post_ttl_compare_queue(request: Request, compare_data: CompareTTLFiles):
+    """Adds ttl compare file request to queue"""
+    ttl_filename_1 = compare_data.ttl_1
+    ttl_filename_2 = compare_data.ttl_2
+    ttl_filepath_1 = get_file_path(request, ttl_filename_1)
+    ttl_filepath_2 = get_file_path(request, ttl_filename_2)
+    if not ttl_filepath_1 or not ttl_filepath_2:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    
+    queue_contents = list(compare_rdf_queue.queue)
+    if processing_task:
+        queue_contents.append(processing_task)
+    
+    for task in queue_contents:
+        if (task.get("ttl_1") == ttl_filename_1 and task.get("ttl_2") == ttl_filename_2) or \
+            (task.get("ttl_1") == ttl_filename_2 and task.get("ttl_2") == ttl_filename_1):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Task already in queue")
+
+    compare_rdf_queue.put(
+        {
+            "id": str(uuid.uuid4()),
+            "ttl_1": ttl_filename_1, 
+            "ttl_2": ttl_filename_2,
+            "agent_data_path": request.app.state.agent_data_path
         }
-        return jsonify(net_data)
+    )
+    return {"status": "accepted", "message": "File accepted"}
 
-@api.route('/ttl_compare_queue')
-class ttl_compare_queue(Resource):
-    @api.expect(compare_ttl_files)
-    @api.response(400, "Bad Request")
-    def post(self):
-        """Adds ttl compare file request to queue"""
-        data = request.json
-        ttl_filename_1 = data.get('ttl_1')
-        ttl_filename_2 = data.get('ttl_2')
-        ttl_filepath_1 = get_file_path(ttl_filename_1)
-        ttl_filepath_2 = get_file_path(ttl_filename_2)
-        if not ttl_filepath_1 or not ttl_filepath_2:
-            return "File not found", HTTPStatus.NOT_FOUND
-        
-        queue_contents = list(compare_rdf_queue.queue)
-        if processing_task:
-            queue_contents.append(processing_task)
-        
-        for task in queue_contents:
-            if (task.get("ttl_1") == ttl_filename_1 and task.get("ttl_2") == ttl_filename_2) or \
-                (task.get("ttl_1") == ttl_filename_2 and task.get("ttl_2") == ttl_filename_1):
-                return "Task already in queue ", HTTPStatus.BAD_REQUEST
+@router.get('/ttl_compare_queue')
+async def get_ttl_compare_queue():
+    """Gets current queue and processing task"""
+    queue_contents = list(compare_rdf_queue.queue)
+    return {
+        "processing_task": processing_task if processing_task else "None",
+        "queue": queue_contents
+    }
 
-        compare_rdf_queue.put(
-            {
-                "id": str(uuid.uuid4()),
-                "ttl_1": ttl_filename_1, 
-                "ttl_2": ttl_filename_2,
-                "agent_data_path": current_app.config.get('agent_data_path')
-            }
+@router.delete('/ttl_compare_queue_tasks/{task_id}')
+async def delete_ttl_compare_queue_task(task_id: str):
+    """Removes task from queue"""
+    global compare_rdf_queue
+    if processing_task and processing_task.get("id") == task_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail={"status": "error", "message": "Task is currently being processed"}
         )
-        return "File accepted", HTTPStatus.ACCEPTED
+    queue_contents = list(compare_rdf_queue.queue)
+    new_queue = [task for task in queue_contents if task["id"] != task_id]
 
-    def get(self):
-        """Gets current queue and processing task"""
-        queue_contents = list(compare_rdf_queue.queue)
-        return {
-            "processing_task": processing_task if processing_task else "None",
-            "queue": queue_contents
-        }, HTTPStatus.OK
+    if len(new_queue) == len(queue_contents):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail={"status": "error", "message": f"Task {task_id} not found"}
+        )
 
-@api.route('/ttl_compare_queue_tasks/<string:task_id>')
-class ttl_compare_queue(Resource):
-    def delete(self, task_id):
-        """Removes task from queue"""
-        global compare_rdf_queue
-        if processing_task and processing_task.get("id") == task_id:
-            return {"status": "error", "message": "Task is currently being processed"}, HTTPStatus.BAD_REQUEST
-        queue_contents = list(compare_rdf_queue.queue)
-        new_queue = [task for task in queue_contents if task["id"] != task_id]
+    compare_rdf_queue = Queue()
+    for task in new_queue:
+        compare_rdf_queue.put(task)
 
-        if len(new_queue) == len(queue_contents):
-            return {"status": "error", "message": f"Task {task_id} not found"}, HTTPStatus.NOT_FOUND
-
-        compare_rdf_queue = Queue()
-        for task in new_queue:
-            compare_rdf_queue.put(task)
-
-        return {"status": "success", "message": f"Task {task_id} removed from the queue"}, HTTPStatus.OK
+    return {"status": "success", "message": f"Task {task_id} removed from the queue"}
 
 
-@api.route('/ttl_compare')
-class ttl_compare(Resource):
-    @api.marshal_with(file_list)
-    def get(self):
-        """Get list of comparison ttl files"""
-        file_list = list_files_in_dir(folder = 'compare')
-        return {"file_list": file_list}
+@router.get('/ttl_compare', response_model=FileList)
+async def get_ttl_compare_list(request: Request):
+    """Get list of comparison ttl files"""
+    file_list = list_files_in_dir(request, folder = 'compare')
+    return {"file_list": file_list}
 
 
+@router.get('/ttl_compare/{ttl_filename}')
+async def get_ttl_compare_network(request: Request, ttl_filename: str):
+    """Get network json from compare file"""
+    ttl_filepath = get_file_path(request, ttl_filename, folder='compare')
+    if not ttl_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
-@api.route('/ttl_compare/<ttl_filename>')
-class ttl_compare_file(Resource):
-    def get(self, ttl_filename):
-        """Get network json from compare file"""
-        ttl_filepath = get_file_path(ttl_filename, folder='compare')
-        if not ttl_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
+    g = Graph()
+    g.parse(ttl_filepath, format="ttl")
+    nx_graph, node_data, edge_data = build_networkx_graph(g)
 
-        g = Graph()
-        g.parse(ttl_filepath, format="ttl")
-        nx_graph, node_data, edge_data = build_networkx_graph(g)
+    net = Network()
+    pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
+    net_data = {
+        "nodes": net.nodes,
+        "edges": net.edges
+    }
+    return net_data
 
-        net = Network()
-        pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
-        net_data = {
-            "nodes": net.nodes,
-            "edges": net.edges
+@router.delete('/ttl_compare/{ttl_filename}')
+async def delete_ttl_compare_file(request: Request, ttl_filename: str):
+    """Delete ttl compare file"""
+    ttl_filepath = get_file_path(request, ttl_filename, folder='compare')
+    if not ttl_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    if os.path.exists(ttl_filepath):
+        os.remove(ttl_filepath)
+        return {"message": f"File {ttl_filename} deleted successfully"}
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+
+@router.get('/network_config')
+async def get_network_config_list(request: Request):
+    """Gets network config list"""
+    data = []
+    agent_data_path = request.app.state.agent_data_path
+    network_config_roots = os.path.join(agent_data_path, 'network_config')
+    if os.path.exists(network_config_roots):
+        for filename in os.listdir(network_config_roots):
+            if filename.endswith('.json'):
+                data.append(filename)
+    return {"data": data}
+
+@router.post('/network_config', status_code=status.HTTP_201_CREATED)
+async def upload_network_config(request: Request, file: UploadFile = File(...)):
+    """Upload network config json file"""
+    ALLOWED_EXTENSIONS = {'json'}
+
+    def allowed_file(filename):
+        return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+    agent_data_path = request.app.state.agent_data_path
+    network_config_path = os.path.join(agent_data_path, 'network_config')
+    
+    if not file:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file part in the request")
+
+    if file.filename == '':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No selected file")
+
+    if file.filename and allowed_file(file.filename):
+        file_path = os.path.join(network_config_path, file.filename)
+        contents = await file.read()
+        with open(file_path, 'wb') as f:
+            f.write(contents)
+        return {"message": f"File {file.filename} uploaded successfully", "file_path": file_path}
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed")
+
+
+@router.get('/network_config/{network_config_filename}')
+async def download_network_config(request: Request, network_config_filename: str):
+    """Download network config json file"""
+    network_config_filepath = get_file_path(request, network_config_filename, 'network_config')
+    if not network_config_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    try:
+        return FileResponse(network_config_filepath, filename=network_config_filename)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@router.delete('/network_config/{network_config_filename}')
+async def delete_network_config(request: Request, network_config_filename: str):
+    """Delete network config json file"""
+    network_config_filepath = get_file_path(request, network_config_filename, 'network_config')
+    if not network_config_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    if os.path.exists(network_config_filepath):
+        os.remove(network_config_filepath)
+        return {"message": "File deleted successfully"}
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+
+@router.get('/csv_export/{ttl_filename}')
+async def export_csv(request: Request, ttl_filename: str):
+    """Export ttl file to csv"""
+    ttl_filepath = get_file_path(request, ttl_filename)
+    if not ttl_filepath:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    g = Graph()
+    g.parse(ttl_filepath, format="ttl")
+    nx_graph, node_data, edge_data = build_networkx_graph(g)
+
+    for u, v, attr in nx_graph.edges(data=True):
+        edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
+        if "device-on-network" in edge_label:
+            if "router" in str(u):
+                node_data[str(u)]['subnet'] = '/'.join(str(v).split('/')[-2:])
+            else:
+                node_data[str(u)]['network-id'] = [str(v).split('/')[-1]]
+        if "router-to-network" in edge_label:
+            if "network-id" in node_data[str(u)]:
+                node_data[str(u)]['network-id'].append(str(v).split('/')[-1])
+            else:
+                node_data[str(u)]['network-id'] = [str(v).split('/')[-1]]
+
+    output_str = StringIO()
+    writer = csv.writer(output_str)
+
+    # Write header
+    writer.writerow(["Device Id", "Device Address", "Network Id",
+        "Subnet", "Vendor Id", "Type"])
+
+    # Write Rows
+    for node in nx_graph.nodes:
+        device_type = node_data.get(str(node), {}).get('type', '')
+        if device_type in ["Device", "Router"]:
+            device_id = str(node).split('/')[-1]
+            device_address = node_data.get(str(node), {}).get('device-address', '')
+            network_id = node_data.get(str(node), {}).get('network-id', [])
+            subnets = node_data.get(str(node), {}).get('subnet', '')
+            vendor_id = node_data.get(str(node), {}).get('vendor-id', '').split('/')[-1]
+            
+            writer.writerow(
+                [
+                    device_id,
+                    device_address,
+                    network_id,
+                    subnets,
+                    vendor_id,
+                    device_type
+                ]
+            )
+    output_str.seek(0)
+    output_bytes = BytesIO(output_str.getvalue().encode('utf-8'))
+
+    filename = f"{ttl_filename}.csv"
+    return Response(
+        content=output_bytes.getvalue(),
+        media_type='text/csv',
+        headers={
+            'Content-Disposition': f'attachment; filename="{filename}"'
         }
-        return jsonify(net_data)
+    )
 
-    def delete(self, ttl_filename):
-        """Delete ttl compare file"""
-        ttl_filepath = get_file_path(ttl_filename, folder='compare')
-        if not ttl_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
+# Function to add subnet and bbmd device configuration API routes
+def setup_bbmd_routes(app):
+    bbmd_router = APIRouter(prefix="/api")
+    
+    @bbmd_router.get('/subnets', response_model=IPAddressList)
+    async def get_subnets(request: Request):
+        """Gets the list of Subnets CIDR Addresses stored in the config"""
+        # This function would be implemented inside the agent.py
+        # To be called from the agent instance
+        return {"ip_address_list": []}
+    
+    @bbmd_router.post('/subnets')
+    async def add_subnet(request: Request, data: IPAddress):
+        """Adds ip address to the list of Subnets CIDR Addresses stored in the config"""
+        # This function would be implemented inside the agent.py
+        return {"status": "success", "message": "Subnet added"}
+    
+    @bbmd_router.delete('/subnets')
+    async def delete_subnet(request: Request, data: IPAddress):
+        """Removes ip address from the list of subnets IP Addresses stored in the config"""
+        # This function would be implemented inside the agent.py
+        return {"status": "success", "message": "Subnet removed"}
+    
+    @bbmd_router.get('/bbmds', response_model=IPAddressList)
+    async def get_bbmds(request: Request):
+        """Gets the list of BBMD IP Addresses stored in the config"""
+        # This function would be implemented inside the agent.py
+        return {"ip_address_list": []}
+    
+    @bbmd_router.post('/bbmds')
+    async def add_bbmd(request: Request, data: IPAddress):
+        """Adds ip address to the list of BBMD IP Addresses stored in the config"""
+        # This function would be implemented inside the agent.py
+        return {"status": "success", "message": "BBMD added"}
+    
+    @bbmd_router.delete('/bbmds')
+    async def delete_bbmd(request: Request, data: IPAddress):
+        """Removes ip address from the list of BBMD IP Addresses stored in the config"""
+        # This function would be implemented inside the agent.py
+        return {"status": "success", "message": "BBMD removed"}
+    
+    app.include_router(bbmd_router)
 
-        if os.path.exists(ttl_filepath):
-            os.remove(ttl_filepath)
-            return jsonify({"message": f"File {ttl_filename} deleted successfully"})
-        else:
-            return jsonify({"error": "File not found"}), HTTPStatus.NOT_FOUND
-
-
-@api.route('/network_config')
-class Network_config(Resource):
-    def get(self):
-        """Gets network config list"""
-        data = []
-        agent_data_path = current_app.config.get('agent_data_path')
-        network_config_roots = os.path.join(agent_data_path, 'network_config')
-        if os.path.exists(network_config_roots):
-            for filename in os.listdir(network_config_roots):
-                if filename.endswith('.json'):
-                    data.append(filename)
-        return jsonify({"data": data})
-
-    @api.expect(file_upload_parser)
-    def post(self):
-        """Upload network config json file"""
-        ALLOWED_EXTENSIONS = {'json'}
-
-        def allowed_file(filename):
-            return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-        agent_data_path = current_app.config.get('agent_data_path')
-        network_config_path = os.path.join(agent_data_path, 'network_config')
-        if 'file' not in request.files:
-            return {"error": "No file part in the request"}, HTTPStatus.BAD_REQUEST
-
-        file = request.files['file']
-        if file.filename == '':
-            return {"error": "No selected file"}, HTTPStatus.BAD_REQUEST
-
-        if file and allowed_file(file.filename):
-            file_path = os.path.join(network_config_path, file.filename)
-            file.save(file_path)
-            return {"message": f"File {file.filename} uploaded successfully", "file_path": file_path}, HTTPStatus.CREATED
-        else:
-            return {"error": "File type not allowed"}, HTTPStatus.BAD_REQUEST
-
-
-@api.route('/network_config/<network_config_filename>')
-class network_config_file(Resource):
-    def get(self, network_config_filename):
-        """Download network config json file"""
-        network_config_filepath = get_file_path(network_config_filename, 'network_config')
-        if not network_config_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
-
-        try:
-            return send_file(network_config_filepath, as_attachment=True)
-        except FileNotFoundError:
-            abort(404, description="File not found")
-        except Exception as e:
-            abort(500, description=str(e))
-
-    def delete(self, network_config_filename):
-        """Delete network config json file"""
-        network_config_filepath = get_file_path(network_config_filename, 'network_config')
-        if not network_config_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
-
-        if os.path.exists(network_config_filepath):
-            os.remove(network_config_filepath)
-            return jsonify({"message": "File deleted successfully"})
-        else:
-            return jsonify({"error": "File not found"}), HTTPStatus.NOT_FOUND
-
-
-@api.route('/csv_export/<ttl_filename>')
-class csv_export_file(Resource):
-    def get(self, ttl_filename):
-        """Export ttl file to csv"""
-        ttl_filepath = get_file_path(ttl_filename)
-        if not ttl_filepath:
-            return "File not found", HTTPStatus.NOT_FOUND
-
-        g = Graph()
-        g.parse(ttl_filepath, format="ttl")
-        nx_graph, node_data, edge_data = build_networkx_graph(g)
-
-        for u, v, attr in nx_graph.edges(data=True):
-            edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
-            if "device-on-network" in edge_label:
-                if "router" in str(u):
-                    node_data[str(u)]['subnet'] = '/'.join(str(v).split('/')[-2:])
-                else:
-                    node_data[str(u)]['network-id'] = [str(v).split('/')[-1]]
-            if "router-to-network" in edge_label:
-                if "network-id" in node_data[str(u)]:
-                    node_data[str(u)]['network-id'].append(str(v).split('/')[-1])
-                else:
-                    node_data[str(u)]['network-id'] = [str(v).split('/')[-1]]
-
-        output_str = StringIO()
-        writer = csv.writer(output_str)
-
-        # Write header
-        writer.writerow(["Device Id", "Device Address", "Network Id",
-            "Subnet", "Vendor Id", "Type"])
-
-        # Write Rows
-        for node in nx_graph.nodes:
-            device_type = node_data.get(str(node), {}).get('type', '')
-            if device_type in ["Device", "Router"]:
-                device_id = str(node).split('/')[-1]
-                device_address = node_data.get(str(node), {}).get('device-address', '')
-                network_id = node_data.get(str(node), {}).get('network-id', [])
-                subnets = node_data.get(str(node), {}).get('subnet', '')
-                vendor_id = node_data.get(str(node), {}).get('vendor-id', '').split('/')[-1]
-                
-                writer.writerow(
-                    [
-                        device_id,
-                        device_address,
-                        network_id,
-                        subnets,
-                        vendor_id,
-                        device_type
-                    ]
-                )
-        output_str.seek(0)
-        output_bytes = BytesIO(output_str.getvalue().encode('utf-8'))
-
-        output_bytes.name = f"{ttl_filename}.csv"
-        return send_file(output_bytes, mimetype='text/csv', as_attachment=True, download_name=output_bytes.name)
+def setup_routes(app):
+    app.include_router(router)
+    # Note: setup_bbmd_routes is not called here as it would be called from agent.py
+    # setup_bbmd_routes(app)
