@@ -19,27 +19,27 @@ class BaseTypeHandler(ABC):
         raise NotImplementedError("Subclasses must implement this method")
 
 
-class DeviceTypeHandler:
+class DeviceTypeHandler(BaseTypeHandler):
     """Handles assigning RDF.type for a standard BACnet device."""
     def set_type(self, device):
         device.overwrite_triple(RDF.type, BACnetNS.Device)
 
-class BBMDTypeHandler:
+class BBMDTypeHandler(BaseTypeHandler):
     """Handles assigning RDF.type for a BBMD device."""
     def set_type(self, device):
         device.overwrite_triple(RDF.type, BACnetNS.BBMD)
 
-class RouterTypeHandler:
+class RouterTypeHandler(BaseTypeHandler):
     """Handles assigning RDF.type for a Router device."""
     def set_type(self, device):
         device.overwrite_triple(RDF.type, BACnetNS.Router)
 
-class SubnetTypeHandler:
+class SubnetTypeHandler(BaseTypeHandler):
     """Handles assigning RDF.type for a Router device."""
     def set_type(self, device):
         device.overwrite_triple(RDF.type, BACnetNS.Subnet)
 
-class NetworkTypeHandler:
+class NetworkTypeHandler(BaseTypeHandler):
     """Handles assigning RDF.type for a Router device."""
     def set_type(self, device):
         device.overwrite_triple(RDF.type, BACnetNS.Network)
@@ -78,7 +78,8 @@ class BaseBACnetComponent(ABC):
 
 class SubnetComponent(BaseBACnetComponent):
     """Component for handling subnet properties."""
-    def add_properties(self, device: BaseNode, subnet=None, **kwargs):
+    def add_properties(self, device: BaseNode, **kwargs):
+        subnet = kwargs.get("subnet")
         if subnet:
             device.overwrite_triple(
                 BACnetNS["device-on-network"],
@@ -87,7 +88,8 @@ class SubnetComponent(BaseBACnetComponent):
 
 class NetworkComponent(BaseBACnetComponent):
     """Component for handling network properties."""
-    def add_properties(self, device: BaseNode, network_id=None, **kwargs):
+    def add_properties(self, device: BaseNode, **kwargs):
+        network_id = kwargs.get("network_id")
         if network_id:
             device.overwrite_triple(
                 BACnetNS["device-on-network"],
@@ -96,7 +98,8 @@ class NetworkComponent(BaseBACnetComponent):
 
 class AttachDeviceComponent(BaseBACnetComponent):
     """Component for attaching devices to a network/another device."""
-    def add_properties(self, device: BaseNode, device_iri=None, **kwargs):
+    def add_properties(self, device: BaseNode, **kwargs):
+        device_iri = kwargs.get("device_iri")
         if device_iri:
             device.overwrite_triple(
                 BACnetNS["device-on-network"],
@@ -104,10 +107,11 @@ class AttachDeviceComponent(BaseBACnetComponent):
             )
 
 
-class BACnetNode:
+class BACnetNode(BaseNode):
     """A BACnet node that can include subnet, network, or additional behavior via composition."""
 
     def __init__(self, graph, device_iri, type_handler, components:List[BaseBACnetComponent]=None):
+        super().__init__(graph, device_iri, type_handler)
         self.device = BaseNode(graph, device_iri, type_handler)
         self.components = components or []
 
@@ -116,26 +120,15 @@ class BACnetNode:
         if label:
             self.overwrite_triple(RDFS.label, Literal(label))
         if device_identifier:
-            self.overwrite_triple(BACnetNS["device-instance"], Literal(device_identifier[1]))
+            self.overwrite_triple(BACnetNS["device-instance"], Literal(device_identifier))
         if device_address:
             self.overwrite_triple(BACnetNS["address"], Literal(str(device_address)))
         if vendor_id:
             self.overwrite_triple(BACnetNS["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)])
 
-    def add_component_properties(self, device_identifier, device_address, vendor_id, **kwargs):
+    def add_component_properties(self, **kwargs):
         """Delegates property addition to components. Good for everything"""
         for component in self.components:
-            component.add_properties(self, self.device, **kwargs)
+            component.add_properties(self.device, **kwargs)
 
     
-
-
-# # Creating valid components
-# subnet = SubnetComponent()
-# network = NetworkComponent()
-
-# # Passing them into BACnetDevice
-# device = BACnetDevice(graph, device_iri, type_handler, components=[subnet, network])
-
-# # This will fail (Solution 2 only) because "InvalidComponent" is not a subclass of BaseComponent
-# device.components.append("InvalidComponent")

@@ -119,15 +119,8 @@ def build_networkx_graph(g):
         edge_data = {}
         for u, v, attr in nx_graph.edges(data=True):
             edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
-            if RDFS['label'] in edge_label:
-                rdf_edges[u] = v
-                remove_nodes.append(u)
-                remove_nodes.append(v)
-            elif 'rdf_diff_source' in edge_label:
+            if 'rdf_diff_source' in edge_label:
                 rdf_diff_list.append((u,v,edge_label))
-            elif 'device-address' in edge_label:
-                device_address_edges.append((u, v))
-                remove_nodes.append(v)
             elif 'device-on-network' not in edge_label and 'router-to-network' not in edge_label:
                 label = edge_label.split('#')[-1]
                 val = str(v).split('#')[-1]

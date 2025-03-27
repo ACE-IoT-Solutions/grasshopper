@@ -48,7 +48,7 @@ from gevent.ssl import SSLContext, PROTOCOL_TLS_SERVER
 from flask import request
 from flask_restx import Resource
 
-from Grasshopper.grasshopper.flask_app import create_app
+from grasshopper.flask_app import create_app
 from grasshopper.api import executor
 from grasshopper.serializers import ip_address, ip_address_list
 from grasshopper.bacpypes3_scanner import bacpypes3_scanner
@@ -274,6 +274,17 @@ class Grasshopper(Agent):
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("subnets", [])
+    
+    def run_async_function(self, func, graph):
+        """
+        Run a function asynchronously
+        """
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(func(graph))
+        finally:
+            loop.close()
 
     def who_is_broadcast(self):
         """
@@ -282,11 +293,11 @@ class Grasshopper(Agent):
         _log.debug("who_is_broadcast")
 
         def extract_datetime(filename):
-            datetime_str = filename.split("_")[-1].replace(".ttl", "")
+            datetime_str = filename.replace(".ttl", "")
             return datetime.fromisoformat(datetime_str)
         
         def is_valid_filename(filename):
-            pattern = r"^bacnet_graph_\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}\.ttl$"
+            pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.ttl$"
             return re.match(pattern, filename)
         
         def find_latest_file(directory):
@@ -303,24 +314,25 @@ class Grasshopper(Agent):
             base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
             recent_ttl_file = find_latest_file(os.path.join(self.agent_data_path, "ttl"))
 
+            prev_graph = Graph()
             graph = Graph()
 
             if os.path.exists(base_rdf_path):
                 graph.parse(base_rdf_path, format='ttl')
             
             if recent_ttl_file:
-                graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
+                prev_graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
 
             now = datetime.now()
 
             bbmds = self.config_retrieve_bbmd_devices()
             subnets = self.config_retrieve_subnets()
-            scanner = bacpypes3_scanner(self.bacpypes_settings, bbmds, subnets,
-                self.device_broadcast_full_step_size, self.device_broadcast_empty_step_size,
+            scanner = bacpypes3_scanner(self.bacpypes_settings, prev_graph, bbmds, subnets,
+                self.device_broadcast_empty_step_size, self.device_broadcast_full_step_size,
                 self.low_limit, self.high_limit)
-            gevent.spawn(scanner.get_device_and_router(graph))
+            gevent.spawn(self.run_async_function(scanner.get_device_and_router, graph))
             
-            rdf_path = os.path.join(self.agent_data_path, f"ttl/{now.replace(microsecond=0).isoformat}.ttl")
+            rdf_path = os.path.join(self.agent_data_path, f"ttl/{now.replace(microsecond=0).isoformat()}.ttl")
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
         except Exception as e:
