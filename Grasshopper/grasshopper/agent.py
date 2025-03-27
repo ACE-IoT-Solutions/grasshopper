@@ -21,8 +21,10 @@ import signal
 import sys
 import traceback
 from datetime import datetime
+from typing import Any
 
 import gevent
+import gevent.lock
 import uvicorn
 from bacpypes3.app import Application
 from bacpypes3.local.networkport import NetworkPortObject
@@ -247,54 +249,62 @@ class Grasshopper(Agent):
 
         graph.add((subject, predicate, new_object))
 
-    def config_store_bbmd_devices(self, bbmd_devices: list):
+    def _get_device_config(self) -> dict[str, Any]:
+        config = self.vip.config.get(DEVICE_STATE_CONFIG)
+
+        if not config:
+            raise ValueError("Config is empty")
+
+        return config
+
+    def config_store_bbmd_devices(self, bbmd_devices: list) -> None:
         """
         Updates config list of foreign devices
         """
         _log.debug("config_store_bbmd_devices")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config = self._get_device_config()
             except KeyError:
                 config = {}
             config["bbmd_devices"] = bbmd_devices
             self.vip.config.set(DEVICE_STATE_CONFIG, config)
 
-    def config_retrieve_bbmd_devices(self):
+    def config_retrieve_bbmd_devices(self) -> list:
         """
         Retrieve config foreign devices
         """
         _log.debug("config_retrieve_bbmd_devices")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config = self._get_device_config()
                 _log.debug(f"config_retrieve_bbmd_devices config: {config}")
             except KeyError as ke:
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("bbmd_devices", [])
 
-    def config_store_subnets(self, subnets: list):
+    def config_store_subnets(self, subnets: list) -> None:
         """
         Updates config list of foreign devices
         """
         _log.debug("config_store_subnets")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config = self._get_device_config()
             except KeyError:
                 config = {}
             config["subnets"] = subnets
             self.vip.config.set(DEVICE_STATE_CONFIG, config)
 
-    def config_retrieve_subnets(self):
+    def config_retrieve_subnets(self) -> list:
         """
         Retrieve config subnets
         """
         _log.debug("config_retrieve_subnets")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config = self._get_device_config()
                 _log.debug(f"config_retrieve_subnets config: {config}")
             except KeyError as ke:
                 _log.error(f"Error config_retrieve_subnets: {ke}")
@@ -595,6 +605,8 @@ class Grasshopper(Agent):
             return latest_file
 
         try:
+            if self.agent_data_path is None:
+                raise ValueError("agent_data_path is not set.")
             base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
             recent_ttl_file = find_latest_file(
                 os.path.join(self.agent_data_path, "ttl")
