@@ -24,7 +24,7 @@ from rdflib.compare import graph_diff, to_isomorphic
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 from rdflib.namespace import RDFS
 
-from .models import Message, MessageStatus
+from .models import Data, Message, MessageFile, MessageStatus, NetworkData
 from .serializers import CompareTTLFiles, FileList, IPAddress, IPAddressList
 
 # Create a router for API operations
@@ -118,7 +118,7 @@ gevent.spawn(process_compare_rdf_queue)
 
 def build_networkx_graph(
     g: Graph,
-):
+) -> tuple[DiGraph, dict, dict]:
     """
     Build a networkx graph from the BACnet graph
 
@@ -199,8 +199,8 @@ def build_networkx_graph(
 def pass_networkx_to_pyvis(
     nx_graph: DiGraph,
     net: Network,
-    node_data,
-    edge_data,
+    node_data: dict,
+    edge_data: dict,
 ):
     for node in nx_graph.nodes:
         net.add_node(node, data=node_data.get(str(node), {}))
@@ -215,7 +215,7 @@ def get_file_path(
     request: Request,
     file_name: str,
     folder: str = "ttl",
-):
+) -> str | None:
     current_dir = request.app.state.agent_data_path
     folder_path = os.path.join(current_dir, folder)
     if not os.path.exists(folder_path):
@@ -251,7 +251,9 @@ async def hello() -> Message:
 
 
 @router.get("/ttl")
-async def get_ttl_list(request: Request):
+async def get_ttl_list(
+    request: Request,
+) -> Data:
     """Gets ttl list"""
     data = []
     agent_data_path = request.app.state.agent_data_path
@@ -260,11 +262,14 @@ async def get_ttl_list(request: Request):
         for filename in os.listdir(graph_ttl_roots):
             if filename.endswith(".ttl"):
                 data.append(filename)
-    return {"data": data}
+    return Data(data=data)
 
 
 @router.post("/ttl", status_code=status.HTTP_201_CREATED)
-async def upload_ttl_file(request: Request, file: UploadFile = File(...)):
+async def upload_ttl_file(
+    request: Request,
+    file: UploadFile = File(...),
+) -> MessageFile:
     """Upload ttl file"""
     ALLOWED_EXTENSIONS = {"ttl"}
 
@@ -292,10 +297,10 @@ async def upload_ttl_file(request: Request, file: UploadFile = File(...)):
         contents = await file.read()
         with open(file_path, "wb") as f:
             f.write(contents)
-        return {
-            "message": f"File {file.filename} uploaded successfully",
-            "file_path": file_path,
-        }
+
+        return MessageFile(
+            message=f"File {file.filename} uploaded successfully", file_path=file_path
+        )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed"
@@ -351,7 +356,7 @@ async def delete_ttl_file(
 async def get_ttl_network(
     request: Request,
     ttl_filename: str,
-):
+) -> NetworkData:
     """Get ttl file network in json"""
     ttl_filepath = get_file_path(request, ttl_filename)
     if not ttl_filepath:
@@ -365,8 +370,7 @@ async def get_ttl_network(
 
     net = Network()
     pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
-    net_data = {"nodes": net.nodes, "edges": net.edges}
-    return net_data
+    return NetworkData(nodes=net.nodes, edges=net.edges)
 
 
 @router.post("/ttl_compare_queue", status_code=status.HTTP_202_ACCEPTED)
@@ -461,7 +465,10 @@ async def get_ttl_compare_list(
 
 
 @router.get("/ttl_compare/{ttl_filename}")
-async def get_ttl_compare_network(request: Request, ttl_filename: str):
+async def get_ttl_compare_network(
+    request: Request,
+    ttl_filename: str,
+) -> NetworkData:
     """Get network json from compare file"""
     ttl_filepath = get_file_path(request, ttl_filename, folder="compare")
     if not ttl_filepath:
@@ -475,8 +482,8 @@ async def get_ttl_compare_network(request: Request, ttl_filename: str):
 
     net = Network()
     pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
-    net_data = {"nodes": net.nodes, "edges": net.edges}
-    return net_data
+
+    return NetworkData(nodes=net.nodes, edges=net.edges)
 
 
 @router.delete("/ttl_compare/{ttl_filename}")
@@ -512,14 +519,14 @@ async def get_network_config_list(
         for filename in os.listdir(network_config_roots):
             if filename.endswith(".json"):
                 data.append(filename)
-    return {"data": data}
+    return Data(data=data)
 
 
 @router.post("/network_config", status_code=status.HTTP_201_CREATED)
 async def upload_network_config(
     request: Request,
     file: UploadFile = File(...),
-):
+) -> MessageFile:
     """Upload network config json file"""
     ALLOWED_EXTENSIONS = {"json"}
 
@@ -547,10 +554,10 @@ async def upload_network_config(
         contents = await file.read()
         with open(file_path, "wb") as f:
             f.write(contents)
-        return {
-            "message": f"File {file.filename} uploaded successfully",
-            "file_path": file_path,
-        }
+
+        return MessageFile(
+            message=f"File {file.filename} uploaded successfully", file_path=file_path
+        )
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="File type not allowed"
