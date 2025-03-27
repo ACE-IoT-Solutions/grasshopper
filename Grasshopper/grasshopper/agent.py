@@ -110,11 +110,11 @@ class Grasshopper(Agent):
 
     def __init__(
         self,
-        scan_interval_secs=seconds_in_day,
-        low_limit=0,
-        high_limit=4194303,
-        device_broadcast_full_step_size=100,
-        device_broadcast_empty_step_size=1000,
+        scan_interval_secs: int = seconds_in_day,
+        low_limit: int = 0,
+        high_limit: int = 4194303,
+        device_broadcast_full_step_size: int = 100,
+        device_broadcast_empty_step_size: int = 1000,
         bacpypes_settings=None,
         graph_store_limit=None,
         webapp_settings=None,
@@ -173,7 +173,12 @@ class Grasshopper(Agent):
         )
         _log.debug("Init completed")
 
-    def configure(self, config_name, action, contents):
+    def configure(
+        self,
+        config_name,
+        action,
+        contents,
+    ) -> None:
         """
         Called after the Agent has connected to the message bus. If a configuration exists at startup
         this will be called before onstart.
@@ -230,13 +235,23 @@ class Grasshopper(Agent):
 
         _log.debug("Config completed")
 
-    def _grequests_exception_handler(self, request, exception):
+    def _grequests_exception_handler(
+        self,
+        request,
+        exception,
+    ) -> None:
         """
         Log exceptions from grequests
         """
         _log.error(f"grequests error: {exception} with {request}")
 
-    def overwrite_triple(self, graph, subject, predicate, new_object):
+    def overwrite_triple(
+        self,
+        graph: Graph,
+        subject,
+        predicate,
+        new_object,
+    ) -> None:
         """
         Overwrite existing triples if triple is not one of reserved
         """
@@ -319,7 +334,12 @@ class Grasshopper(Agent):
         _log.debug(f"Application config: {app_settings}")
         return Application.from_args(app_settings)
 
-    async def get_router_networks(self, app, graph, interfaces):
+    async def get_router_networks(
+        self,
+        app: Application,
+        graph: Graph,
+        interfaces,
+    ) -> None:
         """
         Get the router to network information from the network for the graph.
         Who_is_router_to_network is called based on individual networks found existing in the graph from device broadcast to prevent overloading the system.
@@ -384,7 +404,12 @@ class Grasshopper(Agent):
 
         _log.debug("get_router_networks Completed")
 
-    async def get_device_objects(self, app, graph, interfaces):
+    async def get_device_objects(
+        self,
+        app: Application,
+        graph: Graph,
+        interfaces,
+    ) -> None:
         """
         Get the device objects from the network for the graph
         """
@@ -537,7 +562,7 @@ class Grasshopper(Agent):
 
         _log.debug("get_device_objects Completed")
 
-    async def get_device_and_router(self, graph):
+    async def get_device_and_router(self, graph: Graph) -> None:
         _log.debug("Running Async for Who Is and Router to network")
         settings = self.bacpypes_settings.copy()
         cidrs = self.config_retrieve_subnets()
@@ -545,7 +570,7 @@ class Grasshopper(Agent):
         for cidr in cidrs:
             interfaces.append(ipaddress.ip_interface(cidr))
         settings["bbmd"] = cidrs
-        app = await self.set_application(settings)
+        app: Application = await self.set_application(settings)
         self.overwrite_triple(
             graph,
             BACnetURI["//Grasshopper"],
@@ -568,7 +593,7 @@ class Grasshopper(Agent):
         await self.get_router_networks(app, graph, interfaces)
         app.close()
 
-    def start_get_device_and_router(self, graph):
+    def start_get_device_and_router(self, graph: Graph) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -576,7 +601,7 @@ class Grasshopper(Agent):
         finally:
             loop.close()
 
-    def who_is_broadcast(self):
+    def who_is_broadcast(self) -> None:
         """
         Broadcasts a Who-Is message to the BACnet network
         """
