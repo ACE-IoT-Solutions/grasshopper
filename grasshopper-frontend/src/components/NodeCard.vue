@@ -19,14 +19,14 @@
         <v-table v-if="!altCard">
           <thead>
             <tr>
-              <th v-for="item in cardInfo" :key="item" class="text-left">
+              <th v-for="item in cardInfo.filter(item => item.title.toLowerCase() !== 'label')" :key="item" class="text-left">
                 {{ item.title }}
               </th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td v-for="item in cardInfo" :key="item">{{ item.value }}</td>
+              <td v-for="item in cardInfo.filter(item => item.title.toLowerCase() !== 'label')" :key="item">{{ item.value }}</td>
             </tr>
           </tbody>
         </v-table>
