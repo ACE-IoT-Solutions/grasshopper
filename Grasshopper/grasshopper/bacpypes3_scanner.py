@@ -82,6 +82,7 @@ class BVLLServiceElement(ApplicationServiceElement):
             task.cancel()
             return None
 
+
     async def read_broadcast_distribution_table(self, address: IPv4Address, timeout=5):
         self.read_bdt_future[address] = asyncio.Future()
         task = self.create_future_request(address, ReadBroadcastDistributionTable)
@@ -91,16 +92,16 @@ class BVLLServiceElement(ApplicationServiceElement):
             return result
         except asyncio.TimeoutError:
             _log.error(f"Timeout while waiting for read_broadcast_distribution_table response from {address}")
-            task.cancel()
-            self.read_bdt_future.pop(address, None)
             return None
         except Exception as e:
             _log.error(f"Error in read_broadcast_distribution table request: {e}")
-            task.cancel()
-            self.read_bdt_future.pop(address, None)
             return None
+        finally:
+            task.cancel()
+            if address in self.read_bdt_future:
+                del self.read_bdt_future[address]
 
-    async def read_foreign_device_table(self, address: IPv4Address, timeout=5) -> asyncio.Future:
+    async def read_foreign_device_table(self, address: IPv4Address, timeout=5):
         self.read_bdt_future[address] = asyncio.Future()
         task = self.create_future_request(address, ReadForeignDeviceTable)
         try:
@@ -109,14 +110,14 @@ class BVLLServiceElement(ApplicationServiceElement):
             return result
         except asyncio.TimeoutError:
             _log.error(f"Timeout while waiting for read_broadcast_distribution_table response from {address}")
-            task.cancel()
-            self.read_fdt_future.pop(address, None)
             return None
         except Exception as e:
             _log.error(f"Error in read_broadcast_distribution table request: {e}")
-            task.cancel()
-            self.read_bdt_future.pop(address, None)
             return None
+        finally:
+            task.cancel()
+            if address in self.read_bdt_future:
+                del self.read_bdt_future[address]
 
 class bacpypes3_scanner:
     def __init__(self, bacpypes_settings: dict, prev_graph: Graph, bbmds: List[str], subnets: List[str], 
