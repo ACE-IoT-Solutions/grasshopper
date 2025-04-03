@@ -738,6 +738,8 @@ export default {
           this.store.setCurrentGraph(response.data, this.setupGraph)
           this.store.setControlMenu(null, null)
           this.setupLoad = false
+          this.$router.push({ params: { graphName: this.setupGraph } })
+
         })
         .catch(error => {
           console.log(error)
@@ -775,6 +777,7 @@ export default {
           this.store.setCurrentGraph(response.data, this.compareGraph)
           this.store.setControlMenu(null, null)
           this.compareLoad = false
+          this.$router.push({ params: { graphName: this.compareGraph } })
         })
         .catch(error => {
           console.log(error)
@@ -790,8 +793,6 @@ export default {
         .post(`${this.host}/api/operations/ttl`, formData)
         // eslint-disable-next-line no-unused-vars
         .then(response => {
-          // console.log(response);
-          // this.store.setControlMenu(null, null);
           this.uploadLoad = false
           this.store.triggerReload()
           this.fileUpload = null
