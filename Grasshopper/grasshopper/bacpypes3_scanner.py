@@ -67,26 +67,26 @@ class BVLLServiceElement(ApplicationServiceElement):
             self.request(request_class(destination=destination))
         )
         return task
+    
+    def create_and_await_request(self, destination: Address, request_class, timeout=5):
+        task = self.create_future_request(destination, request_class)
+        try:
+            result = asyncio.wait_for(task, timeout)
+            return result
+        except asyncio.TimeoutError:
+            _log.error(f"Timeout while waiting for {request_class.__name__} response from {destination}")
+            task.cancel()
+            return None
+        except Exception as e:
+            _log.error(f"Error in {request_class.__name__} request: {e}")
+            task.cancel()
+            return None
 
     def read_broadcast_distribution_table(self, address: IPv4Address):
-        task = self.create_future_request(address, ReadBroadcastDistributionTable)
-        try:
-            result = asyncio.wait_for(task, timeout=5)
-            return result
-        except Exception as e:
-            _log.error(f"Error in reading BDT: {e}")
-            task.cancel()
-            return None
+        return self.create_and_await_request(address, ReadBroadcastDistributionTable)
 
     def read_foreign_device_table(self, address: IPv4Address) -> asyncio.Future:
-        task = self.create_future_request(address, ReadForeignDeviceTable)
-        try:
-            result = asyncio.wait_for(task, timeout=5)
-            return result
-        except Exception as e:
-            _log.error(f"Error in reading FDT: {e}")
-            task.cancel()
-            return None
+        return self.create_and_await_request(address, ReadForeignDeviceTable)
 
 class bacpypes3_scanner:
     def __init__(self, bacpypes_settings: dict, prev_graph: Graph, bbmds: List[str], subnets: List[str], 
