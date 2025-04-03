@@ -68,56 +68,30 @@ class BVLLServiceElement(ApplicationServiceElement):
         )
         return task
     
-    def create_and_await_request(self, destination: Address, request_class, timeout=5):
+    async def create_and_await_request(self, destination: Address, request_class, request_registry: dict, timeout=5):
+        result_future: asyncio.Future = asyncio.Future()
+        request_registry[destination] = result_future
         task = self.create_future_request(destination, request_class)
         try:
-            result = asyncio.wait_for(task, timeout)
+            await asyncio.wait_for(task, timeout)
+            result = asyncio.wait_for(result_future, timeout)
             return result
         except asyncio.TimeoutError:
             _log.error(f"Timeout while waiting for {request_class.__name__} response from {destination}")
-            task.cancel()
             return None
         except Exception as e:
             _log.error(f"Error in {request_class.__name__} request: {e}")
-            task.cancel()
             return None
-
+        finally:
+            task.cancel()
+            if destination in request_registry:
+                del request_registry[destination]
 
     async def read_broadcast_distribution_table(self, address: IPv4Address, timeout=5):
-        self.read_bdt_future[address] = asyncio.Future()
-        task = self.create_future_request(address, ReadBroadcastDistributionTable)
-        try:
-            await asyncio.wait_for(task, timeout)
-            result = asyncio.wait_for(self.read_bdt_future[address], timeout)
-            return result
-        except asyncio.TimeoutError:
-            _log.error(f"Timeout while waiting for read_broadcast_distribution_table response from {address}")
-            return None
-        except Exception as e:
-            _log.error(f"Error in read_broadcast_distribution table request: {e}")
-            return None
-        finally:
-            task.cancel()
-            if address in self.read_bdt_future:
-                del self.read_bdt_future[address]
+        return self.create_and_await_request(address, ReadBroadcastDistributionTable, self.read_bdt_future, timeout)
 
     async def read_foreign_device_table(self, address: IPv4Address, timeout=5):
-        self.read_bdt_future[address] = asyncio.Future()
-        task = self.create_future_request(address, ReadForeignDeviceTable)
-        try:
-            await asyncio.wait_for(task, timeout)
-            result = asyncio.wait_for(self.read_bdt_future[address], timeout)
-            return result
-        except asyncio.TimeoutError:
-            _log.error(f"Timeout while waiting for read_broadcast_distribution_table response from {address}")
-            return None
-        except Exception as e:
-            _log.error(f"Error in read_broadcast_distribution table request: {e}")
-            return None
-        finally:
-            task.cancel()
-            if address in self.read_bdt_future:
-                del self.read_bdt_future[address]
+        return self.create_and_await_request(address, ReadForeignDeviceTable, self.read_fdt_future, timeout)
 
 class bacpypes3_scanner:
     def __init__(self, bacpypes_settings: dict, prev_graph: Graph, bbmds: List[str], subnets: List[str], 
@@ -134,7 +108,7 @@ class bacpypes3_scanner:
         self.subnets = [ipaddress.ip_network(subnet, strict = False) for subnet in subnets]
         self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
         self.device_broadcast_full_step_size = device_broadcast_full_step_size
-        self.scanner_node = None
+        self.scanner_node: Union[None,BACnetNode] = None
         self.low_limit = scan_low_limit
         self.high_limit = scan_high_limit
         self.bbmd_in_subnet = {}
@@ -190,7 +164,7 @@ class bacpypes3_scanner:
                     pass
         return device_ips
     
-    async def set_scanner_node(self, graph:Graph)->BACnetNode:
+    async def set_scanner_node(self, graph:Graph):
         """
         Set the scanner node in the graph
         """
@@ -281,7 +255,7 @@ class bacpypes3_scanner:
         except Exception as e:
             pass
 
-    async def add_subnet_to_device(self, device: BACnetNode, ip: Address) -> ipaddress.IPv4Network:
+    async def add_subnet_to_device(self, device: BACnetNode, ip: Address) -> Union[ipaddress.IPv4Network, ipaddress.IPv6Network]:
         # Handles subnet information
         device_subnet = None
         for subnet in self.subnets:
