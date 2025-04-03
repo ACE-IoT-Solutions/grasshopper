@@ -61,31 +61,31 @@ class BVLLServiceElement(ApplicationServiceElement):
         elif isinstance(pdu, ReadForeignDeviceTableAck):
             self.read_fdt_future.set_result(pdu.bvlciFDT)
             self.read_fdt_future = None
-
-    def read_broadcast_distribution_table(self, address: IPv4Address) -> asyncio.Future:
-        self.read_bdt_future = asyncio.Future()
+    
+    def create_future_request(self, destination: Address, request_class) -> asyncio.Future:
         task = asyncio.ensure_future(
-            self.request(ReadBroadcastDistributionTable(destination=address))
+            self.request(request_class(destination=destination))
         )
+        return task
+
+    def read_broadcast_distribution_table(self, address: IPv4Address):
+        task = self.create_future_request(address, ReadBroadcastDistributionTable)
         try:
-            result = asyncio.wait_for(self.read_bdt_future, timeout=5)
+            result = asyncio.wait_for(task, timeout=5)
             return result
         except Exception as e:
             _log.error(f"Error in reading BDT: {e}")
             task.cancel()
-            self.read_bdt_future.cancel()
             return None
 
     def read_foreign_device_table(self, address: IPv4Address) -> asyncio.Future:
-        self.read_fdt_future = asyncio.Future()
-        task = asyncio.ensure_future(self.request(ReadForeignDeviceTable(destination=address)))
+        task = self.create_future_request(address, ReadForeignDeviceTable)
         try:
-            result = asyncio.wait_for(self.read_fdt_future, timeout=5)
+            result = asyncio.wait_for(task, timeout=5)
             return result
         except Exception as e:
             _log.error(f"Error in reading FDT: {e}")
             task.cancel()
-            self.read_fdt_future.cancel()
             return None
 
 class bacpypes3_scanner:
