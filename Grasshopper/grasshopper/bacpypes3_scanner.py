@@ -50,17 +50,17 @@ utils.setup_logging()
 class BVLLServiceElement(ApplicationServiceElement):
 
     def __init__(self):
-        self.read_bdt_future = None
-        self.read_fdt_future = None
+        self.read_bdt_future = {}
+        self.read_fdt_future = {}
 
     async def confirmation(self, pdu: LPDU):
         if isinstance(pdu, ReadBroadcastDistributionTableAck):
-            self.read_bdt_future.set_result(pdu.bvlciBDT)
-            self.read_bdt_future = None
+            if self.read_bdt_future.get(pdu.pduSource):
+                self.read_bdt_future.set_result(pdu.bvlciBDT)
 
         elif isinstance(pdu, ReadForeignDeviceTableAck):
-            self.read_fdt_future.set_result(pdu.bvlciFDT)
-            self.read_fdt_future = None
+            if self.read_fdt_future.get(pdu.pduSource):
+                self.read_fdt_future.set_result(pdu.bvlciFDT)
     
     def create_future_request(self, destination: Address, request_class) -> asyncio.Future:
         task = asyncio.ensure_future(
@@ -82,11 +82,41 @@ class BVLLServiceElement(ApplicationServiceElement):
             task.cancel()
             return None
 
-    def read_broadcast_distribution_table(self, address: IPv4Address):
-        return self.create_and_await_request(address, ReadBroadcastDistributionTable)
+    async def read_broadcast_distribution_table(self, address: IPv4Address, timeout=5):
+        self.read_bdt_future[address] = asyncio.Future()
+        task = self.create_future_request(address, ReadBroadcastDistributionTable)
+        try:
+            await asyncio.wait_for(task, timeout)
+            result = asyncio.wait_for(self.read_bdt_future[address], timeout)
+            return result
+        except asyncio.TimeoutError:
+            _log.error(f"Timeout while waiting for read_broadcast_distribution_table response from {address}")
+            task.cancel()
+            self.read_bdt_future.pop(address, None)
+            return None
+        except Exception as e:
+            _log.error(f"Error in read_broadcast_distribution table request: {e}")
+            task.cancel()
+            self.read_bdt_future.pop(address, None)
+            return None
 
-    def read_foreign_device_table(self, address: IPv4Address) -> asyncio.Future:
-        return self.create_and_await_request(address, ReadForeignDeviceTable)
+    async def read_foreign_device_table(self, address: IPv4Address, timeout=5) -> asyncio.Future:
+        self.read_bdt_future[address] = asyncio.Future()
+        task = self.create_future_request(address, ReadForeignDeviceTable)
+        try:
+            await asyncio.wait_for(task, timeout)
+            result = asyncio.wait_for(self.read_bdt_future[address], timeout)
+            return result
+        except asyncio.TimeoutError:
+            _log.error(f"Timeout while waiting for read_broadcast_distribution_table response from {address}")
+            task.cancel()
+            self.read_fdt_future.pop(address, None)
+            return None
+        except Exception as e:
+            _log.error(f"Error in read_broadcast_distribution table request: {e}")
+            task.cancel()
+            self.read_bdt_future.pop(address, None)
+            return None
 
 class bacpypes3_scanner:
     def __init__(self, bacpypes_settings: dict, prev_graph: Graph, bbmds: List[str], subnets: List[str], 
