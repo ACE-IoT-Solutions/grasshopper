@@ -35,22 +35,22 @@
       <p class="text">{{ store.menuTitle }}</p>
     </div>
     <div v-if="store.menuType == 'compare'" class="alt-container">
-      <v-select
+      <v-autocomplete
         v-model="compareGraph1"
         label="Select a Graph"
         variant="solo-filled"
         density="compact"
         :items="store.setupGraphs"
         clearable
-      ></v-select>
-      <v-select
+      ></v-autocomplete>
+      <v-autocomplete
         v-model="compareGraph2"
         label="Select a Graph"
         variant="solo-filled"
         density="compact"
         :items="store.setupGraphs"
         clearable
-      ></v-select>
+      ></v-autocomplete>
       <div style="display: flex; align-items: center; justify-content: center">
         <v-btn
           @click="createCompare()"
@@ -73,7 +73,7 @@
           gap: 20px;
         "
       >
-        <v-select
+        <v-autocomplete
           v-model="compareGraph"
           :items="store.compareList"
           label="Past Comparisons"
@@ -81,7 +81,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           @click="loadCompare()"
           :loading="compareLoad"
@@ -103,7 +103,7 @@
           gap: 20px;
         "
       >
-        <v-select
+        <v-autocomplete
           v-model="deletedGraph"
           :items="store.deleteList"
           label="Select a Graph"
@@ -111,7 +111,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           @click="deleteGraph()"
           :loading="deleteLoad"
@@ -131,7 +131,7 @@
           gap: 20px;
         "
       >
-        <v-select
+        <v-autocomplete
           v-model="deletedCompareGraph"
           :items="store.deleteCompareList"
           label="Select a Compare Graph"
@@ -139,7 +139,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           @click="deleteCompareGraph()"
           :loading="deleteCompareLoad"
@@ -159,7 +159,7 @@
           gap: 20px;
         "
       >
-        <v-select
+        <v-autocomplete
           v-model="config"
           label="Select Config"
           variant="solo-filled"
@@ -167,7 +167,7 @@
           hide-details="auto"
           :items="store.configList"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           @click="deleteConfig()"
           :loading="configLoad"
@@ -240,7 +240,7 @@
           gap: 20px;
         "
       >
-        <v-select
+        <v-autocomplete
           v-model="subnetToDelete"
           :items="store.ipList"
           label="Select a Subnet"
@@ -248,7 +248,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           @click="deleteSubnet()"
           variant="tonal"
@@ -330,7 +330,7 @@
           gap: 20px;
         "
       >
-        <v-select
+        <v-autocomplete
           v-model="bbmdToDelete"
           :items="store.bbmdList"
           label="Select a BBMD"
@@ -338,7 +338,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           @click="deleteBbmd()"
           variant="tonal"
@@ -376,7 +376,7 @@
       <div
         :class="store.configSelect ? 'setup-config' : 'setup-default'"
       >
-        <v-select
+        <v-autocomplete
           v-model="setupGraph"
           label="Select a Graph"
           variant="solo-filled"
@@ -384,8 +384,8 @@
           hide-details="auto"
           :items="store.setupGraphs"
           clearable
-        ></v-select>
-        <v-select
+        ></v-autocomplete>
+        <v-autocomplete
           v-if="store.configSelect"
           v-model="config"
           label="Select a Config (Optional)"
@@ -394,7 +394,7 @@
           hide-details="auto"
           :items="store.configList"
           clearable
-        ></v-select>
+        ></v-autocomplete>
         <v-btn
           v-if="!store.configSelect"
           @click="goToGraph()"
@@ -481,7 +481,7 @@
         :rules="configRules"
         clearable
       ></v-text-field>
-      <v-select
+      <v-autocomplete
         v-if="store.menuTitle == 'Load Config'"
         v-model="config"
         label="Select Config"
@@ -489,7 +489,7 @@
         density="compact"
         :items="store.configList"
         clearable
-      ></v-select>
+      ></v-autocomplete>
       <div style="display: flex; justify-content: center;">
         <v-btn
           v-if="store.menuTitle == 'Save Config'"
