@@ -607,6 +607,12 @@ export default {
       })
     },
   },
+  watch: {
+    // eslint-disable-next-line no-unused-vars
+    'store.reloadKey'(newVal, oldVal) {
+      this.refresh();
+    },
+  },
   mounted() {
     let animateClass = null
 
@@ -627,7 +633,7 @@ export default {
     })
 
     this.decodeCookie();
-    
+    this.refresh();
   },
   methods: {
     checkFileName() {
@@ -941,6 +947,74 @@ export default {
           this.config = value;
         }
       }
+    },
+    async fetchGraphs() {
+      await axios
+        .get(
+          `${this.host}/api/operations/ttl`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setSetupGraphs(response.data.data);
+          this.store.setDeleteGraphs(response.data.data);
+        })
+        .catch((error) => {
+          console.log(error);
+        });
+    },
+    async fetchIps() {
+      await axios
+        .get(
+          `${this.host}/api/operations/subnets`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setIpList(response.data.ip_address_list);
+        })
+        .catch((error) => {
+          console.log(error);
+        });
+    },
+    async fetchCompareGraphs() {
+      await axios
+        .get(
+          `${this.host}/api/operations/ttl_compare`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setCompareList(response.data.file_list);
+          this.store.setDeleteCompareGraphs(response.data.file_list);
+        })
+        .catch((error) => {
+          console.log(error);
+        });
+    },
+    async fetchBbmds() {
+      await axios
+        .get(
+          `${this.host}/api/operations/bbmds`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setBbmdList(response.data.ip_address_list);
+        })
+        .catch((error) => {
+          console.log(error);
+        });
+    },
+    async refresh() {
+      await this.fetchGraphs();
+      await this.fetchIps();
+      await this.fetchCompareGraphs();
+      await this.fetchBbmds();
     },
   },
 }

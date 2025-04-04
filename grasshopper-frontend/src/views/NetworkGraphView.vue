@@ -72,7 +72,6 @@ export default {
     return {
       host: window.location.protocol + '//' + window.location.host,
       refreshInterval: null,
-      // defaultInterval: 3600000,
       defaultInterval: 300000,
       genInterval: 300000,
       loadError: false,
@@ -120,68 +119,6 @@ export default {
         this.runFetchCycle();
       }, interval);
     },
-    async fetchGraphs() {
-      await axios
-        .get(
-          `${this.host}/api/operations/ttl`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setSetupGraphs(response.data.data);
-          this.store.setDeleteGraphs(response.data.data);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchIps() {
-      await axios
-        .get(
-          `${this.host}/api/operations/subnets`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setIpList(response.data.ip_address_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchCompareGraphs() {
-      await axios
-        .get(
-          `${this.host}/api/operations/ttl_compare`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setCompareList(response.data.file_list);
-          this.store.setDeleteCompareGraphs(response.data.file_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchBbmds() {
-      await axios
-        .get(
-          `${this.host}/api/operations/bbmds`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setBbmdList(response.data.ip_address_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
     async fetchQueue() {
       await axios
         .get(
@@ -202,10 +139,6 @@ export default {
     },
     async fetchAll() {
       await Promise.all([
-        this.fetchGraphs(),
-        this.fetchIps(),
-        this.fetchCompareGraphs(),
-        this.fetchBbmds(),
         this.fetchQueue()
       ]);
     },
