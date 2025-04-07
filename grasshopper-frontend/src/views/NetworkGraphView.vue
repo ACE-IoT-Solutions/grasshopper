@@ -1,5 +1,16 @@
 <template>
   <div>
+    <v-alert
+      v-if="loadError"
+      class="error"
+      density="compact"
+      title="Error"
+      type="warning"
+      color="#db5a5e"
+      closable
+      @click:close="loadError = false"
+      >Graph <strong>{{ $route.params.graphName }}</strong> does not exist.
+    </v-alert>
     <NetworkHeader :store="store" />
     <NetworkDiagram :store="store" :key="store.diagramKey" />
     <ControlMenus v-if="store.controlMenu" :store="store"/>
@@ -29,6 +40,11 @@ export default {
       this.fetchConfig();
     },
   },
+  computed: {
+    graphName() {
+      return this.$route.params.graphName;
+    },
+  },
   setup() {
     return {}
   },
@@ -36,13 +52,16 @@ export default {
     this.runFetchCycle();
   },
   mounted() {
-    // this.fetchAll();
-
-    // this.refreshInterval = setInterval(() => {
-    //   this.fetchAll();
-    // }, this.refresh);
-    // this.runFetchCycle();
     this.fetchConfig();
+
+    if (this.$route.params.graphName) {
+      if (this.$route.params.graphName.includes('_vs_')) {
+        this.loadCompare(this.$route.params.graphName);
+      }
+      else {
+        this.goToGraph(this.$route.params.graphName);
+      }
+    }
   },
   beforeUnmount() {
     if (this.refreshInterval) {
@@ -53,87 +72,52 @@ export default {
     return {
       host: window.location.protocol + '//' + window.location.host,
       refreshInterval: null,
-      // defaultInterval: 3600000,
       defaultInterval: 300000,
-      genInterval: 300000
+      genInterval: 300000,
+      loadError: false,
     };
   },
   methods: {
+    async goToGraph(graph) {
+      this.setupLoad = true
+
+      await axios
+        .get(`${this.host}/api/operations/ttl_network/${graph}`, {
+          responseType: 'json',
+        })
+        .then(response => {
+          this.store.setCompareMode(false)
+          this.store.setCurrentGraph(response.data, graph)
+        })
+        .catch(error => {
+          console.log(error)
+          this.loadError = true
+        })
+    },
+    async loadCompare(graph) {
+      this.compareLoad = true
+
+      await axios
+        .get(`${this.host}/api/operations/ttl_compare/${graph}`, {
+          responseType: 'json',
+        })
+        .then(response => {
+          this.store.setCompareMode(true)
+          this.store.setCurrentGraph(response.data, graph)
+        })
+        .catch(error => {
+          console.log(error)
+          this.loadError = true
+        })
+    },
     async runFetchCycle() {
-      // if (this.refreshInterval) {
-      //   clearTimeout(this.refreshInterval);
-      // }
-      
       await this.fetchAll();
       
       const interval = (this.store.currentTask != "None") ? this.genInterval : this.defaultInterval;
-      // console.log(interval);
       
       this.refreshInterval = setTimeout(() => {
         this.runFetchCycle();
       }, interval);
-    },
-    async fetchGraphs() {
-      await axios
-        .get(
-          `${this.host}/api/operations/ttl`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setSetupGraphs(response.data.data);
-          this.store.setDeleteGraphs(response.data.data);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchIps() {
-      await axios
-        .get(
-          `${this.host}/api/operations/subnets`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setIpList(response.data.ip_address_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchCompareGraphs() {
-      await axios
-        .get(
-          `${this.host}/api/operations/ttl_compare`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setCompareList(response.data.file_list);
-          this.store.setDeleteCompareGraphs(response.data.file_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchBbmds() {
-      await axios
-        .get(
-          `${this.host}/api/operations/bbmds`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setBbmdList(response.data.ip_address_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
     },
     async fetchQueue() {
       await axios
@@ -155,10 +139,6 @@ export default {
     },
     async fetchAll() {
       await Promise.all([
-        this.fetchGraphs(),
-        this.fetchIps(),
-        this.fetchCompareGraphs(),
-        this.fetchBbmds(),
         this.fetchQueue()
       ]);
     },
@@ -200,5 +180,13 @@ export default {
   z-index: 999;
   height: 100vh;
   width: 100vw;
+}
+.error {
+  position: absolute;
+  top: 2%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  max-width: 600px;
 }
 </style>
