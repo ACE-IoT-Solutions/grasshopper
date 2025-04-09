@@ -56,11 +56,13 @@ class BVLLServiceElement(ApplicationServiceElement):
     async def confirmation(self, pdu: LPDU):
         if isinstance(pdu, ReadBroadcastDistributionTableAck):
             if self.read_bdt_future.get(pdu.pduSource):
-                self.read_bdt_future.set_result(pdu.bvlciBDT)
+                self.read_bdt_future[pdu.pduSource].set_result(pdu.bvlciBDT)
+                del self.read_bdt_future[pdu.pduSource]
 
         elif isinstance(pdu, ReadForeignDeviceTableAck):
             if self.read_fdt_future.get(pdu.pduSource):
-                self.read_fdt_future.set_result(pdu.bvlciFDT)
+                self.read_fdt_future[pdu.pduSource].set_result(pdu.bvlciFDT)
+                del self.read_fdt_future[pdu.pduSource]
     
     def create_future_request(self, destination: Address, request_class) -> asyncio.Future:
         task = asyncio.ensure_future(
