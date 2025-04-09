@@ -27,7 +27,7 @@ import rdflib
 from typing import Set
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
-from volttron.platform.messaging import STATUS_BAD
+from volttron.platform.messaging.health import STATUS_BAD
 # from volttron.platform.web import Response
 from requests.auth import HTTPDigestAuth, HTTPBasicAuth
 from io import BytesIO
