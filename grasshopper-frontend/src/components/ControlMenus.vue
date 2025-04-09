@@ -1010,11 +1010,37 @@ export default {
           console.log(error);
         });
     },
+    async fetchConfig() {
+      await axios
+        .get(
+          `${this.host}/api/operations/network_config`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+
+          if (response.data.data.length === 0) {
+            this.store.setConfigSelect(false);
+            this.store.setPhysicsConfig(this.store.defaultConfig);
+          } else {
+            this.store.setConfigSelect(true);
+            this.store.setConfigList(response.data.data);
+          }
+          
+        })
+        .catch((error) => {
+          console.log(error);
+        });
+    },
     async refresh() {
-      await this.fetchGraphs();
-      await this.fetchIps();
-      await this.fetchCompareGraphs();
-      await this.fetchBbmds();
+        await Promise.all([
+            this.fetchGraphs(),
+            this.fetchIps(),
+            this.fetchCompareGraphs(),
+            this.fetchBbmds(),
+            this.fetchConfig()
+        ]);
     },
   },
 }
