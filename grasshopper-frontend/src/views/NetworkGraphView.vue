@@ -52,8 +52,6 @@ export default {
     this.runFetchCycle();
   },
   mounted() {
-    this.fetchConfig();
-
     if (this.$route.params.graphName) {
       if (this.$route.params.graphName.includes('_vs_')) {
         this.loadCompare(this.$route.params.graphName);
@@ -141,30 +139,6 @@ export default {
       await Promise.all([
         this.fetchQueue()
       ]);
-    },
-
-    async fetchConfig() {
-      await axios
-        .get(
-          `${this.host}/api/operations/network_config`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-
-          if (response.data.data.length === 0) {
-            this.store.setConfigSelect(false);
-            this.store.setPhysicsConfig(this.store.defaultConfig);
-          } else {
-            this.store.setConfigSelect(true);
-            this.store.setConfigList(response.data.data);
-          }
-          
-        })
-        .catch((error) => {
-          console.log(error);
-        });
     },
   },
 }
