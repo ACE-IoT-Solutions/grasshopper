@@ -558,31 +558,27 @@ export default {
           config = config[data.type];
 
           if (config) {
-            const image = config.image;
-            const mass = config.mass;
-            const strippedLabel = label.replace(prefix, '');
 
             if (data.type == 'BBMD') this.allBbmds.push(label);
 
             return {
               shape: 'image',
-              image: image,
-              label: strippedLabel,
+              image: config.image,
+              label: label.replace(prefix, ''),
               font: { align: 'left', color: "white", background: "none" },
-              mass: mass,
+              mass: config.mass,
+              physics: config.physics,
             };
           }
         } else {
-          const image = config.image;
-          const mass = config.mass;
-          const strippedLabel = label.replace(prefix, '');
 
           return {
             shape: 'image',
-            image: image,
-            label: strippedLabel,
+            image: config.image,
+            label: label.replace(prefix, ''),
             font: { align: 'left', color: "white", background: "none" },
-            mass: mass,
+            mass: config.mass,
+            physics: config.physics,
           };
         }
       }
@@ -595,14 +591,14 @@ export default {
     getNodeConfig(label, data) {
       // define image and mass based on prefix
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router.svg', mass: 2 },
-        'bacnet://network/': { image: '/assets/network.svg', mass: 2 },
+        'bacnet://router/': { image: '/assets/router.svg', mass: 2, physics: true },
+        'bacnet://network/': { image: '/assets/network.svg', mass: 2, physics: true },
         'bacnet://': {
-          'Device': { image: '/assets/device.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd.svg', mass: 4 }
+          'Device': { image: '/assets/device.svg', mass: 1, physics: true },
+          'BBMD': { image: '/assets/bbmd.svg', mass: 4, physics: false }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
-        'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
+        'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2, physics: true },
       };
 
       return this.createNode(label, data, nodeMap);
@@ -610,14 +606,14 @@ export default {
     subtractConfig(label, data) {
       // #DF1219
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router-sub.svg', mass: 2 },
-        'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2 },
+        'bacnet://router/': { image: '/assets/router-sub.svg', mass: 2, physics: true },
+        'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2, physics: true },
         'bacnet://': {
-          'Device': { image: '/assets/device-sub.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4 }
+          'Device': { image: '/assets/device-sub.svg', mass: 1, physics: true },
+          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4, physics: false }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
-        'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
+        'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2, physics: true },
       };
 
       return this.createNode(label, data, nodeMap);
@@ -625,14 +621,14 @@ export default {
     addConfig(label, data) {
       // #14AE5C
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router-add.svg', mass: 2 },
-        'bacnet://network/': { image: '/assets/network-add.svg', mass: 2 },
+        'bacnet://router/': { image: '/assets/router-add.svg', mass: 2, physics: true },
+        'bacnet://network/': { image: '/assets/network-add.svg', mass: 2, physics: true },
         'bacnet://': {
-          'Device': { image: '/assets/device-add.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4 }
+          'Device': { image: '/assets/device-add.svg', mass: 1, physics: true },
+          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4, physics: false }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
-        'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
+        'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2, physics: true },
       };
 
       return this.createNode(label, data, nodeMap);
