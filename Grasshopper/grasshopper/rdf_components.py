@@ -35,8 +35,7 @@ class RouterTypeHandler(BaseTypeHandler):
         device.overwrite_triple(RDF.type, BACnetNS.Router)
 
 class SubnetTypeHandler(BaseTypeHandler):
-    """Handles assigning RDF.type for a Router device."""
-    def set_type(self, device):
+    """Handles assigning RDF.type for a Subnet device."""
         device.overwrite_triple(RDF.type, BACnetNS.Subnet)
 
 class NetworkTypeHandler(BaseTypeHandler):
