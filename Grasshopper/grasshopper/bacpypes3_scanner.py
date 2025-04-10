@@ -76,7 +76,7 @@ class BVLLServiceElement(ApplicationServiceElement):
         task = self.create_future_request(destination, request_class)
         try:
             await asyncio.wait_for(task, timeout)
-            result = asyncio.wait_for(result_future, timeout)
+            result = await asyncio.wait_for(result_future, timeout)
             return result
         except asyncio.TimeoutError:
             _log.error(f"Timeout while waiting for {request_class.__name__} response from {destination}")
@@ -85,15 +85,22 @@ class BVLLServiceElement(ApplicationServiceElement):
             _log.error(f"Error in {request_class.__name__} request: {e}")
             return None
         finally:
-            task.cancel()
+            if not task.done():
+                task.cancel()
+            else:
+                try:
+                    task.exception()
+                except (asyncio.CancelledError, asyncio.InvalidStateError) as e:
+                    _log.error(f"Task was cancelled or invalid state: {task}: {e}")
+            
             if destination in request_registry:
                 del request_registry[destination]
 
     async def read_broadcast_distribution_table(self, address: IPv4Address, timeout=5):
-        return self.create_and_await_request(address, ReadBroadcastDistributionTable, self.read_bdt_future, timeout)
+        return await self.create_and_await_request(address, ReadBroadcastDistributionTable, self.read_bdt_future, timeout)
 
     async def read_foreign_device_table(self, address: IPv4Address, timeout=5):
-        return self.create_and_await_request(address, ReadForeignDeviceTable, self.read_fdt_future, timeout)
+        return await self.create_and_await_request(address, ReadForeignDeviceTable, self.read_fdt_future, timeout)
 
 class bacpypes3_scanner:
     def __init__(self, bacpypes_settings: dict, prev_graph: Graph, bbmds: List[str], subnets: List[str], 
@@ -370,12 +377,9 @@ class bacpypes3_scanner:
                         bdt_entry_bbmd:BACnetNode = self.scanned_ipaddress_bbmd[bdt_entry]
                         bbmd.add_component_properties(device_iri = bdt_entry_bbmd.node_iri)
         except Exception as e:
+            _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
             _log.error(f"Error in setting BDT: {e}")
 
         _log.debug(f"scanned_bbmds_bdt: {self.scanned_bbmds_bdt}")
         _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
         _log.debug("set_subnet_network Completed")
-
-        
-
-    
