@@ -23,25 +23,19 @@ import ipaddress
 import signal
 import re
 import traceback
+import rdflib
+from typing import Set
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
+from volttron.platform.messaging.health import STATUS_BAD
 # from volttron.platform.web import Response
-import grequests
 from requests.auth import HTTPDigestAuth, HTTPBasicAuth
 from io import BytesIO
 from datetime import datetime
 from volttron.platform.messaging import headers as header_mod
 from volttron.platform.agent import utils
 
-
-from bacpypes3.debugging import bacpypes_debugging, ModuleLogger
-
-from bacpypes3.pdu import Address
-from bacpypes3.primitivedata import ObjectIdentifier
-from bacpypes3.basetypes import PropertyIdentifier
-from bacpypes3.apdu import AbortReason, AbortPDU, ErrorRejectAbortNack
-from bacpypes3.app import Application
-from bacpypes3.vendor import get_vendor_info, VendorInfo
+from bacpypes3.vendor import VendorInfo
 from bacpypes3.local.networkport import NetworkPortObject
 
 from rdflib import Graph, Namespace, RDF, Literal  # type: ignore
@@ -50,16 +44,15 @@ from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph, rdflib
 from rdflib.namespace import RDFS
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 
-import networkx as nx
-from pyvis.network import Network
-
 from gevent.pywsgi import WSGIServer
 from gevent.ssl import SSLContext, PROTOCOL_TLS_SERVER
 from flask import request
-from flask_restx import Namespace, Resource, fields
-from grasshopper.app import create_app
+from flask_restx import Resource
+
+from grasshopper.flask_app import create_app
 from grasshopper.api import executor
 from grasshopper.serializers import ip_address, ip_address_list
+from grasshopper.bacpypes3_scanner import bacpypes3_scanner
 
 
 _log = logging.getLogger(__name__)
@@ -228,15 +221,6 @@ class Grasshopper(Agent):
         """
         _log.error(f"grequests error: {exception} with {request}")
 
-    def overwrite_triple(self, graph, subject, predicate, new_object):
-        """
-        Overwrite existing triples if triple is not one of reserved
-        """
-        if 'device-on-network' not in predicate and 'router-to-network' not in predicate:
-            for triple in graph.triples((subject, predicate, None)):
-                graph.remove(triple)
-
-        graph.add((subject, predicate, new_object))
 
     def config_store_bbmd_devices(self, bbmd_devices: list):
         """
@@ -291,152 +275,15 @@ class Grasshopper(Agent):
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("subnets", [])
-
-    async def set_application(self, bacpypes_settings):
+    
+    def run_async_function(self, func, graph):
         """
-        Set the application address for the BACnet analysis
+        Run a function asynchronously
         """
-        app_settings = argparse.Namespace(**bacpypes_settings)
-        _log.debug(f"Application config: {app_settings}")
-        return Application.from_args(app_settings)
-
-    async def get_router_networks(self, app, graph, interfaces):
-        """
-        Get the router to network information from the network for the graph.
-        Who_is_router_to_network is called based on individual networks found existing in the graph from device broadcast to prevent overloading the system.
-        Valid network ranges go from 1 to 65,534
-        """
-        _log.debug("get_router_networks")
-        for i in range(0, 65535):
-            gevent.sleep(0)
-            _log.debug(f"Currently Processing network {i}")
-            if any(graph.triples((None, BACnetNS["router-to-network"], BACnetURI["//network/"+str(i)]))):
-                routers = await app.nse.who_is_router_to_network(network=i)
-                for adapter, i_am_router_to_network in routers:
-                    _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
-                    self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], RDF.type, BACnetNS.Router)
-                    for net in i_am_router_to_network.iartnNetworkList:
-                        self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], BACnetNS["router-to-network"],
-                            BACnetURI["//network/"+str(net)])
-
-                    ip = ipaddress.ip_address(i_am_router_to_network.pduSource)
-                    not_in_network = True
-                    for interface in interfaces:
-                        if ip in interface.network:
-                            not_in_network = False
-                            self.overwrite_triple(graph, BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], 
-                                BACnetNS["device-on-network"], BACnetURI["//subnet/"+str(interface.network)])
-                    if not_in_network:
-                        self.overwrite_triple(graph, BACnetURI["//Grasshopper"], BACnetNS["router-to-network"], 
-                            BACnetURI["//router/"+str(i_am_router_to_network.pduSource)])
-                
-        _log.debug("get_router_networks Completed")
-                
-    async def get_device_objects(self, app, graph, interfaces):
-        """
-        Get the device objects from the network for the graph
-        """
-        _log.debug("get_device_objects")
-
-        def get_known_device_end_range(graph, start_pos):
-            """Checks number of existing networks and send who_is to potential devices in the network limited by stepsize"""
-            current_pos = start_pos
-            end_pos = current_pos + self.device_broadcast_empty_step_size
-            track_routers = 0
-            while current_pos < end_pos:
-                if any(graph.triples((BACnetURI["//" + str(current_pos)], None, None))):
-                    track_routers += 1
-                if track_routers >= self.device_broadcast_full_step_size:
-                    return current_pos
-                current_pos += 1
-            return end_pos
-
-        bbmd_device_id_of_networks = {}
-        devices_in_network = {}
-        bbmd_ips = []
-        bbmds = self.config_retrieve_bbmd_devices()
-
-        for bbmd in bbmds:
-            try:
-                bbmd_ips.append(ipaddress.ip_address(bbmd))
-            except ValueError as ve:
-                _log.error(f"Invalid bbmd ip: {ve}")
-
-        for interface in interfaces:
-            bbmd_device_id_of_networks[interface.ip] = None
-            devices_in_network[interface.ip] = []
-
-        track_lower = self.low_limit
-        while track_lower <= self.high_limit:
-            gevent.sleep(0.1)
-            _log.debug(f"Currently Processing devices at {track_lower}")
-            track_upper = get_known_device_end_range(graph, track_lower)
-            if track_upper > self.high_limit:
-                track_upper = self.high_limit
-            i_ams = await app.who_is(track_lower, track_upper)
-            for i_am in i_ams:
-                device_address: Address = i_am.pduSource
-                device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
-                device_iri = BACnetURI["//" + str(device_identifier[1])]
-                try:
-                    ip = ipaddress.ip_address(device_address)
-                    not_in_network = True
-                    for interface in interfaces:
-                        if ip in interface.network:
-                            not_in_network = False
-                            if ip in bbmd_ips:
-                                bbmd_device_id_of_networks[interface.ip] = device_iri
-                            else:
-                                self.overwrite_triple(graph, device_iri, RDF.type, BACnetNS.Device)
-                            self.overwrite_triple(graph, device_iri, BACnetNS["device-on-network"], BACnetURI["//subnet/"+str(interface.network)])
-                            self.overwrite_triple(graph, device_iri, BACnetNS["device-instance"], Literal(device_identifier[1]))
-                            self.overwrite_triple(graph, device_iri, BACnetNS["device-address"], Literal(str(device_address)))
-                            self.overwrite_triple(graph, device_iri, BACnetNS["vendor-id"], BACnetURI["//vendor/"+str(i_am.vendorID)])
-
-                    if not_in_network:
-                        raise ValueError("Device not in network")
-
-                except ValueError:
-                    self.overwrite_triple(graph, device_iri, RDF.type, BACnetNS.Device)
-                    self.overwrite_triple(graph, device_iri, BACnetNS["device-on-network"], BACnetURI["//network/"+str(device_address.addrNet)])
-                    self.overwrite_triple(graph, device_iri, BACnetNS["device-instance"], Literal(device_identifier[1]))
-                    self.overwrite_triple(graph, device_iri, BACnetNS["device-address"], Literal(str(device_address)))
-                    self.overwrite_triple(graph, device_iri, BACnetNS["vendor-id"], BACnetURI["//vendor/"+str(i_am.vendorID)])
-                
-            track_lower = track_upper + 1
-        _log.debug(f"size of devices_in_network: {len(devices_in_network)} vs network {len(interfaces)}")
-        for interface in interfaces:
-            if bbmd_device_id_of_networks[interface.ip]:
-                self.overwrite_triple(graph, bbmd_device_id_of_networks[interface.ip], RDF.type, BACnetNS.BBMD)
-                self.overwrite_triple(graph, bbmd_device_id_of_networks[interface.ip], BACnetNS["device-on-network"], BACnetURI["//subnet/"+str(interface.network)])
-                self.overwrite_triple(graph, BACnetURI['//Grasshopper'], BACnetNS["device-on-network"], bbmd_device_id_of_networks[interface.ip])
-            else:
-                self.overwrite_triple(graph, BACnetURI['//Grasshopper'], BACnetNS["device-on-network"], BACnetURI["//subnet/"+str(interface.network)])
-            self.overwrite_triple(graph, BACnetURI["//subnet/"+str(interface.network)], RDF.type, BACnetNS.Subnet)
-
-        _log.debug("get_device_objects Completed")
-
-    async def get_device_and_router(self, graph):
-        _log.debug("Running Async for Who Is and Router to network")
-        settings = self.bacpypes_settings.copy()
-        cidrs = self.config_retrieve_subnets()
-        interfaces = []
-        for cidr in cidrs:
-            interfaces.append(ipaddress.ip_interface(cidr))
-        settings['bbmd'] = cidrs
-        app = await self.set_application(settings)
-        self.overwrite_triple(graph, BACnetURI["//Grasshopper"], BACnetNS["address"], BACnetURI[self.bacpypes_settings['address']])
-        self.overwrite_triple(graph, BACnetURI["//Grasshopper"], BACnetNS["vendoridentifier"], BACnetURI[self.bacpypes_settings['vendoridentifier']])
-        self.overwrite_triple(graph, BACnetURI["//Grasshopper"], BACnetNS["name"], BACnetURI[self.bacpypes_settings['name']])
-        await self.get_device_objects(app, graph, interfaces)
-        await self.get_router_networks(app, graph, interfaces)
-        app.close()
-
-    def start_get_device_and_router(self, graph):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(self.get_device_and_router(graph))
+            loop.run_until_complete(func(graph))
         finally:
             loop.close()
 
@@ -447,11 +294,11 @@ class Grasshopper(Agent):
         _log.debug("who_is_broadcast")
 
         def extract_datetime(filename):
-            datetime_str = filename.split("_")[-1].replace(".ttl", "")
+            datetime_str = filename.replace(".ttl", "")
             return datetime.fromisoformat(datetime_str)
         
         def is_valid_filename(filename):
-            pattern = r"^bacnet_graph_\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}\.ttl$"
+            pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.ttl$"
             return re.match(pattern, filename)
         
         def find_latest_file(directory):
@@ -468,19 +315,25 @@ class Grasshopper(Agent):
             base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
             recent_ttl_file = find_latest_file(os.path.join(self.agent_data_path, "ttl"))
 
+            prev_graph = Graph()
             graph = Graph()
 
             if os.path.exists(base_rdf_path):
                 graph.parse(base_rdf_path, format='ttl')
             
             if recent_ttl_file:
-                graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
+                prev_graph.parse(os.path.join(self.agent_data_path, f"ttl/{recent_ttl_file}"), format='ttl')
 
             now = datetime.now()
 
-            gevent.spawn(self.start_get_device_and_router(graph))
+            bbmds = self.config_retrieve_bbmd_devices()
+            subnets = self.config_retrieve_subnets()
+            scanner = bacpypes3_scanner(self.bacpypes_settings, prev_graph, bbmds, subnets,
+                self.device_broadcast_empty_step_size, self.device_broadcast_full_step_size,
+                self.low_limit, self.high_limit)
+            gevent.spawn(self.run_async_function(scanner.get_device_and_router, graph))
             
-            rdf_path = os.path.join(self.agent_data_path, f"ttl/bacnet_graph_{now}.ttl")
+            rdf_path = os.path.join(self.agent_data_path, f"ttl/{now.replace(microsecond=0).isoformat()}.ttl")
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
         except Exception as e:
