@@ -601,7 +601,7 @@ export default {
           'Device': { image: '/assets/device.svg', mass: 1 },
           'BBMD': { image: '/assets/bbmd.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
       };
 
@@ -616,7 +616,7 @@ export default {
           'Device': { image: '/assets/device-sub.svg', mass: 1 },
           'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2 },
       };
 
@@ -631,7 +631,7 @@ export default {
           'Device': { image: '/assets/device-add.svg', mass: 1 },
           'BBMD': { image: '/assets/bbmd-add.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2 },
       };
 
