@@ -1,6 +1,6 @@
 # Grasshopper
 
-![Grasshopper Logo](https://github.com/ACE-IoT-Solutions/grasshopper/blob/main/grasshopper.svg?raw=true)
+![Grasshopper Logo](https://github.com/ACE-IoT-Solutions/grasshopper/blob/main/grasshopper-drk-bg.svg?raw=true)
 
 ## Description
 
