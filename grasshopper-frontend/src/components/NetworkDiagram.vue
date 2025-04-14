@@ -584,6 +584,7 @@ export default {
       }
       return {
         shape: 'dot',
+        color: "white",
         label: label,
         font: { align: 'left', color: "white", background: "none" },
       };
@@ -595,7 +596,7 @@ export default {
         'bacnet://network/': { image: '/assets/network.svg', mass: 2, physics: true },
         'bacnet://': {
           'Device': { image: '/assets/device.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd.svg', mass: 4, physics: false }
+          'BBMD': { image: '/assets/bbmd.svg', mass: 5, physics: true }
         },
         'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
         'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2, physics: true },
@@ -610,7 +611,7 @@ export default {
         'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2, physics: true },
         'bacnet://': {
           'Device': { image: '/assets/device-sub.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4, physics: false }
+          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4, physics: true }
         },
         'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
         'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2, physics: true },
@@ -625,7 +626,7 @@ export default {
         'bacnet://network/': { image: '/assets/network-add.svg', mass: 2, physics: true },
         'bacnet://': {
           'Device': { image: '/assets/device-add.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4, physics: false }
+          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4, physics: true }
         },
         'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
         'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2, physics: true },
@@ -775,7 +776,7 @@ export default {
             node.data["http://data.ashrae.org/bacnet/2020#rdf_diff_source"] || null;
         });
       }
-
+      
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
@@ -788,6 +789,14 @@ export default {
             : {}),
         })),
       };
+
+      // bbmd-broadcast-domain bbmd->subnet
+      // bacnet-router-on-subnet bacnet-router->subnet
+      // device-on-subnet device->subnet
+      // device-on-network device->bacnet-network (this can be an MSTP network id, or a a bacnet global network ID on a ip subnet, by default 1 on IP) it should be hidden by default for IP devices
+      // router-for-subnet ip-router->subnet (this is a new device class that we haven't implemented yet)
+      // bdt-entry bbmd->bbmd
+      // fdr-entry bbmd->device
 
       const options = {
         "configure": {
@@ -831,10 +840,6 @@ export default {
 
 
       this.network.on("stabilizationIterationsDone", () => {
-        // console.log(this.store.physicsConfig.enabled);
-
-        // this.network.options.physics.enabled = this.store.physicsConfig.enabled;
-        
         this.loaded = true;
       });
 
