@@ -16,6 +16,8 @@
     <ControlMenus v-if="store.controlMenu" :store="store"/>
     <CompareLoad v-if="store.compareLoad && store.currentTask != null" :store="store" />
     <div v-if="store.controlMenu" class="overlay"></div>
+    <LegendMenu v-if="store.legendEnabled" :store="store" />
+    <!-- <LegendMenu /> -->
   </div>
 </template>
 
@@ -25,6 +27,7 @@ import NetworkDiagram from '@/components/NetworkDiagram.vue';
 import ControlMenus from '../components/ControlMenus.vue';
 import axios from 'axios';
 import CompareLoad from '../components/CompareLoad.vue';
+import LegendMenu from '../components/LegendMenu.vue';
 export default {
   props: ["store"],
   components: {
@@ -32,6 +35,7 @@ export default {
     NetworkHeader,
     ControlMenus,
     CompareLoad,
+    LegendMenu,
   },
   watch: {
     // eslint-disable-next-line no-unused-vars
