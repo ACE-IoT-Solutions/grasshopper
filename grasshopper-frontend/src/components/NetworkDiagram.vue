@@ -795,8 +795,6 @@ export default {
             node.data["http://data.ashrae.org/bacnet/2020#rdf_diff_source"] || null;
         });
       }
-
-      console.log(this.onBbmds);
       
       const data = {
         nodes: this.nodes.map(node => ({
