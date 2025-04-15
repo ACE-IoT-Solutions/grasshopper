@@ -205,6 +205,7 @@ export default {
       loaded: false,
 
       allBbmds: [],
+      onBbmds: [],
       
       selectedNetwork: null,
       networkVisibility: {},
@@ -549,6 +550,8 @@ export default {
     createNode(label, data, nodeMap) {
       const sortedPrefixes = Object.keys(nodeMap).sort((a, b) => b.length - a.length);
       const prefix = sortedPrefixes.find(prefix => label.startsWith(prefix));
+      const bbmdOn = '/assets/bbmd-on.svg';
+      const bbmdOff = '/assets/bbmd-off.svg';
       
       if (prefix) {
         let config = nodeMap[prefix];
@@ -563,7 +566,11 @@ export default {
 
             return {
               shape: 'image',
-              image: config.image,
+              image: data.type == 'BBMD' ? 
+                this.onBbmds.includes(data.label) ?
+                  bbmdOn :
+                  bbmdOff :
+                  config.image,
               label: label.replace(prefix, ''),
               font: { align: 'left', color: "white", background: "none" },
               mass: config.mass,
@@ -596,7 +603,7 @@ export default {
         'bacnet://network/': { image: '/assets/network.svg', mass: 2, physics: true },
         'bacnet://': {
           'Device': { image: '/assets/device.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd.svg', mass: 5, physics: true }
+          'BBMD': { image: '/assets/bbmd-on.svg', mass: 5, physics: true }
         },
         'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
         'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2, physics: true },
@@ -756,9 +763,21 @@ export default {
       this.highlightedNodeId = null;
       this.highlightedNodeOriginalStyle = null;
     },
+    processEdges() {
+
+      return this.edges.filter(edge => {
+        if (edge.from === edge.to) {
+          this.onBbmds.push(edge.from);
+          return false;
+        }
+        return true;
+      });
+    },
     generate() {
       const container = this.$refs.networkContainer;
       const configContainer = this.$refs.configMenu.$refs.config;
+
+      const processedEdges = this.processEdges();
 
       let file1;
       let file2;
@@ -776,13 +795,15 @@ export default {
             node.data["http://data.ashrae.org/bacnet/2020#rdf_diff_source"] || null;
         });
       }
+
+      console.log(this.onBbmds);
       
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
           ...(this.store.compareMode ? this.getCompareConfig(node.id, node.data, file1, file2) : this.getNodeConfig(node.id, node.data)),
         })),
-        edges: this.edges.map((edge) => ({
+        edges: processedEdges.map((edge) => ({
           ...edge,
           ...(this.store.compareMode
             ? this.getCompareEdgeColor(edge.data, file1, file2)
