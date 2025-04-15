@@ -20,6 +20,7 @@ from flask_restx import Namespace, Resource, fields
 from .restplus import api
 from .serializers import file_list, compare_ttl_files
 from .parser import file_upload_parser
+from .rdf_components import BACnetEdgeType
 import csv
 from io import StringIO, BytesIO
 
@@ -121,7 +122,7 @@ def build_networkx_graph(g):
             edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
             if 'rdf_diff_source' in edge_label:
                 rdf_diff_list.append((u,v,edge_label))
-            elif 'device-on-network' not in edge_label and 'router-to-network' not in edge_label:
+            elif all(edge.value not in edge_label for edge in BACnetEdgeType):
                 label = edge_label.split('#')[-1]
                 val = str(v).split('#')[-1]
                 if str(u) in node_data:
