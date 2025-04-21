@@ -201,7 +201,7 @@ def get_file_path(file_name: str, request: Request, folder: str = 'ttl') -> Opti
 
     return None
 
-def list_files_in_dir(request, folder: str = 'ttl') -> List[str]:
+def list_files_in_dir(request: Request, folder: str = 'ttl') -> List[str]:
     """List files in the specified directory"""
     agent_data_path = get_agent_data_path(request) 
     folder_path = os.path.join(agent_data_path, folder)
@@ -229,7 +229,7 @@ async def get_ttl_list(request: Request):
 
 
 @api_router.post('/ttl', status_code=status.HTTP_201_CREATED, response_model=Union[FileUploadResponse, ErrorResponse])
-async def upload_ttl_file(request, file: UploadFile = File(...)):
+async def upload_ttl_file(request: Request, file: UploadFile = File(...)):
     """Upload ttl file"""
     ALLOWED_EXTENSIONS = {'ttl'}
 
@@ -488,9 +488,9 @@ async def download_network_config(network_config_filename: str, request: Request
 
 
 @api_router.delete('/network_config/{network_config_filename}', response_model=MessageResponse)
-async def delete_network_config(request, network_config_filename: str):
+async def delete_network_config(network_config_filename: str, request: Request):
     """Delete network config json file"""
-    network_config_filepath = get_file_path(network_config_filename, request, 'network_config')
+    network_config_filepath = get_file_path(network_config_filename, request, folder='network_config')
     if not network_config_filepath:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
