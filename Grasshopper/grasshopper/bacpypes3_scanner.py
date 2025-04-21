@@ -32,15 +32,12 @@ from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph, rdflib
 from rdflib.namespace import RDFS
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 from .rdf_components import (
-    DeviceTypeHandler,
-    BBMDTypeHandler,
-    RouterTypeHandler,
-    SubnetTypeHandler,
-    NetworkTypeHandler,
-    SubnetComponent,
-    NetworkComponent,
-    BACnetNode,
-    AttachDeviceComponent,
+    BBMDNode,
+    DeviceNode,
+    RouterNode,
+    SubnetNode,
+    NetworkNode,
+    BACnetNode
 )
 
 from volttron.platform.agent import utils
@@ -117,7 +114,7 @@ class bacpypes3_scanner:
         self.subnets = [ipaddress.ip_network(subnet, strict = False) for subnet in subnets]
         self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
         self.device_broadcast_full_step_size = device_broadcast_full_step_size
-        self.scanner_node: Union[None,BACnetNode] = None
+        self.scanner_node: Union[None,DeviceNode] = None
         self.low_limit = scan_low_limit
         self.high_limit = scan_high_limit
         self.bbmd_in_subnet = {}
@@ -178,8 +175,8 @@ class bacpypes3_scanner:
         Set the scanner node in the graph
         """
         _log.debug("bacpypes3_scanner: set_scanner_node")
-        scanner_node = BACnetNode(graph, BACnetURI["//Grasshopper"], DeviceTypeHandler(), [AttachDeviceComponent(), SubnetComponent()])
-        scanner_node.add_common_properties(
+        scanner_node = DeviceNode(graph, BACnetURI["//Grasshopper"])
+        scanner_node.add_properties(
             label=BACnetURI[self.bacpypes_settings['name']],
             device_identifier=BACnetURI[self.bacpypes_settings['instance']],
             device_address=BACnetURI[self.bacpypes_settings['address']],
@@ -220,18 +217,18 @@ class bacpypes3_scanner:
                 _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
                 router_pdu_source = i_am_router_to_network.pduSource
                 router_iri = BACnetURI["//router/"+str(router_pdu_source)]
-                router_node = BACnetNode(graph, router_iri, RouterTypeHandler(), [SubnetComponent(), NetworkComponent()])
+                router_node = RouterNode(graph, router_iri)
                 for net in i_am_router_to_network.iartnNetworkList:
-                    router_node.add_component_properties(network_id=net)
+                    router_node.add_properties(network_id=net)
 
                 ip = ipaddress.ip_address(router_pdu_source)
                 not_in_network = True
                 for subnet in self.subnets:
                     if ip in subnet:
                         not_in_network = False
-                        router_node.add_component_properties(subnet=subnet)
+                        router_node.add_properties(subnet=subnet)
                 if not_in_network:
-                    self.scanner_node.add_component_properties(device_iri = router_iri)
+                    self.scanner_node.add_properties(device_iri = router_iri)
                 
         _log.debug("get_router_networks Completed")
 
@@ -270,12 +267,12 @@ class bacpypes3_scanner:
         for subnet in self.subnets:
             if ip in subnet:
                 device_subnet = subnet
-                device.add_component_properties(subnet=subnet)
+                device.add_properties(subnet=subnet)
                 break
         
         if not device_subnet:
             device_subnet = ipaddress.ip_network(f"{ip}/24", strict=False)
-            device.add_component_properties(subnet=device_subnet)
+            device.add_properties(subnet=device_subnet)
             self.subnets.append(device_subnet)
 
         return device_subnet
@@ -325,11 +322,11 @@ class bacpypes3_scanner:
                     
                     # Check if device is a BBMD
                     if await self.check_if_device_is_bbmd(ase, device_address) or ip in self.bbmds:
-                        device = BACnetNode(graph, device_iri, BBMDTypeHandler(), [SubnetComponent(), AttachDeviceComponent()])
+                        device = BBMDNode(graph, device_iri)
                     else:
-                        device = BACnetNode(graph, device_iri, DeviceTypeHandler(), [SubnetComponent()])
+                        device = DeviceNode(graph, device_iri)
                     
-                    device.add_common_properties(
+                    device.add_properties(
                         label=device_iri,
                         device_identifier=device_identifier[1],
                         device_address=device_address,
@@ -338,23 +335,22 @@ class bacpypes3_scanner:
 
                     device_subnet = await self.add_subnet_to_device(device, device_address)
 
-                    if isinstance(device.device.type_handler, BBMDTypeHandler):
+                    if isinstance(device, BBMDNode):
                         self.bbmd_in_subnet[device_subnet] = device_iri
                         self.scanned_bbmds.append(device)
                         self.scanned_ipaddress_bbmd[ip] = device
 
                 except ValueError:
-                    device = BACnetNode(graph, device_iri, DeviceTypeHandler(), [NetworkComponent()])
-                    device.add_common_properties(
+                    device = DeviceNode(graph, device_iri)
+                    device.add_properties(
                         label=device_iri,
                         device_identifier=device_identifier[1],
                         device_address=device_address,
-                        vendor_id=i_am.vendorID
+                        vendor_id=i_am.vendorID,
+                        network_id = device_address.addrNet
                     )
-                    device.add_component_properties(network_id = device_address.addrNet)
                     self.scanned_networks.add(device_address.addrNet)
 
-                
             track_lower = track_upper + 1
         _log.debug("get_device_objects Completed")
 
@@ -364,18 +360,18 @@ class bacpypes3_scanner:
         """
         _log.debug("bacpypes3_scanner: set_subnet_network")
         for subnet in self.subnets:
-            BACnetNode(graph, BACnetURI["//subnet/"+str(subnet)], SubnetTypeHandler(), [AttachDeviceComponent()])
+            SubnetNode(graph, BACnetURI["//subnet/"+str(subnet)])
 
         for net in self.scanned_networks:
-            BACnetNode(graph, BACnetURI["//network/"+str(net)], NetworkTypeHandler(), [AttachDeviceComponent()])
+            NetworkNode(graph, BACnetURI["//network/"+str(net)])
 
         try:
             for bbmd_ipaddress, bdt in self.scanned_bbmds_bdt.items():
-                bbmd:BACnetNode = self.scanned_ipaddress_bbmd[bbmd_ipaddress]
+                bbmd:BBMDNode = self.scanned_ipaddress_bbmd[bbmd_ipaddress]
                 for bdt_entry in bdt:
                     if bdt_entry in self.scanned_ipaddress_bbmd:
-                        bdt_entry_bbmd:BACnetNode = self.scanned_ipaddress_bbmd[bdt_entry]
-                        bbmd.add_component_properties(device_iri = bdt_entry_bbmd.node_iri)
+                        bdt_entry_bbmd:BBMDNode = self.scanned_ipaddress_bbmd[bdt_entry]
+                        bbmd.add_properties(device_iri = bdt_entry_bbmd.node_iri)
         except Exception as e:
             _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
             _log.error(f"Error in setting BDT: {e}")

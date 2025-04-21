@@ -3,12 +3,21 @@ This module contains the base class for all devices in the RDF graph.
 Uses composition for building devices
 """
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import List
 from rdflib import Graph, Namespace, RDF, Literal, URIRef  # type: ignore
 from rdflib.namespace import RDFS
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 
-
+class BACnetEdgeType(Enum):
+    """Enum for BACnet edge types."""
+    BBMD_BROADCAST_DOMAIN = "bbmd-broadcast-domain" # bbmd->subnet
+    BACNET_ROUTER_ON_SUBNET = "bacnet-router-on-subnet" # bacnet-router->subnet 
+    DEVICE_ON_SUBNET = "device-on-subnet" # device->subnet
+    DEVICE_ON_NETWORK = "device-on-network" # device->bacnet-network (this can be an MSTP network id, or a a bacnet global network ID on a ip subnet, by default 1 on IP) it should be hidden by default for IP devices
+    ROUTER_FOR_SUBNET = "router-for-subnet" # ip-router->subnet (this is a new device class that we haven't implemented yet)
+    BDT_ENTRY = "bdt-entry" # bbmd->bbmd
+    FDR_ENTRY = "fdr-entry" # bbmd->device
 
 class BaseTypeHandler(ABC):
     """Abstract base class for BACnet device type handlers."""
@@ -66,9 +75,25 @@ class BaseNode:
         if self.type_handler:
             self.type_handler.set_type(self)
 
+    def add_properties(self, label:str = None, **kwargs)->None:
+        """Add properties to the node."""
+        if label:
+            self.overwrite_triple(RDFS.label, Literal(label))
+
+class SubnetNode(BaseNode):
+    """A BACnet subnet node that can include network, or additional behavior via composition."""
+    def __init__(self, graph, node_iri):
+        super().__init__(graph, node_iri, SubnetTypeHandler())
+
+class NetworkNode(BaseNode):
+    """A BACnet network node that can include subnet, or additional behavior via composition."""
+    def __init__(self, graph, node_iri):
+        super().__init__(graph, node_iri, NetworkTypeHandler())
 
 class BaseBACnetComponent(ABC):
     """Abstract base class for BACnet device components."""
+    def __init__(self, edge_type: BACnetEdgeType):
+        self.edge_type = edge_type
 
     @abstractmethod
     def add_properties(self, device: BaseNode, **kwargs):
@@ -82,7 +107,7 @@ class SubnetComponent(BaseBACnetComponent):
         subnet = kwargs.get("subnet")
         if subnet:
             device.overwrite_triple(
-                BACnetNS["device-on-network"],
+                BACnetNS[self.edge_type.value],
                 BACnetURI["//subnet/" + str(subnet)]
             )
 
@@ -92,7 +117,7 @@ class NetworkComponent(BaseBACnetComponent):
         network_id = kwargs.get("network_id")
         if network_id:
             device.overwrite_triple(
-                BACnetNS["device-on-network"],
+                BACnetNS[self.edge_type.value],
                 BACnetURI["//network/" + str(network_id)]
             )
 
@@ -102,7 +127,7 @@ class AttachDeviceComponent(BaseBACnetComponent):
         device_iri = kwargs.get("device_iri")
         if device_iri:
             device.overwrite_triple(
-                BACnetNS["device-on-network"],
+                BACnetNS[self.edge_type.value],
                 device_iri
             )
 
@@ -115,10 +140,9 @@ class BACnetNode(BaseNode):
         self.device = BaseNode(graph, device_iri, type_handler)
         self.components = components or []
 
-    def add_common_properties(self, label:str=None, device_identifier:str=None, device_address:str=None, vendor_id:int=None)->None:
-        """Add properties common to all devices. Used if the Bacnet nodes is a device."""
-        if label:
-            self.overwrite_triple(RDFS.label, Literal(label))
+    def add_properties(self, label:str=None, device_identifier:str=None, device_address:str=None, vendor_id:int=None, **kwargs)->None:
+        """Add properties common to all devices."""
+        super().add_properties(label=label, **kwargs)
         if device_identifier:
             self.overwrite_triple(BACnetNS["device-instance"], Literal(device_identifier))
         if device_address:
@@ -126,9 +150,39 @@ class BACnetNode(BaseNode):
         if vendor_id:
             self.overwrite_triple(BACnetNS["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)])
 
-    def add_component_properties(self, **kwargs):
-        """Delegates property addition to components. Good for everything"""
         for component in self.components:
             component.add_properties(self.device, **kwargs)
 
+            
+class BBMDNode(BACnetNode):
+    """A BBMD node that can include subnet, network, or additional behavior via composition."""
+    def __init__(self, graph, device_iri):
+        components = [
+            AttachDeviceComponent(BACnetEdgeType.BDT_ENTRY),
+            # AttachDeviceComponent(BACnetEdgeType.FDR_ENTRY),
+            # NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.BBMD_BROADCAST_DOMAIN)
+        ]
+        super().__init__(graph, device_iri, BBMDTypeHandler(), components)
     
+
+class DeviceNode(BACnetNode):
+    """A standard BACnet device node that can include subnet, network, or additional behavior via composition."""
+    def __init__(self, graph, device_iri):
+        components = [
+            NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET)
+        ]
+        super().__init__(graph, device_iri, DeviceTypeHandler(), components)
+
+
+class RouterNode(BACnetNode):
+    """A BACnet router node that can include subnet, network, or additional behavior via composition."""
+    def __init__(self, graph, device_iri):
+        components = [
+            NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET)
+        ]
+        super().__init__(graph, device_iri, RouterTypeHandler(), components)
+
+

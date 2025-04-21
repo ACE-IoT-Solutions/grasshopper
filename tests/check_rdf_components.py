@@ -3,7 +3,14 @@ from rdflib import Graph, Literal, RDF
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 
 from typing import Set
-from Grasshopper.grasshopper.rdf_components import BACnetNode, DeviceTypeHandler, SubnetTypeHandler, NetworkTypeHandler, AttachDeviceComponent, NetworkComponent, SubnetComponent
+import os
+import sys
+
+# Add the parent directory (A) to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+print("Current working directory:", os.getcwd())
+from Grasshopper.grasshopper.rdf_components import DeviceNode, BBMDNode, RouterNode, BACnetNode, SubnetNode, NetworkNode
 
 def get_networks_from_graph(g: Graph) -> Set[int]:
     """Return a set of network numbers from the graph"""
@@ -14,30 +21,28 @@ def get_networks_from_graph(g: Graph) -> Set[int]:
 
 
 graph = Graph()
-
-scanner_node = BACnetNode(graph, BACnetURI["//Grasshopper"], DeviceTypeHandler(), [AttachDeviceComponent(), NetworkComponent(), SubnetComponent()])
-scanner_node.add_common_properties(
+graph.bind('bacnet', BACnetNS)
+scanner_node = DeviceNode(graph, BACnetURI["//Grasshopper"])
+scanner_node.add_properties(
     label="Grasshopper",
     device_identifier=123,
     device_address='123.123.123.123',
     vendor_id='999'
 )
 
-subnet = BACnetNode(graph, BACnetURI["//subnet/1"], SubnetTypeHandler())
-subnet.add_common_properties(
+subnet = SubnetNode(graph, BACnetURI["//subnet/1"])
+subnet.add_properties(
     label="Subnet 1",
 )
 
-network = BACnetNode(graph, BACnetURI["//network/1"], NetworkTypeHandler())
-network.add_common_properties(
+network = NetworkNode(graph, BACnetURI["//network/1"])
+network.add_properties(
     label="Network 1",
 )
 
 
-scanner_node.add_component_properties(
+scanner_node.add_properties(
     subnet=1
 )
-
-print(isinstance(scanner_node.device.type_handler, DeviceTypeHandler))
 
 print(graph.serialize(format='turtle'))
