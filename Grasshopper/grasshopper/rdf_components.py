@@ -7,7 +7,7 @@ from enum import Enum
 from typing import List
 from rdflib import Graph, Namespace, RDF, Literal, URIRef  # type: ignore
 from rdflib.namespace import RDFS
-from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
+from bacpypes3.rdf.core import BACnetNS, BACnetURI
 
 class BACnetEdgeType(Enum):
     """Enum for BACnet edge types."""

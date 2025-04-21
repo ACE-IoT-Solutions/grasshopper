@@ -1,24 +1,7 @@
-from flask import (
-    Flask, redirect, url_for, make_response,
-    render_template, send_from_directory, jsonify,
-    send_from_directory, abort
-)
-from flask_restx import Api
-from werkzeug.utils import import_string
-import logging
-import os
-import sys
-import shutil
-import json
-import ipaddress
-import grequests
-import atexit
-from requests.auth import HTTPDigestAuth, HTTPBasicAuth
-from io import BytesIO
-from datetime import datetime
+from flask import Flask, abort, redirect, send_from_directory, url_for
 
-from .restplus import api, blueprint
 from .api import api as operations_api
+from .restplus import api, blueprint
 
 
 class Config(object):
