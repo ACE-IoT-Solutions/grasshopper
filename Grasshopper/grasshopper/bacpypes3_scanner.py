@@ -19,7 +19,7 @@ from bacpypes3.ipv4.service import BVLLServiceAccessPoint
 from bacpypes3.pdu import Address, IPv4Address
 from bacpypes3.primitivedata import ObjectIdentifier
 from bacpypes3.rdf.core import BACnetNS, BACnetURI
-from rdflib import RDF, Graph, Literal, Namespace  # type: ignore
+from rdflib import RDF, Graph
 from volttron.platform.agent import utils
 
 from .rdf_components import (AttachDeviceComponent, BACnetNode,

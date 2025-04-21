@@ -14,7 +14,7 @@ __version__ = _temp.__version__
 # Setup
 setup(
     include_package_data=True,
-    name=agent_package + 'agent',
+    name=agent_package,
     version=__version__,
     author="Justice Lee",
     author_email="justice@aceiotsolutions.com",

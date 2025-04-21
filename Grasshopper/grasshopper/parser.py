@@ -1,4 +1,5 @@
-from flask_restx import reqparse
+"""Parser models for FastAPI"""
+from fastapi import UploadFile, File, Form, Depends
 
-file_upload_parser = reqparse.RequestParser()
-file_upload_parser.add_argument('file', type='FileStorage', location='files', required=True, help='Upload a file')
+# No need for explicit parsers with FastAPI - we use the built-in dependencies
+# This file is kept for backward compatibility

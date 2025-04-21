@@ -1,32 +1,40 @@
-"""Serializers for API"""
-from flask_restx import fields
-from grasshopper.restplus import api
+"""Pydantic models for API"""
+from pydantic import BaseModel, Field
+from typing import List, Optional
 
-ip_address = api.model(
-    "IP Address with subnet mask",
-    {
-        "ip_address": fields.String(readOnly=True, description="IP address with subnet mask")
-    }
-)
 
-ip_address_list = api.model(
-    "List of IP addresses with subnet mask included",
-    {
-        "ip_address_list": fields.List(fields.String())
-    }
-)
+class IPAddress(BaseModel):
+    """IP Address with subnet mask model"""
+    ip_address: str = Field(description="IP address with subnet mask")
 
-file_list = api.model(
-    "List of files",
-    {
-        "file_list": fields.List(fields.String())
-    }
-)
 
-compare_ttl_files = api.model(
-    "TTL Files to compare",
-    {
-        "ttl_1": fields.String(),
-        "ttl_2": fields.String()
-    }
-)
+class IPAddressList(BaseModel):
+    """List of IP addresses with subnet mask included model"""
+    ip_address_list: List[str]
+
+
+class FileList(BaseModel):
+    """List of files model"""
+    file_list: List[str]
+
+
+class CompareTTLFiles(BaseModel):
+    """TTL Files to compare model"""
+    ttl_1: str
+    ttl_2: str
+
+
+class MessageResponse(BaseModel):
+    """Standard message response"""
+    message: str
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response"""
+    error: str
+
+
+class FileUploadResponse(BaseModel):
+    """File upload response"""
+    message: str
+    file_path: str
