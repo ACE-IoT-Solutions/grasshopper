@@ -2,48 +2,32 @@
 File contains the bacpypes3_scanner class which is used to scan the network for devices and routers.
 """
 import argparse
-import rdflib
-import ipaddress
-import gevent
-import logging
 import asyncio
+import ipaddress
+import logging
+from typing import List, Set, Union
 
-from typing import Set, List, Union
-from bacpypes3.pdu import Address
-from bacpypes3.primitivedata import ObjectIdentifier
-from bacpypes3.basetypes import PropertyIdentifier
-from bacpypes3.apdu import AbortReason, AbortPDU, ErrorRejectAbortNack
+import gevent
+import rdflib
 from bacpypes3.app import Application
-from bacpypes3.vendor import get_vendor_info, VendorInfo
-from bacpypes3.local.networkport import NetworkPortObject
-from bacpypes3.comm import bind, ApplicationServiceElement
-from bacpypes3.pdu import IPv4Address
-from bacpypes3.ipv4.bvll import (
-    LPDU,
-    ReadBroadcastDistributionTable,
-    ReadBroadcastDistributionTableAck,
-    ReadForeignDeviceTable,
-    ReadForeignDeviceTableAck,
-)
+from bacpypes3.comm import ApplicationServiceElement, bind
+from bacpypes3.ipv4.bvll import (LPDU, ReadBroadcastDistributionTable,
+                                 ReadBroadcastDistributionTableAck,
+                                 ReadForeignDeviceTable,
+                                 ReadForeignDeviceTableAck)
 from bacpypes3.ipv4.service import BVLLServiceAccessPoint
-from rdflib import Graph, Namespace, RDF, Literal  # type: ignore
-from rdflib.compare import to_isomorphic, graph_diff
-from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph, rdflib_to_networkx_graph
-from rdflib.namespace import RDFS
-from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
-from .rdf_components import (
-    DeviceTypeHandler,
-    BBMDTypeHandler,
-    RouterTypeHandler,
-    SubnetTypeHandler,
-    NetworkTypeHandler,
-    SubnetComponent,
-    NetworkComponent,
-    BACnetNode,
-    AttachDeviceComponent,
-)
-
+from bacpypes3.pdu import Address, IPv4Address
+from bacpypes3.primitivedata import ObjectIdentifier
+from bacpypes3.rdf.core import BACnetNS, BACnetURI
+from rdflib import RDF, Graph, Literal, Namespace  # type: ignore
 from volttron.platform.agent import utils
+
+from .rdf_components import (AttachDeviceComponent, BACnetNode,
+                             BBMDTypeHandler, DeviceTypeHandler,
+                             NetworkComponent, NetworkTypeHandler,
+                             RouterTypeHandler, SubnetComponent,
+                             SubnetTypeHandler)
+
 _log = logging.getLogger(__name__)
 utils.setup_logging()
 

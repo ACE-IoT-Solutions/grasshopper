@@ -1,28 +1,23 @@
+import csv
 import os
-import json
-import gevent
 import uuid
-from gevent.queue import Queue
 from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
-from rdflib import Graph, Namespace, Literal  # type: ignore
-from rdflib.compare import to_isomorphic, graph_diff
-from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph, rdflib_to_networkx_graph
-from rdflib.namespace import RDFS
-from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
+from io import BytesIO, StringIO
 
-import networkx as nx
-from pyvis.network import Network
+import gevent
 from bacpypes3.rdf.core import BACnetNS
+from flask import abort, current_app, jsonify, request, send_file
+from flask_restx import Namespace, Resource
+from gevent.queue import Queue
 from pyvis.network import Network
-from flask import Blueprint, jsonify, request, send_file, abort, current_app
-from flask_restx import Namespace, Resource, fields
-from .restplus import api
-from .serializers import file_list, compare_ttl_files
-from .parser import file_upload_parser
-import csv
-from io import StringIO, BytesIO
+from rdflib import Graph, Literal, Namespace  # type: ignore
+from rdflib.compare import graph_diff, to_isomorphic
+from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 
+from .parser import file_upload_parser
+from .restplus import api
+from .serializers import compare_ttl_files, file_list
 
 api = Namespace('operations', __name__, url_prefix='/operations')
 
