@@ -148,6 +148,9 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     setLegend(enabled) {
       this.legendEnabled = enabled;
     },
+    toggleLegend() {
+      this.legendEnabled = !this.legendEnabled;
+    },
     setBdtEdges(enabled) {
       this.showBdtEdges = enabled;
     }

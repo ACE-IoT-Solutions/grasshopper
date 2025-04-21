@@ -13,7 +13,7 @@
                 <!-- legend -->
                 <v-btn
                     v-if="store.fileName"
-                    @click="store.setLegend(true)"
+                    @click="store.toggleLegend()"
                     variant="plain"
                     :ripple="false"
                     icon=""

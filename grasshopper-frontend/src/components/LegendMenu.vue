@@ -1,6 +1,8 @@
 <template>
   <div class="legend-menu">
     <div class="header">
+      <v-icon size="small" color="#FDFD94" style="padding-left: 20px;">mdi-map-legend</v-icon>
+      <!-- <p class="title">LEGEND</p> -->
       <v-btn
         variant="plain"
         :ripple="false"
@@ -78,7 +80,7 @@ export default {
 }
 .header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
   width: 100%;
   padding: 5px;
@@ -107,5 +109,10 @@ export default {
   width: 40px;
   height: 40px;
   object-fit: contain;
+}
+.title {
+  color: #CDCDCD;
+  font-size: 12px;
+  font-weight: bold;
 }
 </style>
