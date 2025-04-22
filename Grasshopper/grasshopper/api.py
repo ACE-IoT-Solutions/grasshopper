@@ -19,14 +19,20 @@ from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 
 from .rdf_components import BACnetEdgeType
 from .serializers import (
-    MessageResponse, CompareTTLFiles, IPAddressList, 
-    FileList, ErrorResponse, FileUploadResponse, IPAddress
+    IPAddress, 
+    IPAddressList, 
+    FileList, 
+    CompareTTLFiles, 
+    MessageResponse, 
+    ErrorResponse,
+    FileUploadResponse
 )
 
 # Create FastAPI router
 api_router = APIRouter(prefix="/operations", tags=["operations"])
 
-compare_rdf_queue = Queue()
+# Setup processing queue
+compare_rdf_queue: Queue = Queue()
 processing_task = None
 executor = ProcessPoolExecutor(max_workers=1)  
 
