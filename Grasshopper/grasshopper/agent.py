@@ -540,8 +540,9 @@ class Grasshopper(Agent):
 
         # Kill executor and currently running tasks
         # We need to access protected member here to clean up processes
-        for pid in executor._processes.values():  # pylint: disable=protected-access
-            os.kill(pid.pid, signal.SIGKILL)
+        for process in executor._processes.values():  # pylint: disable=protected-access
+            if process.pid is not None:
+                os.kill(process.pid, signal.SIGKILL)
         executor.shutdown(wait=False)
 
 
