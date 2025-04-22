@@ -17,13 +17,14 @@ from rdflib import Graph, Literal, Namespace  # type: ignore
 from rdflib.compare import graph_diff, to_isomorphic
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 
-from .parser import file_upload_parser
 from .rdf_components import BACnetEdgeType
-import csv
-from io import StringIO, BytesIO
+from .serializers import (
+    MessageResponse, CompareTTLFiles, IPAddressList, 
+    FileList, ErrorResponse, FileUploadResponse, IPAddress
+)
 
-
-api = Namespace('operations', __name__, url_prefix='/operations')
+# Create FastAPI router
+api_router = APIRouter(prefix="/operations", tags=["operations"])
 
 compare_rdf_queue = Queue()
 processing_task = None
@@ -114,24 +115,24 @@ def build_networkx_graph(g):
     is_directed = nx_graph.is_directed()
     print(f"Is the graph directed? {is_directed}")
 
-        remove_nodes = []
-        rdf_edges = {}
-        device_address_edges = []
-        rdf_diff_list = []
-        node_data = {}
-        edge_data = {}
-        for u, v, attr in nx_graph.edges(data=True):
-            edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
-            if 'rdf_diff_source' in edge_label:
-                rdf_diff_list.append((u,v,edge_label))
-            elif all(edge.value not in edge_label for edge in BACnetEdgeType):
-                label = edge_label.split('#')[-1]
-                val = str(v).split('#')[-1]
-                if str(u) in node_data:
-                    node_data[str(u)][label] = val
-                else:
-                    node_data[str(u)] = {label: val}
-                remove_nodes.append(v)
+    remove_nodes = []
+    rdf_edges = {}
+    device_address_edges = []
+    rdf_diff_list = []
+    node_data = {}
+    edge_data = {}
+    for u, v, attr in nx_graph.edges(data=True):
+        edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
+        if 'rdf_diff_source' in edge_label:
+            rdf_diff_list.append((u,v,edge_label))
+        elif all(edge.value not in edge_label for edge in BACnetEdgeType):
+            label = edge_label.split('#')[-1]
+            val = str(v).split('#')[-1]
+            if str(u) in node_data:
+                node_data[str(u)][label] = val
+            else:
+                node_data[str(u)] = {label: val}
+            remove_nodes.append(v)
 
 
     for u, v in device_address_edges:
