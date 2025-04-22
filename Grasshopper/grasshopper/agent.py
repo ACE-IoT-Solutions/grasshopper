@@ -43,8 +43,8 @@ from .api import (
     register_subnet_config_routes,
 )
 from .bacpypes3_scanner import bacpypes3_scanner
-from .web_app import create_app
 from .version import __version__
+from .web_app import create_app
 
 _log = logging.getLogger(__name__)
 utils.setup_logging()
@@ -387,9 +387,7 @@ class Grasshopper(Agent):
             # align perfectly
             # Spawn a task to run the async function
             gevent.spawn(
-                self.run_async_function,
-                scanner.get_device_and_router,
-                graph
+                self.run_async_function, scanner.get_device_and_router, graph
             )  # type: ignore
 
             rdf_path = os.path.join(
@@ -499,7 +497,9 @@ class Grasshopper(Agent):
         return 0
 
     @Core.receiver("onstart")
-    def onstart(self, sender: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+    def onstart(
+        self, sender: Any, **kwargs: Any
+    ) -> None:  # pylint: disable=unused-argument
         """
         This is method is called once the Agent has successfully connected to the platform.
         This is a good place to setup subscriptions if they are not dynamic or
@@ -529,7 +529,9 @@ class Grasshopper(Agent):
         # WEB_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/'))
 
     @Core.receiver("onstop")
-    def onstop(self, sender: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+    def onstop(
+        self, sender: Any, **kwargs: Any
+    ) -> None:  # pylint: disable=unused-argument
         """
         This method is called when the Agent is about to shutdown, but before it disconnects from
         the message bus.

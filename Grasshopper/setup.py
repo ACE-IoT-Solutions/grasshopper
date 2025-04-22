@@ -1,6 +1,7 @@
-from setuptools import find_packages, setup
 import os
 import re
+
+from setuptools import find_packages, setup
 
 MAIN_MODULE = "agent"
 
@@ -10,10 +11,12 @@ agent_package = "grasshopper"
 agent_module = agent_package + "." + MAIN_MODULE
 
 # Get version from version.py file
-version_file = os.path.join(os.path.dirname(__file__), 'grasshopper', 'version.py')
-with open(version_file, 'r') as f:
+version_file = os.path.join(os.path.dirname(__file__), "grasshopper", "version.py")
+with open(version_file, "r") as f:
     version_content = f.read()
-    version_match = re.search(r'^__version__ = ["\']([^"\']*)["\']', version_content, re.M)
+    version_match = re.search(
+        r'^__version__ = ["\']([^"\']*)["\']', version_content, re.M
+    )
     if version_match:
         __version__ = version_match.group(1)
     else:

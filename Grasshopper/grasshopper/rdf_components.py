@@ -79,11 +79,12 @@ class BaseNode:
         self.type_handler = type_handler
         self.set_type()
 
-    def overwrite_triple(self, predicate: URIRef, new_object: Union[URIRef, Literal]) -> None:
+    def overwrite_triple(
+        self, predicate: URIRef, new_object: Union[URIRef, Literal]
+    ) -> None:
         """Overwrites existing triples, except reserved ones."""
-        if (
-            "device-on-network" not in str(predicate)
-            and "router-to-network" not in str(predicate)
+        if "device-on-network" not in str(predicate) and "router-to-network" not in str(
+            predicate
         ):
             self.graph.set((self.node_iri, predicate, new_object))  # type: ignore
         else:
