@@ -46,7 +46,7 @@ from grasshopper.web_app import create_app
 
 _log = logging.getLogger(__name__)
 utils.setup_logging()
-__version__ = "0.1"
+from grasshopper.version import __version__
 
 seconds_in_day: int = 86400
 DEVICE_STATE_CONFIG: str = "device_config"

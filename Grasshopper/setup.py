@@ -1,15 +1,23 @@
 from setuptools import find_packages, setup
+import os
+import re
 
 MAIN_MODULE = "agent"
 
 # Find the agent package that contains the main module
 packages = find_packages(".")
 agent_package = "grasshopper"
-
-# Find the version number from the main module
 agent_module = agent_package + "." + MAIN_MODULE
-_temp = __import__(agent_module, globals(), locals(), ["__version__"], 0)
-__version__ = _temp.__version__
+
+# Get version from version.py file
+version_file = os.path.join(os.path.dirname(__file__), 'grasshopper', 'version.py')
+with open(version_file, 'r') as f:
+    version_content = f.read()
+    version_match = re.search(r'^__version__ = ["\']([^"\']*)["\']', version_content, re.M)
+    if version_match:
+        __version__ = version_match.group(1)
+    else:
+        raise RuntimeError("Unable to find version string in %s" % version_file)
 
 # Setup
 setup(
