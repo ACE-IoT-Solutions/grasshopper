@@ -21,6 +21,9 @@ setup(
     description="Network Device monitoring using Bacnet Broadcast",
     install_requires=["volttron"],
     packages=packages,
+    package_data={
+        "grasshopper": ["py.typed"],
+    },
     entry_points={
         "setuptools.installation": [
             "eggsecutable = " + agent_module + ":main",

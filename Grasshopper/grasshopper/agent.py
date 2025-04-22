@@ -19,6 +19,7 @@ import signal
 import sys
 import traceback
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union, Callable, Coroutine, TypeVar, cast
 
 import gevent
 import uvicorn
@@ -47,11 +48,11 @@ _log = logging.getLogger(__name__)
 utils.setup_logging()
 __version__ = "0.1"
 
-seconds_in_day = 86400
-DEVICE_STATE_CONFIG = "device_config"
+seconds_in_day: int = 86400
+DEVICE_STATE_CONFIG: str = "device_config"
 
 
-def grasshopper(config_path, **kwargs):
+def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     """
     Parses the Agent configuration and returns an instance of
     the agent created using that configuration.
@@ -62,21 +63,21 @@ def grasshopper(config_path, **kwargs):
     :rtype: Grasshopper
     """
     try:
-        config = utils.load_config(config_path)
+        config: Dict[str, Any] = utils.load_config(config_path)
     except Exception:
         config = {}
 
     if not config:
         _log.info("Using Agent defaults for starting configuration.")
 
-    scan_interval_secs = config.get("scan_interval_secs", seconds_in_day)
-    low_limit = config.get("low_limit", 0)
-    high_limit = config.get("high_limit", 4194303)
-    device_broadcast_full_step_size = config.get("device_broadcast_full_step_size", 100)
-    device_broadcast_empty_step_size = config.get(
+    scan_interval_secs: int = config.get("scan_interval_secs", seconds_in_day)
+    low_limit: int = config.get("low_limit", 0)
+    high_limit: int = config.get("high_limit", 4194303)
+    device_broadcast_full_step_size: int = config.get("device_broadcast_full_step_size", 100)
+    device_broadcast_empty_step_size: int = config.get(
         "device_broadcast_empty_step_size", 1000
     )
-    bacpypes_settings = config.get(
+    bacpypes_settings: Dict[str, Any] = config.get(
         "bacpypes_settings",
         {
             "name": "Excelsior",
@@ -89,11 +90,11 @@ def grasshopper(config_path, **kwargs):
             "bbmd": None,
         },
     )
-    webapp_settings = config.get(
+    webapp_settings: Dict[str, Any] = config.get(
         "webapp_settings",
         {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
     )
-    graph_store_limit = config.get("graph_store_limit", None)
+    graph_store_limit: Optional[int] = config.get("graph_store_limit", None)
     return Grasshopper(
         scan_interval_secs,
         low_limit,
@@ -114,25 +115,25 @@ class Grasshopper(Agent):
 
     def __init__(
         self,
-        scan_interval_secs=seconds_in_day,
-        low_limit=0,
-        high_limit=4194303,
-        device_broadcast_full_step_size=100,
-        device_broadcast_empty_step_size=1000,
-        bacpypes_settings=None,
-        graph_store_limit=None,
-        webapp_settings=None,
-        **kwargs,
-    ):
+        scan_interval_secs: int = seconds_in_day,
+        low_limit: int = 0,
+        high_limit: int = 4194303,
+        device_broadcast_full_step_size: int = 100,
+        device_broadcast_empty_step_size: int = 1000,
+        bacpypes_settings: Optional[Dict[str, Any]] = None,
+        graph_store_limit: Optional[int] = None,
+        webapp_settings: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
         super(Grasshopper, self).__init__(enable_web=True, **kwargs)
         _log.debug("vip_identity: %s", self.core.identity)
 
-        self.bacnet_analysis = None
-        self.scan_interval_secs = scan_interval_secs
-        self.low_limit = low_limit
-        self.high_limit = high_limit
-        self.device_broadcast_full_step_size = device_broadcast_full_step_size
-        self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
+        self.bacnet_analysis: Optional[Any] = None
+        self.scan_interval_secs: int = scan_interval_secs
+        self.low_limit: int = low_limit
+        self.high_limit: int = high_limit
+        self.device_broadcast_full_step_size: int = device_broadcast_full_step_size
+        self.device_broadcast_empty_step_size: int = device_broadcast_empty_step_size
         if bacpypes_settings is None:
             bacpypes_settings = {
                 "name": "Excelsior",
@@ -144,7 +145,7 @@ class Grasshopper(Agent):
                 "ttl": 30,
                 "bbmd": None,
             }
-        self.bacpypes_settings = bacpypes_settings
+        self.bacpypes_settings: Dict[str, Any] = bacpypes_settings
         if webapp_settings is None:
             webapp_settings = {
                 "host": "0.0.0.0",
@@ -152,9 +153,9 @@ class Grasshopper(Agent):
                 "certfile": None,
                 "keyfile": None,
             }
-        self.webapp_settings = webapp_settings
-        self.graph_store_limit = graph_store_limit
-        self.default_config = {
+        self.webapp_settings: Dict[str, Any] = webapp_settings
+        self.graph_store_limit: Optional[int] = graph_store_limit
+        self.default_config: Dict[str, Any] = {
             "scan_interval_secs": scan_interval_secs,
             "low_limit": low_limit,
             "high_limit": high_limit,
@@ -165,9 +166,10 @@ class Grasshopper(Agent):
             "webapp_settings": webapp_settings,
         }
         self.config_store_lock = gevent.lock.BoundedSemaphore()
-        self.http_server = None
-        self.agent_data_path = None
-        self.app = None
+        self.http_server: Optional[Any] = None
+        self.agent_data_path: Optional[str] = None
+        self.app: Optional[FastAPI] = None
+        self.vendor_info: Optional[VendorInfo] = None
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
@@ -178,7 +180,7 @@ class Grasshopper(Agent):
         )
         _log.debug("Init completed")
 
-    def configure(self, config_name, action, contents):
+    def configure(self, config_name: str, action: str, contents: Dict[str, Any]) -> None:
         """
         Called after the Agent has connected to the message bus. If a configuration exists at startup
         this will be called before onstart.
@@ -186,7 +188,7 @@ class Grasshopper(Agent):
         Is called every time the configuration in the store changes.
         """
         _log.debug("Configuring Agent")
-        config = self.default_config.copy()
+        config: Dict[str, Any] = self.default_config.copy()
         config.update(contents)
 
         try:
@@ -216,7 +218,7 @@ class Grasshopper(Agent):
                 "webapp_settings",
                 {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
             )
-            vendorid = self.bacpypes_settings.get("vendoridentifier", 999)
+            vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
             if vendorid != 999:
                 self.vendor_info = VendorInfo(vendorid)
                 self.vendor_info.register_object_class(56, NetworkPortObject)
@@ -235,67 +237,67 @@ class Grasshopper(Agent):
 
         _log.debug("Config completed")
 
-    def _grequests_exception_handler(self, request, exception):
+    def _grequests_exception_handler(self, request: Any, exception: Exception) -> None:
         """
         Log exceptions from grequests
         """
         _log.error(f"grequests error: {exception} with {request}")
 
-    def config_store_bbmd_devices(self, bbmd_devices: list):
+    def config_store_bbmd_devices(self, bbmd_devices: List[Dict[str, Any]]) -> None:
         """
         Updates config list of foreign devices
         """
         _log.debug("config_store_bbmd_devices")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
             except KeyError:
                 config = {}
             config["bbmd_devices"] = bbmd_devices
             self.vip.config.set(DEVICE_STATE_CONFIG, config)
 
-    def config_retrieve_bbmd_devices(self):
+    def config_retrieve_bbmd_devices(self) -> List[Dict[str, Any]]:
         """
         Retrieve config foreign devices
         """
         _log.debug("config_retrieve_bbmd_devices")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
                 _log.debug(f"config_retrieve_bbmd_devices config: {config}")
             except KeyError as ke:
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("bbmd_devices", [])
 
-    def config_store_subnets(self, subnets: list):
+    def config_store_subnets(self, subnets: List[Dict[str, Any]]) -> None:
         """
         Updates config list of foreign devices
         """
         _log.debug("config_store_subnets")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
             except KeyError:
                 config = {}
             config["subnets"] = subnets
             self.vip.config.set(DEVICE_STATE_CONFIG, config)
 
-    def config_retrieve_subnets(self):
+    def config_retrieve_subnets(self) -> List[Dict[str, Any]]:
         """
         Retrieve config subnets
         """
         _log.debug("config_retrieve_subnets")
         with self.config_store_lock:
             try:
-                config = self.vip.config.get(DEVICE_STATE_CONFIG)
+                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
                 _log.debug(f"config_retrieve_subnets config: {config}")
             except KeyError as ke:
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
         return config.get("subnets", [])
 
-    def run_async_function(self, func, graph):
+    def run_async_function(self, func: Callable[[Graph], Coroutine[Any, Any, Any]], graph: Graph) -> None:
         """
         Run a function asynchronously
         """
@@ -306,21 +308,21 @@ class Grasshopper(Agent):
         finally:
             loop.close()
 
-    def who_is_broadcast(self):
+    def who_is_broadcast(self) -> None:
         """
         Broadcasts a Who-Is message to the BACnet network
         """
         _log.debug("who_is_broadcast")
 
-        def extract_datetime(filename):
+        def extract_datetime(filename: str) -> datetime:
             datetime_str = filename.replace(".ttl", "")
             return datetime.fromisoformat(datetime_str)
 
-        def is_valid_filename(filename):
+        def is_valid_filename(filename: str) -> bool:
             pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.ttl$"
-            return re.match(pattern, filename)
+            return bool(re.match(pattern, filename))
 
-        def find_latest_file(directory):
+        def find_latest_file(directory: str) -> Optional[str]:
             files = [
                 f
                 for f in os.listdir(directory)
@@ -335,13 +337,17 @@ class Grasshopper(Agent):
             return latest_file
 
         try:
+            if self.agent_data_path is None:
+                _log.error("Agent data path is not set")
+                return
+                
             base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
             recent_ttl_file = find_latest_file(
                 os.path.join(self.agent_data_path, "ttl")
             )
 
-            prev_graph = Graph()
-            graph = Graph()
+            prev_graph: Graph = Graph()
+            graph: Graph = Graph()
 
             if os.path.exists(base_rdf_path):
                 graph.parse(base_rdf_path, format="ttl")
@@ -378,19 +384,19 @@ class Grasshopper(Agent):
             _log.error(f"Error in who_is_broadcast: {e}")
             _log.error(traceback.format_exc())
 
-    def setup_routes(self, app):
+    def setup_routes(self, app: FastAPI) -> None:
         """Sets up the routes for the web application"""
         app.state.agent = self
         register_bbmd_config_routes(app)
         register_subnet_config_routes(app)
 
-    def configure_server_setup(self):
+    def configure_server_setup(self) -> None:
         """
         Runs to setup web server and processes when configuration changes
         """
         _log.debug("configure_server_setup")
 
-        def ensure_folders_exist(agent_data_path, folder_names):
+        def ensure_folders_exist(agent_data_path: str, folder_names: List[str]) -> None:
             for folder in folder_names:
                 folder_path = os.path.join(agent_data_path, folder)
                 if not os.path.exists(folder_path):
@@ -399,7 +405,7 @@ class Grasshopper(Agent):
                 else:
                     print(f"Folder '{folder}' already exists.")
 
-        def get_agent_data_path(original_path):
+        def get_agent_data_path(original_path: str) -> str:
             agent_name = os.path.basename(original_path)
             agent_data = f"{agent_name}.agent-data"
             modified_path = os.path.join(original_path, agent_data)
@@ -423,7 +429,7 @@ class Grasshopper(Agent):
         keyfile = self.webapp_settings.get("keyfile")
 
         # If using SSL/TLS
-        ssl_context = None
+        ssl_context: Optional[Dict[str, str]] = None
         if certfile and keyfile:
             try:
                 ssl_context = {"certfile": certfile, "keyfile": keyfile}
@@ -442,7 +448,7 @@ class Grasshopper(Agent):
         folders = ["ttl", "compare", "network_config"]
         ensure_folders_exist(agent_data_path, folders)
 
-    def _start_server(self, host, port, ssl_context=None):
+    def _start_server(self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None) -> int:
         """Start the uvicorn server in a separate thread"""
         config = uvicorn.Config(
             app=self.app,
@@ -463,9 +469,10 @@ class Grasshopper(Agent):
 
         _log.info("SERVER STARTED")
         _log.info(f"Starting server on {host}:{port}")
+        return 0
 
     @Core.receiver("onstart")
-    def onstart(self, sender, **kwargs):
+    def onstart(self, sender: Any, **kwargs: Any) -> None:
         """
         This is method is called once the Agent has successfully connected to the platform.
         This is a good place to setup subscriptions if they are not dynamic or
@@ -495,7 +502,7 @@ class Grasshopper(Agent):
         # WEB_ROOT = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/')))
 
     @Core.receiver("onstop")
-    def onstop(self, sender, **kwargs):
+    def onstop(self, sender: Any, **kwargs: Any) -> None:
         """
         This method is called when the Agent is about to shutdown, but before it disconnects from
         the message bus.
@@ -508,7 +515,7 @@ class Grasshopper(Agent):
         executor.shutdown(wait=False)
 
 
-def main():
+def main() -> None:
     """Main method called to start the agent."""
     utils.vip_main(grasshopper, version=__version__)
 
