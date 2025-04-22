@@ -41,7 +41,6 @@ export default {
     // eslint-disable-next-line no-unused-vars
     'store.reloadKey'(newVal, oldVal) {
       this.fetchAll();
-      this.fetchConfig();
     },
   },
   computed: {
