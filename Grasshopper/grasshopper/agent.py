@@ -268,7 +268,7 @@ class Grasshopper(Agent):
             except KeyError as ke:
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
-        return config.get("bbmd_devices", [])
+        return cast(List[Dict[str, Any]], config.get("bbmd_devices", []))
 
     def config_store_subnets(self, subnets: List[Dict[str, Any]]) -> None:
         """
@@ -295,7 +295,7 @@ class Grasshopper(Agent):
             except KeyError as ke:
                 _log.error(f"Error config_retrieve_subnets: {ke}")
                 return []
-        return config.get("subnets", [])
+        return cast(List[Dict[str, Any]], config.get("subnets", []))
 
     def run_async_function(self, func: Callable[[Graph], Coroutine[Any, Any, Any]], graph: Graph) -> None:
         """
@@ -372,7 +372,9 @@ class Grasshopper(Agent):
                 self.low_limit,
                 self.high_limit,
             )
-            gevent.spawn(self.run_async_function(scanner.get_device_and_router, graph))
+            # This is a wrapper that returns None, but gevent.spawn expects a callable
+            # Using type ignore as this is a valid pattern even though the types don't align perfectly
+            gevent.spawn(self.run_async_function, scanner.get_device_and_router, graph)  # type: ignore
 
             rdf_path = os.path.join(
                 self.agent_data_path,
@@ -442,7 +444,8 @@ class Grasshopper(Agent):
         port = self.webapp_settings.get("port")
 
         # Start server in a new thread
-        gevent.spawn(self._start_server, host, port, ssl_context)
+        # Type ignore since gevent.spawn has complex types that mypy struggles with
+        gevent.spawn(self._start_server, host, port, ssl_context)  # type: ignore
 
         # Create directories
         folders = ["ttl", "compare", "network_config"]
@@ -450,8 +453,12 @@ class Grasshopper(Agent):
 
     def _start_server(self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None) -> int:
         """Start the uvicorn server in a separate thread"""
+        if self.app is None:
+            _log.error("FastAPI app is not initialized")
+            return -1
+            
         config = uvicorn.Config(
-            app=self.app,
+            app=self.app,  # type: ignore # FastAPI is a valid ASGI app but mypy doesn't know
             host=host,
             port=port,
             ssl_certfile=ssl_context.get("certfile") if ssl_context else None,
@@ -517,12 +524,15 @@ class Grasshopper(Agent):
 
 def main() -> None:
     """Main method called to start the agent."""
-    utils.vip_main(grasshopper, version=__version__)
+    # vip_main returns a value, but we're ignoring it as it's not used
+    # and the function is declared to return None
+    utils.vip_main(grasshopper, version=__version__)  # type: ignore
 
 
 if __name__ == "__main__":
     # Entry point for script
     try:
-        sys.exit(main())
+        main()  # main() returns None, but we want to exit with code 0
+        sys.exit(0)
     except KeyboardInterrupt:
         pass

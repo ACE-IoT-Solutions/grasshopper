@@ -5,7 +5,7 @@ Uses composition for building devices
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List
+from typing import List, Optional, Union
 
 from bacpypes3.rdf.core import BACnetNS, BACnetURI
 from rdflib import RDF, Graph, Literal, Namespace, URIRef  # type: ignore
@@ -79,22 +79,22 @@ class BaseNode:
         self.type_handler = type_handler
         self.set_type()
 
-    def overwrite_triple(self, predicate: str, new_object: str) -> None:
+    def overwrite_triple(self, predicate: URIRef, new_object: Union[URIRef, Literal]) -> None:
         """Overwrites existing triples, except reserved ones."""
         if (
-            "device-on-network" not in predicate
-            and "router-to-network" not in predicate
+            "device-on-network" not in str(predicate)
+            and "router-to-network" not in str(predicate)
         ):
-            self.graph.set((self.node_iri, predicate, new_object))
+            self.graph.set((self.node_iri, predicate, new_object))  # type: ignore
         else:
-            self.graph.add((self.node_iri, predicate, new_object))
+            self.graph.add((self.node_iri, predicate, new_object))  # type: ignore
 
     def set_type(self):
         """Delegate type setting to the assigned handler."""
         if self.type_handler:
             self.type_handler.set_type(self)
 
-    def add_properties(self, label: str = None, **kwargs) -> None:
+    def add_properties(self, label: Optional[str] = None, **kwargs) -> None:
         """Add properties to the node."""
         if label:
             self.overwrite_triple(RDFS.label, Literal(label))
@@ -166,7 +166,7 @@ class BACnetNode(BaseNode):
         graph,
         device_iri,
         type_handler,
-        components: List[BaseBACnetComponent] = None,
+        components: Optional[List[BaseBACnetComponent]] = None,
     ):
         super().__init__(graph, device_iri, type_handler)
         self.device = BaseNode(graph, device_iri, type_handler)
@@ -174,10 +174,10 @@ class BACnetNode(BaseNode):
 
     def add_properties(
         self,
-        label: str = None,
-        device_identifier: str = None,
-        device_address: str = None,
-        vendor_id: int = None,
+        label: Optional[str] = None,
+        device_identifier: Optional[str] = None,
+        device_address: Optional[str] = None,
+        vendor_id: Optional[int] = None,
         **kwargs
     ) -> None:
         """Add properties common to all devices."""
