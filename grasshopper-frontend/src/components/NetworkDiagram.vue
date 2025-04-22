@@ -398,11 +398,9 @@ export default {
           visitedEdges.add(edgeId);
 
           // store/hide edge
-          setVisibility[nodeId].edges[edgeId] = {
-            hidden: edgeData.hidden || false,
-            length: edgeData.length || undefined,
-          };
-          this.network.body.data.edges.update({ id: edgeId, hidden: true, length: 0 });
+          const edge = this.network.body.data.edges.get(edgeId);
+          setVisibility[nodeId].edges[edgeId] = edge;
+          this.network.body.data.edges.remove(edgeId);
 
           if (!visitedNodes.has(otherNodeId)) {
             nodesToVisit.push(otherNodeId);
@@ -450,11 +448,9 @@ export default {
       // hide connected edges
       connectedEdges.forEach(edgeId => {
         const edgeData = this.network.body.data.edges.get(edgeId);
-        this.deviceVisibility[deviceNodeId].edges[edgeId] = {
-          hidden: edgeData.hidden || false,
-          length: edgeData.length || undefined,
-        };
-        this.network.body.data.edges.update({ id: edgeId, hidden: true, length: 0 });
+        this.deviceVisibility[deviceNodeId].edges[edgeId] = edgeData
+        this.network.body.data.edges.remove(edgeId);
+
       });
 
       // add to hiddenDeviceIds
@@ -481,8 +477,7 @@ export default {
 
       // Restore the visibility of nodes
       Object.keys(setVisibility[showId].nodes).forEach(nodeId => {
-        // eslint-disable-next-line no-unused-vars
-        const nodeVisibility = setVisibility[showId].nodes[nodeId];
+        // const nodeVisibility = setVisibility[showId].nodes[nodeId];
         this.network.body.data.nodes.update({
           id: nodeId,
           hidden: false,
@@ -491,12 +486,9 @@ export default {
 
       // Restore the visibility of edges
       Object.keys(setVisibility[showId].edges).forEach(edgeId => {
-        const edgeVisibility = setVisibility[showId].edges[edgeId];
-        this.network.body.data.edges.update({
-          id: edgeId,
-          hidden: false,
-          length: edgeVisibility.length,
-        });
+        const original = setVisibility[showId].edges[edgeId];
+        this.network.body.data.edges.add(original);
+        delete setVisibility[showId].edges[edgeId];
       });
 
       // Remove from hiddenRouterIds
@@ -613,7 +605,7 @@ export default {
           'Device': { image: '/assets/device.svg', mass: 1 },
           'BBMD': { image: '/assets/bbmd-off.svg', mass: 2 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
       };
 
@@ -628,7 +620,7 @@ export default {
           'Device': { image: '/assets/device-sub.svg', mass: 1 },
           'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2 },
       };
 
@@ -643,7 +635,7 @@ export default {
           'Device': { image: '/assets/device-add.svg', mass: 1 },
           'BBMD': { image: '/assets/bbmd-add.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2 },
       };
 
@@ -1021,7 +1013,7 @@ export default {
           let clickedEdge = data.edges.find((edge) => edge.id === edgeId);
 
           if (clickedEdge && params.nodes.length == 0) {
-            // console.log(clickedEdge);
+            // console.log(JSON.stringify(clickedEdge));
             
             const cleanedLabel = clickedEdge.label.replace('http://data.ashrae.org/bacnet/2020#', '');
             this.selectedEdge = clickedEdge.id;
