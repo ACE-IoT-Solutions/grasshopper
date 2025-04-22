@@ -583,8 +583,7 @@ export default {
                   config.image,
               label: label.replace(prefix, ''),
               font: { align: 'left', color: "white", background: "none" },
-              mass: config.mass,
-              physics: config.physics,
+              mass: config.mass
             };
           }
         } else {
@@ -594,8 +593,7 @@ export default {
             image: config.image,
             label: label.replace(prefix, ''),
             font: { align: 'left', color: "white", background: "none" },
-            mass: config.mass,
-            physics: config.physics,
+            mass: config.mass
           };
         }
       }
@@ -609,14 +607,14 @@ export default {
     getNodeConfig(label, data) {
       // define image and mass based on prefix
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router.svg', mass: 2, physics: true },
-        'bacnet://network/': { image: '/assets/network.svg', mass: 2, physics: true },
+        'bacnet://router/': { image: '/assets/router.svg', mass: 2 },
+        'bacnet://network/': { image: '/assets/network.svg', mass: 2 },
         'bacnet://': {
-          'Device': { image: '/assets/device.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd-off.svg', mass: 2, physics: true }
+          'Device': { image: '/assets/device.svg', mass: 1 },
+          'BBMD': { image: '/assets/bbmd-off.svg', mass: 2 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
-        'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2, physics: true },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
       };
 
       return this.createNode(label, data, nodeMap);
@@ -624,14 +622,14 @@ export default {
     subtractConfig(label, data) {
       // #DF1219
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router-sub.svg', mass: 2, physics: true },
-        'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2, physics: true },
+        'bacnet://router/': { image: '/assets/router-sub.svg', mass: 2 },
+        'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2 },
         'bacnet://': {
-          'Device': { image: '/assets/device-sub.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4, physics: true }
+          'Device': { image: '/assets/device-sub.svg', mass: 1 },
+          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
-        'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2, physics: true },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2 },
       };
 
       return this.createNode(label, data, nodeMap);
@@ -639,14 +637,14 @@ export default {
     addConfig(label, data) {
       // #14AE5C
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router-add.svg', mass: 2, physics: true },
-        'bacnet://network/': { image: '/assets/network-add.svg', mass: 2, physics: true },
+        'bacnet://router/': { image: '/assets/router-add.svg', mass: 2 },
+        'bacnet://network/': { image: '/assets/network-add.svg', mass: 2 },
         'bacnet://': {
-          'Device': { image: '/assets/device-add.svg', mass: 1, physics: true },
-          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4, physics: true }
+          'Device': { image: '/assets/device-add.svg', mass: 1 },
+          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4 }
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5, physics: true },
-        'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2, physics: true },
+        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2 },
       };
 
       return this.createNode(label, data, nodeMap);
