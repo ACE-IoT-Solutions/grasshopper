@@ -22,6 +22,7 @@ length: The length of the edge (affects the spacing between nodes).
 smooth: Defines whether and how the edge is drawn smoothly. Possible values include "dynamic", "continuous", "discrete", "diagonalCross", "straightCross", "horizontal", "vertical", "curvedCW", "curvedCCW", "cubicBezier", etc.
 hidden: Whether the edge is hidden (i.e., not displayed).
 """
+
 from rdflib import Graph
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 import networkx as nx
@@ -29,10 +30,12 @@ from pyvis.network import Network
 from bacpypes3.rdf.core import BACnetNS
 from rdflib.namespace import RDFS
 
+
 def build_networkx_graph(g):
     """
     Build a networkx graph from the BACnet graph
     """
+
     def custom_edge_attrs(s, p, o):
         if RDFS._NS in p:
             label = p
@@ -52,7 +55,7 @@ def build_networkx_graph(g):
             return s
 
     nx_graph = rdflib_to_networkx_digraph(
-        g, 
+        g,
         edge_attrs=custom_edge_attrs,
         transform_s=custom_transform_node_str,
         transform_o=custom_transform_node_str,
@@ -72,37 +75,38 @@ def build_networkx_graph(g):
             rdf_edges[u] = v
             remove_nodes.append(u)
             remove_nodes.append(v)
-        elif 'device-address' in label:
+        elif "device-address" in label:
             device_address_edges.append((u, v))
-        elif 'device-instance' in label:
+        elif "device-instance" in label:
             if u in data:
-                data[u]['device instance'] = str(v)
+                data[u]["device instance"] = str(v)
             else:
-                data[u] = {'device instance': str(v)}
+                data[u] = {"device instance": str(v)}
             remove_nodes.append(v)
-        elif str(label) == 'a':
+        elif str(label) == "a":
             if u in data:
-                data[u]['bacnet type'] = str(v)
+                data[u]["bacnet type"] = str(v)
             else:
-                data[u] = {'bacnet type': str(v)}
+                data[u] = {"bacnet type": str(v)}
             remove_nodes.append(v)
-        elif label not in ['device-on-network', 'router-to-network']:
+        elif label not in ["device-on-network", "router-to-network"]:
             remove_nodes.append(v)
-        elif label == 'device-on-network' and 'network/None' in v:
+        elif label == "device-on-network" and "network/None" in v:
             remove_nodes.append(v)
             remove_nodes.append(u)
 
     for u, v in device_address_edges:
         if u in data:
-            data[u]['device address'] = str(rdf_edges[v])
+            data[u]["device address"] = str(rdf_edges[v])
         else:
-            data[u] = {'device address': str(rdf_edges[v])}
+            data[u] = {"device address": str(rdf_edges[v])}
 
     nx_graph.remove_nodes_from(remove_nodes)
-    
+
     return nx_graph, data
 
-def pass_networkx_to_pyvis(nx_graph, net:Network, data):
+
+def pass_networkx_to_pyvis(nx_graph, net: Network, data):
     for node in nx_graph.nodes:
         if "router/" in node:
             color = "cyan"
@@ -126,11 +130,14 @@ def pass_networkx_to_pyvis(nx_graph, net:Network, data):
 
 
 g = Graph()
-g.parse("/home/jlee/.volttron/agents/458aa06c-40ac-4b3f-9390-43dc87ae3f96/grasshopperagent-0.1/grasshopper/webroot/grasshopper/graphs/ttl/test_low.ttl", format="ttl")
+g.parse(
+    "/home/jlee/.volttron/agents/458aa06c-40ac-4b3f-9390-43dc87ae3f96/grasshopperagent-0.1/grasshopper/webroot/grasshopper/graphs/ttl/test_low.ttl",
+    format="ttl",
+)
 nx_graph, node_data = build_networkx_graph(g)
-    
+
 
 net = Network(notebook=True, bgcolor="#222222", font_color="white", filter_menu=False)
 pass_networkx_to_pyvis(nx_graph, net, node_data)
-net.show_buttons(filter_=['physics'])
+net.show_buttons(filter_=["physics"])
 net.write_html(f"test_low.html")

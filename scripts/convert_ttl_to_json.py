@@ -1,4 +1,3 @@
-
 import json
 import argparse
 
@@ -28,42 +27,44 @@ def build_networkx_graph(g):
     node_data = {}
     edge_data = {}
     for u, v, attr in nx_graph.edges(data=True):
-        edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
-        if RDFS['label'] in edge_label:
+        edge_label = attr.get("triples", [])[0][1] if "triples" in attr else None
+        if RDFS["label"] in edge_label:
             rdf_edges[u] = v
             remove_nodes.append(u)
             remove_nodes.append(v)
-        elif 'rdf_diff_source' in edge_label:
-            rdf_diff_list.append((u,v,edge_label))
-        elif 'device-address' in edge_label:
+        elif "rdf_diff_source" in edge_label:
+            rdf_diff_list.append((u, v, edge_label))
+        elif "device-address" in edge_label:
             device_address_edges.append((u, v))
             remove_nodes.append(v)
-        elif 'device-on-network' not in edge_label and 'router-to-network' not in edge_label:
-            label = edge_label.split('#')[-1]
-            val = str(v).split('#')[-1]
+        elif (
+            "device-on-network" not in edge_label
+            and "router-to-network" not in edge_label
+        ):
+            label = edge_label.split("#")[-1]
+            val = str(v).split("#")[-1]
             if str(u) in node_data:
                 node_data[str(u)][label] = val
             else:
                 node_data[str(u)] = {label: val}
             remove_nodes.append(v)
 
-
     for u, v in device_address_edges:
         if str(u) in node_data:
             if v in rdf_edges:
-                node_data[str(u)]['device-address'] = str(rdf_edges[v])
+                node_data[str(u)]["device-address"] = str(rdf_edges[v])
             else:
-                node_data[str(u)]['device-address'] = str(v)
+                node_data[str(u)]["device-address"] = str(v)
         else:
             if v in rdf_edges:
-                node_data[str(u)] = {'device-address': str(rdf_edges[v])}
+                node_data[str(u)] = {"device-address": str(rdf_edges[v])}
             else:
-                node_data[str(u)] = {'device-address': str(v)}
+                node_data[str(u)] = {"device-address": str(v)}
 
     for u, v, edge_label in rdf_diff_list:
         edge_id = str(u)
-        s, p, o = edge_id.split(' ')
-        if 'device-on-network' in p or 'router-to-network' in p:
+        s, p, o = edge_id.split(" ")
+        if "device-on-network" in p or "router-to-network" in p:
             if s in node_data:
                 node_data[s][edge_label] = str(v)
             else:
@@ -80,17 +81,17 @@ def build_networkx_graph(g):
         remove_nodes.append(u)
         remove_nodes.append(v)
 
-
     nx_graph.remove_nodes_from(remove_nodes)
-    
+
     return nx_graph, node_data, edge_data
 
-def pass_networkx_to_pyvis(nx_graph, net:Network, node_data, edge_data):
+
+def pass_networkx_to_pyvis(nx_graph, net: Network, node_data, edge_data):
     for node in nx_graph.nodes:
         net.add_node(node, data=node_data.get(str(node), {}))
 
     for u, v, attr in nx_graph.edges(data=True):
-        edge_label = attr.get('triples', [])[0][1] if 'triples' in attr else None
+        edge_label = attr.get("triples", [])[0][1] if "triples" in attr else None
         edge_id = f"{u} {edge_label} {v}"
         net.add_edge(u, v, label=edge_label, data=edge_data.get(edge_id, {}))
 
@@ -106,11 +107,9 @@ def convert_ttl_to_json(ttl_filepath):
 
     net = Network()
     pass_networkx_to_pyvis(nx_graph, net, node_data, edge_data)
-    net_data = {
-        "nodes": net.nodes,
-        "edges": net.edges
-    }
+    net_data = {"nodes": net.nodes, "edges": net.edges}
     return net_data
+
 
 def main():
     parser = argparse.ArgumentParser(description="Convert TTL file to JSON format.")
@@ -129,6 +128,7 @@ def main():
             print("Conversion failed. Ensure the input TTL file is valid.")
     except Exception as e:
         print(f"An error occurred: {e}")
+
 
 if __name__ == "__main__":
     main()
