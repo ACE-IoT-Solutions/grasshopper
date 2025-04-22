@@ -3,9 +3,12 @@ Copyright 2023 ACE IoT Solutions
 Licensed under the MIT License (MIT)
 Created by Justice Lee
 
-This agent is used to analyze the BacNet Network using bacpypes3 and return an overall view of the network.
-The agent is configured using the config file, with the bacnet settings stored in the config file.
-The agent will periodically scan the network and publish the responsive devices detected in a graphical view.
+This agent is used to analyze the BacNet Network using bacpypes3 and return an
+overall view of the network.
+The agent is configured using the config file, with the bacnet settings stored in the
+config file.
+The agent will periodically scan the network and publish the responsive devices
+detected in a graphical view.
 The agent also provides a web interface to view each scan of the network as found.
 """
 
@@ -19,15 +22,13 @@ import signal
 import sys
 import traceback
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, Callable, Coroutine, TypeVar, cast
+from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
 import gevent
 import uvicorn
 from bacpypes3.local.networkport import NetworkPortObject
 from bacpypes3.vendor import VendorInfo
 from fastapi import FastAPI
-from gevent.pywsgi import WSGIServer
-from gevent.ssl import PROTOCOL_TLS_SERVER, SSLContext
 from rdflib import Graph
 
 # from volttron.platform.web import Response
@@ -35,18 +36,18 @@ from volttron.platform.agent import utils
 from volttron.platform.messaging.health import STATUS_BAD
 from volttron.platform.vip.agent import Agent, Core
 
-from grasshopper.api import (
+from .api import (
     api_router,
     executor,
     register_bbmd_config_routes,
     register_subnet_config_routes,
 )
-from grasshopper.bacpypes3_scanner import bacpypes3_scanner
-from grasshopper.web_app import create_app
+from .bacpypes3_scanner import bacpypes3_scanner
+from .web_app import create_app
+from .version import __version__
 
 _log = logging.getLogger(__name__)
 utils.setup_logging()
-from grasshopper.version import __version__
 
 seconds_in_day: int = 86400
 DEVICE_STATE_CONFIG: str = "device_config"
@@ -64,7 +65,8 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     """
     try:
         config: Dict[str, Any] = utils.load_config(config_path)
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
+        # We need to catch any exception from load_config and provide defaults
         config = {}
 
     if not config:
@@ -73,7 +75,9 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     scan_interval_secs: int = config.get("scan_interval_secs", seconds_in_day)
     low_limit: int = config.get("low_limit", 0)
     high_limit: int = config.get("high_limit", 4194303)
-    device_broadcast_full_step_size: int = config.get("device_broadcast_full_step_size", 100)
+    device_broadcast_full_step_size: int = config.get(
+        "device_broadcast_full_step_size", 100
+    )
     device_broadcast_empty_step_size: int = config.get(
         "device_broadcast_empty_step_size", 1000
     )
@@ -125,7 +129,7 @@ class Grasshopper(Agent):
         webapp_settings: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
-        super(Grasshopper, self).__init__(enable_web=True, **kwargs)
+        super().__init__(enable_web=True, **kwargs)
         _log.debug("vip_identity: %s", self.core.identity)
 
         self.bacnet_analysis: Optional[Any] = None
@@ -180,9 +184,13 @@ class Grasshopper(Agent):
         )
         _log.debug("Init completed")
 
-    def configure(self, config_name: str, action: str, contents: Dict[str, Any]) -> None:
+    def configure(
+        self, config_name: str, action: str, contents: Dict[str, Any]
+    ) -> None:  # pylint: disable=unused-argument
+        # config_name and action are required by the VOLTTRON platform but not used directly
         """
-        Called after the Agent has connected to the message bus. If a configuration exists at startup
+        Called after the Agent has connected to the message bus. If a configuration exists
+        at startup
         this will be called before onstart.
 
         Is called every time the configuration in the store changes.
@@ -230,7 +238,7 @@ class Grasshopper(Agent):
         self.configure_server_setup()
 
         if self.bacnet_analysis is not None:
-            self.bacnet_analysis.kill()
+            self.bacnet_analysis.kill()  # pylint: disable=no-member
         self.bacnet_analysis = self.core.periodic(
             self.scan_interval_secs, self.who_is_broadcast
         )
@@ -241,7 +249,7 @@ class Grasshopper(Agent):
         """
         Log exceptions from grequests
         """
-        _log.error(f"grequests error: {exception} with {request}")
+        _log.error("grequests error: %s with %s", exception, request)
 
     def config_store_bbmd_devices(self, bbmd_devices: List[Dict[str, Any]]) -> None:
         """
@@ -264,9 +272,9 @@ class Grasshopper(Agent):
         with self.config_store_lock:
             try:
                 config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
-                _log.debug(f"config_retrieve_bbmd_devices config: {config}")
+                _log.debug("config_retrieve_bbmd_devices config: %s", config)
             except KeyError as ke:
-                _log.error(f"Error config_retrieve_subnets: {ke}")
+                _log.error("Error config_retrieve_subnets: %s", ke)
                 return []
         return cast(List[Dict[str, Any]], config.get("bbmd_devices", []))
 
@@ -291,13 +299,15 @@ class Grasshopper(Agent):
         with self.config_store_lock:
             try:
                 config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
-                _log.debug(f"config_retrieve_subnets config: {config}")
+                _log.debug("config_retrieve_subnets config: %s", config)
             except KeyError as ke:
-                _log.error(f"Error config_retrieve_subnets: {ke}")
+                _log.error("Error config_retrieve_subnets: %s", ke)
                 return []
         return cast(List[Dict[str, Any]], config.get("subnets", []))
 
-    def run_async_function(self, func: Callable[[Graph], Coroutine[Any, Any, Any]], graph: Graph) -> None:
+    def run_async_function(
+        self, func: Callable[[Graph], Coroutine[Any, Any, Any]], graph: Graph
+    ) -> None:
         """
         Run a function asynchronously
         """
@@ -340,7 +350,7 @@ class Grasshopper(Agent):
             if self.agent_data_path is None:
                 _log.error("Agent data path is not set")
                 return
-                
+
             base_rdf_path = os.path.join(self.agent_data_path, "ttl/base.ttl")
             recent_ttl_file = find_latest_file(
                 os.path.join(self.agent_data_path, "ttl")
@@ -373,8 +383,14 @@ class Grasshopper(Agent):
                 self.high_limit,
             )
             # This is a wrapper that returns None, but gevent.spawn expects a callable
-            # Using type ignore as this is a valid pattern even though the types don't align perfectly
-            gevent.spawn(self.run_async_function, scanner.get_device_and_router, graph)  # type: ignore
+            # Using type ignore as this is a valid pattern even though the types don't
+            # align perfectly
+            # Spawn a task to run the async function
+            gevent.spawn(
+                self.run_async_function,
+                scanner.get_device_and_router,
+                graph
+            )  # type: ignore
 
             rdf_path = os.path.join(
                 self.agent_data_path,
@@ -382,8 +398,9 @@ class Grasshopper(Agent):
             )
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
-        except Exception as e:
-            _log.error(f"Error in who_is_broadcast: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            # We need to catch any exception during broadcast to prevent crash
+            _log.error("Error in who_is_broadcast: %s", e)
             _log.error(traceback.format_exc())
 
     def setup_routes(self, app: FastAPI) -> None:
@@ -451,12 +468,14 @@ class Grasshopper(Agent):
         folders = ["ttl", "compare", "network_config"]
         ensure_folders_exist(agent_data_path, folders)
 
-    def _start_server(self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None) -> int:
+    def _start_server(
+        self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None
+    ) -> int:
         """Start the uvicorn server in a separate thread"""
         if self.app is None:
             _log.error("FastAPI app is not initialized")
             return -1
-            
+
         config = uvicorn.Config(
             app=self.app,  # type: ignore # FastAPI is a valid ASGI app but mypy doesn't know
             host=host,
@@ -469,17 +488,18 @@ class Grasshopper(Agent):
 
         try:
             server.run()
-        except Exception as e:
-            _log.error(f"Error starting server: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            # We need to catch any server errors to properly set status
+            _log.error("Error starting server: %s", e)
             self.vip.health.set_status(STATUS_BAD)
             return -1
 
         _log.info("SERVER STARTED")
-        _log.info(f"Starting server on {host}:{port}")
+        _log.info("Starting server on %s:%s", host, port)
         return 0
 
     @Core.receiver("onstart")
-    def onstart(self, sender: Any, **kwargs: Any) -> None:
+    def onstart(self, sender: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """
         This is method is called once the Agent has successfully connected to the platform.
         This is a good place to setup subscriptions if they are not dynamic or
@@ -493,23 +513,23 @@ class Grasshopper(Agent):
         _log.debug("in onstart")
 
         # Set up device config
-        _log.info(f"Setting up Device Config")
+        _log.info("Setting up Device Config")
         config_list = self.vip.config.list()
         if DEVICE_STATE_CONFIG not in config_list:
-            _log.info(f"config: {DEVICE_STATE_CONFIG} not found")
+            _log.info("config: %s not found", DEVICE_STATE_CONFIG)
             self.vip.config.set(
                 config_name=DEVICE_STATE_CONFIG,
                 contents={"bbmd_devices": [], "subnets": []},
             )
         else:
-            _log.info(f"config: {DEVICE_STATE_CONFIG} found")
+            _log.info("config: %s found", DEVICE_STATE_CONFIG)
 
         # Sets WEB_ROOT to be the path to the webroot directory
-        # in the agent-data directory of the installed agent..
-        # WEB_ROOT = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/')))
+        # in the agent-data directory of the installed agent.
+        # WEB_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/'))
 
     @Core.receiver("onstop")
-    def onstop(self, sender: Any, **kwargs: Any) -> None:
+    def onstop(self, sender: Any, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """
         This method is called when the Agent is about to shutdown, but before it disconnects from
         the message bus.
@@ -517,7 +537,8 @@ class Grasshopper(Agent):
         _log.debug("in onstop")
 
         # Kill executor and currently running tasks
-        for pid in executor._processes.values():
+        # We need to access protected member here to clean up processes
+        for pid in executor._processes.values():  # pylint: disable=protected-access
             os.kill(pid.pid, signal.SIGKILL)
         executor.shutdown(wait=False)
 
