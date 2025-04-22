@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from grasshopper.serializers import (
+from Grasshopper.grasshopper.serializers import (
     CompareTTLFiles,
     ErrorResponse,
     FileList,

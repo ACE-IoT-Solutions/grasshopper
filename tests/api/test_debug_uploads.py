@@ -8,14 +8,7 @@ troubleshooting file upload problems.
 import os
 import sys
 from io import BytesIO
-
 import pytest
-
-# Use absolute imports
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Grasshopper"))
-)
-from tests.api.test_fixture import api_client
 
 
 @pytest.mark.debug

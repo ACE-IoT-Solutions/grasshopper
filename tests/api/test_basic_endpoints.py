@@ -5,12 +5,8 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-# Use absolute imports
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Grasshopper"))
-)
-from tests.api.test_fixture import api_client
+import sys
+from unittest.mock import patch, MagicMock
 
 
 def test_hello_endpoint(api_client):

@@ -7,12 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Use absolute imports
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Grasshopper"))
-)
-from tests.api.test_fixture import api_client
-
 
 def test_add_ttl_compare_queue(api_client):
     """Test adding TTL files to comparison queue"""
@@ -188,9 +182,9 @@ def test_delete_network_config_file(api_client):
     assert not os.path.exists(file_path)
 
 
-@patch("grasshopper.api.StringIO")
-@patch("grasshopper.api.Graph")
-@patch("grasshopper.api.build_networkx_graph")
+@patch("Grasshopper.grasshopper.api.StringIO")
+@patch("Grasshopper.grasshopper.api.Graph")
+@patch("Grasshopper.grasshopper.api.build_networkx_graph")
 def test_export_csv(mock_build_graph, mock_graph, mock_stringio, api_client):
     """Test exporting a TTL file to CSV"""
     client, temp_dir = api_client

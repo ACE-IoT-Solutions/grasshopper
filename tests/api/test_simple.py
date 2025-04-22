@@ -8,14 +8,9 @@ from tempfile import TemporaryDirectory
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-# Add the path to the Grasshopper directory
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Grasshopper"))
-)
-
-from grasshopper.api import api_router
-from grasshopper.web_app import create_app
+import inspect
+from Grasshopper.grasshopper.web_app import create_app
+from Grasshopper.grasshopper.api import api_router
 
 
 @pytest.fixture

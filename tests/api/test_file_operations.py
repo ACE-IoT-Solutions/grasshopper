@@ -6,12 +6,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Use absolute imports
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Grasshopper"))
-)
-from tests.api.test_fixture import api_client
-
 
 def test_upload_ttl_file(api_client):
     """Test uploading a TTL file"""
@@ -109,10 +103,10 @@ def test_delete_ttl_file_not_found(api_client):
     assert response.status_code == 404
 
 
-@patch("grasshopper.api.Graph")
-@patch("grasshopper.api.build_networkx_graph")
-@patch("grasshopper.api.Network")
-@patch("grasshopper.api.pass_networkx_to_pyvis")
+@patch("Grasshopper.grasshopper.api.Graph")
+@patch("Grasshopper.grasshopper.api.build_networkx_graph")
+@patch("Grasshopper.grasshopper.api.Network")
+@patch("Grasshopper.grasshopper.api.pass_networkx_to_pyvis")
 def test_get_ttl_network(
     mock_pass_network, mock_network, mock_build_graph, mock_graph, api_client
 ):
