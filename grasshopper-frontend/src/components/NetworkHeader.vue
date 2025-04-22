@@ -10,6 +10,25 @@
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('bbmd', 'BBMD')">BBMD</v-btn>
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('subnet', 'Subnet')">Subnet</v-btn>
                 <v-btn variant="outlined" size="small" @click="store.setControlMenu('setup', 'Setup')" color="#CDCDCD">Graph Setup</v-btn>
+                <!-- legend -->
+                <v-btn
+                    v-if="store.fileName"
+                    @click="store.toggleLegend()"
+                    variant="plain"
+                    :ripple="false"
+                    icon=""
+                    id="no-background-hover"
+                    size="small"
+                    density="compact"
+                    color="#FDFD94"
+                    alt="Legend"
+                >
+                    <v-tooltip text="Legend" bottom delay="1000">
+                        <template v-slot:activator="{ props }">
+                            <v-icon v-bind="props">mdi-map-legend</v-icon>
+                        </template>
+                    </v-tooltip>
+                </v-btn>
                 <v-btn
                     v-if="store.fileName"
                     @click="store.setReload()"

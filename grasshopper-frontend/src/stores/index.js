@@ -76,6 +76,8 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     bbmdList: [],
     compareQueue: [],
     currentTask: null,
+    legendEnabled: false,
+    showBdtEdges: false,
   }),
   actions: {
     setControlMenu(type, title) {
@@ -142,6 +144,15 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     },
     setSavableConfig(config) {
       this.configToSave = config;
+    },
+    setLegend(enabled) {
+      this.legendEnabled = enabled;
+    },
+    toggleLegend() {
+      this.legendEnabled = !this.legendEnabled;
+    },
+    setBdtEdges(enabled) {
+      this.showBdtEdges = enabled;
     }
   },
 });

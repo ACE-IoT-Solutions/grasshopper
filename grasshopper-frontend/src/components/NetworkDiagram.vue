@@ -127,6 +127,10 @@ export default {
     'store.physicsConfig'(newVal, oldVal) {
       this.network.physics.options = newVal;
     },
+    'store.showBdtEdges'(visible) {
+      const allEdges = this.network.body.data.edges.get();
+      this.toggleBdtEdges(allEdges, visible);
+    }
   },
   computed: {
     showHideText() {
@@ -157,7 +161,10 @@ export default {
       return this.store.currentGraph?.nodes || [];
     },
     edges() {
-      return this.store.currentGraph?.edges || [];
+      return this.store.currentGraph?.edges.map((edge, i) => ({
+        ...edge,
+        id: Date.now() + i
+      })) || [];
     }
   },
   data() {
@@ -205,6 +212,7 @@ export default {
       loaded: false,
 
       allBbmds: [],
+      onBbmds: [],
       
       selectedNetwork: null,
       networkVisibility: {},
@@ -231,6 +239,9 @@ export default {
 
       highlightedNodeId: null,
       highlightedNodeOriginalStyle: null,
+
+      bdtEdges: [],
+      closestBbmd: null,
     };
   },
   methods: {
@@ -549,6 +560,8 @@ export default {
     createNode(label, data, nodeMap) {
       const sortedPrefixes = Object.keys(nodeMap).sort((a, b) => b.length - a.length);
       const prefix = sortedPrefixes.find(prefix => label.startsWith(prefix));
+      const bbmdOn = '/assets/bbmd-on.svg';
+      const bbmdOff = '/assets/bbmd-off.svg';
       
       if (prefix) {
         let config = nodeMap[prefix];
@@ -558,36 +571,35 @@ export default {
           config = config[data.type];
 
           if (config) {
-            const image = config.image;
-            const mass = config.mass;
-            const strippedLabel = label.replace(prefix, '');
 
             if (data.type == 'BBMD') this.allBbmds.push(label);
 
             return {
               shape: 'image',
-              image: image,
-              label: strippedLabel,
+              image: data.type == 'BBMD' ? 
+                this.onBbmds.includes(data.label) ?
+                  bbmdOn :
+                  bbmdOff :
+                  config.image,
+              label: label.replace(prefix, ''),
               font: { align: 'left', color: "white", background: "none" },
-              mass: mass,
+              mass: config.mass
             };
           }
         } else {
-          const image = config.image;
-          const mass = config.mass;
-          const strippedLabel = label.replace(prefix, '');
 
           return {
             shape: 'image',
-            image: image,
-            label: strippedLabel,
+            image: config.image,
+            label: label.replace(prefix, ''),
             font: { align: 'left', color: "white", background: "none" },
-            mass: mass,
+            mass: config.mass
           };
         }
       }
       return {
         shape: 'dot',
+        color: "white",
         label: label,
         font: { align: 'left', color: "white", background: "none" },
       };
@@ -599,7 +611,7 @@ export default {
         'bacnet://network/': { image: '/assets/network.svg', mass: 2 },
         'bacnet://': {
           'Device': { image: '/assets/device.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd.svg', mass: 4 }
+          'BBMD': { image: '/assets/bbmd-off.svg', mass: 2 }
         },
         'bacnet://Grasshopper': { image: '/assets/grasshopper-logomark.svg', mass: 5 },
         'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
@@ -726,6 +738,7 @@ export default {
     highlightNode(nodeId) {
       if (this.highlightedNodeId) {
         this.unhighlightNode();
+        this.toggleBdtEdges(this.bdtEdges, false);
       }
 
       const currentNode = this.network.body.data.nodes.get(nodeId);
@@ -759,9 +772,91 @@ export default {
       this.highlightedNodeId = null;
       this.highlightedNodeOriginalStyle = null;
     },
+    processEdges(closestBbmd) {
+
+      this.onBbmds = [];
+      this.bdtEdges = [];
+      
+      return this.edges.filter(edge => {
+        if (edge.from === edge.to) {
+          this.onBbmds.push(edge.from);
+          return false;
+        } else if (edge.label.includes('bdt-entry') && edge.from !== closestBbmd && edge.to !== closestBbmd) {
+          this.bdtEdges.push(edge);
+        }
+        return true;
+      });
+    },
+    toggleBdtEdges(bdtEdges, visible) {
+      bdtEdges.forEach(edge => {
+        if (
+          edge.label.includes('bdt-entry') &&
+          this.allBbmds.includes(edge.from) &&
+          this.allBbmds.includes(edge.to) &&
+          edge.from !== this.closestBbmd &&
+          edge.to !== this.closestBbmd
+        ) {
+
+          this.network.body.data.edges.update({
+            id:       edge.id,
+            color:    { opacity: visible ? 1 : 0 }
+          });
+        }
+      });
+    },
+    findClosestBbmdInData(nodes, edges) {
+      const graph = new Map();
+      nodes.forEach(n => graph.set(n.id, []));
+      edges.forEach(e => {
+        if (graph.has(e.from) && graph.has(e.to)) {
+          graph.get(e.from).push(e.to);
+          graph.get(e.to).push(e.from);
+        }
+      });
+
+      // find grasshopper node
+      const startNode = nodes.find(node => node.id == "bacnet://Grasshopper");
+      if (!startNode) return null;
+      const startId = startNode.id;
+
+      // search
+      const queue   = [ startId ];
+      const parent  = { [startId]: null };
+      const visited = new Set([ startId ]);
+
+      while (queue.length) {
+        const current = queue.shift();
+
+        for (const next of graph.get(current)) {
+          if (visited.has(next)) continue;
+          visited.add(next);
+          parent[next] = current;
+
+          // check if this neighbour is a BBMD
+          const node = nodes.find(node => node.id === next);
+          if (node?.data?.type === "BBMD") {
+            const path = [];
+            for (let p = next; p != null; p = parent[p]) {
+              path.unshift(p);
+            }
+            return next;
+          }
+
+          queue.push(next);
+        }
+      }
+
+      return null;
+    },
     generate() {
       const container = this.$refs.networkContainer;
       const configContainer = this.$refs.configMenu.$refs.config;
+      
+      const closestBbmd = this.findClosestBbmdInData(this.nodes, this.edges);
+
+      this.closestBbmd = closestBbmd;
+      
+      const processedEdges = this.processEdges(closestBbmd);
 
       let file1;
       let file2;
@@ -779,18 +874,32 @@ export default {
             node.data["http://data.ashrae.org/bacnet/2020#rdf_diff_source"] || null;
         });
       }
-
+      
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
           ...(this.store.compareMode ? this.getCompareConfig(node.id, node.data, file1, file2) : this.getNodeConfig(node.id, node.data)),
         })),
-        edges: this.edges.map((edge) => ({
-          ...edge,
-          ...(this.store.compareMode
-            ? this.getCompareEdgeColor(edge.data, file1, file2)
-            : {}),
-        })),
+        edges: processedEdges.map(edge => {
+          const base = {
+            ...edge,
+            ...(this.store.compareMode
+              ? this.getCompareEdgeColor(edge.data, file1, file2)
+              : {})
+          };
+
+          if (edge.label.includes('bdt-entry') && this.allBbmds.includes(edge.from) && this.allBbmds.includes(edge.to)) {
+            return {
+              ...base,
+              color: {
+                opacity: (edge.from === closestBbmd || edge.to === closestBbmd) ? 1 : 0
+              },
+              physics: edge.from === closestBbmd || edge.to === closestBbmd
+            };
+          }
+
+          return base;
+        })
       };
 
       const options = {
@@ -835,10 +944,6 @@ export default {
 
 
       this.network.on("stabilizationIterationsDone", () => {
-        // console.log(this.store.physicsConfig.enabled);
-
-        // this.network.options.physics.enabled = this.store.physicsConfig.enabled;
-        
         this.loaded = true;
       });
 
@@ -846,6 +951,8 @@ export default {
 
         if (!params.nodes.length) {
           this.unhighlightNode();
+          this.toggleBdtEdges(this.bdtEdges, false);
+          this.store.setBdtEdges(false);
         }
 
         if (params.nodes.length > 0) {
@@ -854,10 +961,11 @@ export default {
           const clickedNode = data.nodes.find((node) => node.id === nodeId);
 
           if (clickedNode) {
-            // console.log(JSON.stringify(clickedNode.data));
+            // console.log(clickedNode);
 
             const cleanedTitle = clickedNode.id;
             const nodeType = clickedNode.data.type;
+            const nodeLabel = clickedNode.data.label
 
             this.selectedNodeType = null;
             
@@ -872,6 +980,12 @@ export default {
               this.altCard = false;
               this.selectedBbmd = clickedNode.id;
               this.selectedNodeType = 'BBMD';
+              // show connecting bdt edges
+              const matchingEdges = this.bdtEdges.filter(edge =>
+                edge.from === nodeLabel || edge.to === nodeLabel
+              );
+              this.toggleBdtEdges(matchingEdges, true)
+
             } else if (cleanedTitle.startsWith("bacnet://router/")) {
               this.altInfo = "Router Node: " + clickedNode.label;
               this.altCard = true;
@@ -898,6 +1012,10 @@ export default {
           }
         }
 
+        // if (!params.edges.length) {
+        //   this.store.setBdtEdges(false);
+        // }
+        
         if (params.edges.length > 0) {
           const edgeId = params.edges[0];
           let clickedEdge = data.edges.find((edge) => edge.id === edgeId);
