@@ -21,6 +21,7 @@ import re
 import signal
 import sys
 import traceback
+from multiprocessing import Process
 from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
@@ -170,7 +171,7 @@ class Grasshopper(Agent):
             "webapp_settings": webapp_settings,
         }
         self.config_store_lock = gevent.lock.BoundedSemaphore()
-        self.http_server: Optional[Any] = None
+        self.http_server_process: Optional[Process] = None
         self.agent_data_path: Optional[str] = None
         self.app: Optional[FastAPI] = None
         self.vendor_info: Optional[VendorInfo] = None
@@ -458,9 +459,8 @@ class Grasshopper(Agent):
         host = self.webapp_settings.get("host")
         port = self.webapp_settings.get("port")
 
-        # Start server in a new thread
-        # Type ignore since gevent.spawn has complex types that mypy struggles with
-        gevent.spawn(self._start_server, host, port, ssl_context)  # type: ignore
+        # Start server in a new process
+        self._start_server(host, port, ssl_context)
 
         # Create directories
         folders = ["ttl", "compare", "network_config"]
@@ -470,6 +470,8 @@ class Grasshopper(Agent):
         self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None
     ) -> int:
         """Start the uvicorn server in a separate thread"""
+        _log.debug("Running _start_server")
+
         if self.app is None:
             _log.error("FastAPI app is not initialized")
             return -1
@@ -485,16 +487,39 @@ class Grasshopper(Agent):
         server = uvicorn.Server(config)
 
         try:
-            server.run()
+            self.http_server_process = Process(target=server.run, daemon=True)
+            self.http_server_process.start()
+            
+            _log.info(f"[Agent] Starting Uvicorn PID {self.http_server_process.pid}")
         except Exception as e:  # pylint: disable=broad-except
             # We need to catch any server errors to properly set status
             _log.error("Error starting server: %s", e)
             self.vip.health.set_status(STATUS_BAD)
             return -1
 
-        _log.info("SERVER STARTED")
-        _log.info("Starting server on %s:%s", host, port)
+        if not self.http_server_process.is_alive():
+            code = self.http_server_process.exitcode
+            _log.error(f"Uvicorn process died immediately with exit code {code}")
+        else:
+            _log.info(f"Server is alive, running on {host}:{port}")
+
+        _log.debug("Running _start_server complete")
         return 0
+    
+    def _stop_server(self) -> None:
+        """Stop the uvicorn server"""
+        _log.debug("Running _stop_server")
+        if self.http_server_process and self.http_server_process.is_alive():
+            print(f"[Agent] Terminating Uvicorn PID {self.http_server_process.pid}")
+            # Send SIGINT for a clean shutdown, or SIGTERM if you prefer
+            os.kill(self.http_server_process.pid, signal.SIGINT)
+            # Give it a moment to exit gracefully...
+            self.http_server_process.join(timeout=5)
+            if self.http_server_process.is_alive():
+                print("[Agent] Uvicorn did not exit; killing")
+                self.http_server_process.terminate()
+                self.http_server_process.join(timeout=2)
+        _log.debug("Running _stop_server complete")
 
     @Core.receiver("onstart")
     def onstart(
@@ -544,6 +569,9 @@ class Grasshopper(Agent):
             if process.pid is not None:
                 os.kill(process.pid, signal.SIGKILL)
         executor.shutdown(wait=False)
+
+        # Stop the web server
+        self._stop_server()
 
 
 def main() -> None:
