@@ -246,7 +246,6 @@ class bacpypes3_scanner:
         """
         _log.debug("bacpypes3_scanner: get_router_networks")
         for network_id in self.scanned_networks:
-            gevent.sleep(0)
             _log.debug(f"Currently Processing network {network_id}")
             routers = await app.nse.who_is_router_to_network(network=network_id)
             for adapter, i_am_router_to_network in routers:
@@ -277,7 +276,6 @@ class bacpypes3_scanner:
         Check if the device is a BBMD
         """
         _log.debug("bacpypes3_scanner: check_if_device_is_bbmd")
-        gevent.sleep(0)
         try:
             bdt = await ase.read_broadcast_distribution_table(device_address)
             if bdt is not None:
@@ -297,7 +295,6 @@ class bacpypes3_scanner:
         Check if the device is a BBMD
         """
         _log.debug("bacpypes3_scanner: read_bbmd_fdt")
-        gevent.sleep(0)
         try:
             fdt = await ase.read_broadcast_distribution_table(device_address)
             if fdt is not None:
@@ -346,7 +343,6 @@ class bacpypes3_scanner:
 
         track_lower = self.low_limit
         while track_lower <= self.high_limit:
-            gevent.sleep(0)
             _log.debug(f"Currently Processing devices at {track_lower}")
             track_upper = get_known_device_end_range(self.prev_graph, track_lower)
             if track_upper > self.high_limit:
