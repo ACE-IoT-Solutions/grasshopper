@@ -7,6 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from .api import (
+    api_router,
+)
+
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DIST_DIR     = os.path.join(BASE_DIR, "dist")
+ASSETS_DIR   = os.path.join(DIST_DIR, "assets")
+INDEX_PATH   = os.path.join(DIST_DIR, "index.html")
 
 class Config:
     HOST = "127.0.0.1"
@@ -31,6 +40,9 @@ def create_app(config_class=None):
         description="Manage the detection of devices in Bacnet",
     )
 
+    # Include API router
+    app.include_router(api_router, prefix="/api")
+
     # Apply CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -50,7 +62,7 @@ def create_app(config_class=None):
 
     # Static files setup
     try:
-        app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+        app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
     except Exception:
         pass
 
@@ -58,12 +70,12 @@ def create_app(config_class=None):
     async def index():
         """Serve the index HTML file"""
         try:
-            with open(os.path.join("dist", "index.html"), "r") as f:
+            with open(INDEX_PATH, "r") as f:
                 return f.read()
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail="Index file not found")
 
-    @app.get("/{path:path}")
+    @app.get("/{path:path}", include_in_schema=False)
     async def catch_all(path: str):
         """Catch-all route for frontend SPA"""
         if path.startswith("api"):
@@ -84,9 +96,9 @@ def create_app(config_class=None):
         )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
+            "script-src 'self' https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js 'unsafe-inline'; "
+            "style-src 'self' https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css 'unsafe-inline'; "
+            "img-src 'self' https://fastapi.tiangolo.com/img/favicon.png data:; "
             "connect-src 'self' 'unsafe-inline'; "
             "worker-src 'self'; "
             "object-src 'none'; "

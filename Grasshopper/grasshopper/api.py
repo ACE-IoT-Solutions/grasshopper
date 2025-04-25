@@ -37,6 +37,8 @@ compare_rdf_queue: Queue = Queue()
 processing_task = None
 executor = ProcessPoolExecutor(max_workers=1)
 
+def get_agent(request: Request):
+    return request.app.state.agent
 
 def get_agent_data_path(request: Request) -> str:
     """Get agent data path from app state"""
@@ -635,62 +637,55 @@ async def export_csv(ttl_filename: str, request: Request):
     return response
 
 
-# Functions to add routes for agent.py
-def register_bbmd_config_routes(app):
-    """Register BBMD config routes"""
+@api_router.get("/bbmds", response_model=IPAddressList)
+async def get_bbmd_list(agent=Depends(get_agent)):
+    """Gets the list of BBMD IP Addresses stored in the config"""
+    list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
+    return {"ip_address_list": list_of_bbmd_ips}
 
-    @api_router.get("/bbmds", response_model=IPAddressList)
-    async def get_bbmd_list(agent=Depends(lambda: app.state.agent)):
-        """Gets the list of BBMD IP Addresses stored in the config"""
-        list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
-        return {"ip_address_list": list_of_bbmd_ips}
+@api_router.post("/bbmds", response_model=Dict[str, List[str]])
+async def add_bbmd(ip_data: IPAddress, agent=Depends(get_agent)):
+    """Adds IP address to the list of BBMD IP Addresses stored in the config"""
+    list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
+    ip = ip_data.ip_address
+    if ip and ip not in list_of_bbmd_ips:
+        list_of_bbmd_ips.append(ip)
+    agent.config_store_bbmd_devices(list_of_bbmd_ips)
+    return {"list_of_bbmd_ips": list_of_bbmd_ips}
 
-    @api_router.post("/bbmds", response_model=Dict[str, List[str]])
-    async def add_bbmd(ip_data: IPAddress, agent=Depends(lambda: app.state.agent)):
-        """Adds IP address to the list of BBMD IP Addresses stored in the config"""
-        list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
-        ip = ip_data.ip_address
-        if ip and ip not in list_of_bbmd_ips:
-            list_of_bbmd_ips.append(ip)
-        agent.config_store_bbmd_devices(list_of_bbmd_ips)
-        return {"list_of_bbmd_ips": list_of_bbmd_ips}
-
-    @api_router.delete("/bbmds", response_model=Dict[str, List[str]])
-    async def delete_bbmd(ip_data: IPAddress, agent=Depends(lambda: app.state.agent)):
-        """Removes IP address from the list of BBMD IP Addresses stored in the config"""
-        list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
-        ip = ip_data.ip_address
-        if ip and ip in list_of_bbmd_ips:
-            list_of_bbmd_ips.remove(ip)
-        agent.config_store_bbmd_devices(list_of_bbmd_ips)
-        return {"list_of_bbmd_ips": list_of_bbmd_ips}
+@api_router.delete("/bbmds", response_model=Dict[str, List[str]])
+async def delete_bbmd(ip_data: IPAddress, agent=Depends(get_agent)):
+    """Removes IP address from the list of BBMD IP Addresses stored in the config"""
+    list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
+    ip = ip_data.ip_address
+    if ip and ip in list_of_bbmd_ips:
+        list_of_bbmd_ips.remove(ip)
+    agent.config_store_bbmd_devices(list_of_bbmd_ips)
+    return {"list_of_bbmd_ips": list_of_bbmd_ips}
 
 
-def register_subnet_config_routes(app):
-    """Register subnet config routes"""
+@api_router.get("/subnets", response_model=IPAddressList)
+async def get_subnet_list(agent=Depends(get_agent)):
+    """Gets the list of Subnets CIDR Addresses stored in the config"""
+    list_of_subnets_ips = agent.config_retrieve_subnets()
+    return {"ip_address_list": list_of_subnets_ips}
 
-    @api_router.get("/subnets", response_model=IPAddressList)
-    async def get_subnet_list(agent=Depends(lambda: app.state.agent)):
-        """Gets the list of Subnets CIDR Addresses stored in the config"""
-        list_of_subnets_ips = agent.config_retrieve_subnets()
-        return {"ip_address_list": list_of_subnets_ips}
+@api_router.post("/subnets", response_model=Dict[str, List[str]])
+async def add_subnet(ip_data: IPAddress, agent=Depends(get_agent)):
+    """Adds IP address to the list of Subnets CIDR Addresses stored in the config"""
+    list_of_subnets_ips = agent.config_retrieve_subnets()
+    ip = ip_data.ip_address
+    if ip and ip not in list_of_subnets_ips:
+        list_of_subnets_ips.append(ip)
+    agent.config_store_subnets(list_of_subnets_ips)
+    return {"list_of_subnets_ips": list_of_subnets_ips}
 
-    @api_router.post("/subnets", response_model=Dict[str, List[str]])
-    async def add_subnet(ip_data: IPAddress, agent=Depends(lambda: app.state.agent)):
-        """Adds IP address to the list of Subnets CIDR Addresses stored in the config"""
-        list_of_subnets_ips = agent.config_retrieve_subnets()
-        ip = ip_data.ip_address
-        if ip and ip not in list_of_subnets_ips:
-            list_of_subnets_ips.append(ip)
-        agent.config_store_subnets(list_of_subnets_ips)
-        return {"list_of_subnets_ips": list_of_subnets_ips}
-
-    @api_router.delete("/subnets", response_model=Dict[str, List[str]])
-    async def delete_subnet(ip_data: IPAddress, agent=Depends(lambda: app.state.agent)):
-        """Removes IP address from the list of subnets IP Addresses stored in the config"""
-        list_of_subnets_ips = agent.config_retrieve_subnets()
-        ip = ip_data.ip_address
-        if ip and ip in list_of_subnets_ips:
-            list_of_subnets_ips.remove(ip)
-        agent.config_store_subnets(list_of_subnets_ips)
-        return {"list_of_subnets_ips": list_of_subnets_ips}
+@api_router.delete("/subnets", response_model=Dict[str, List[str]])
+async def delete_subnet(ip_data: IPAddress, agent=Depends(get_agent)):
+    """Removes IP address from the list of subnets IP Addresses stored in the config"""
+    list_of_subnets_ips = agent.config_retrieve_subnets()
+    ip = ip_data.ip_address
+    if ip and ip in list_of_subnets_ips:
+        list_of_subnets_ips.remove(ip)
+    agent.config_store_subnets(list_of_subnets_ips)
+    return {"list_of_subnets_ips": list_of_subnets_ips}

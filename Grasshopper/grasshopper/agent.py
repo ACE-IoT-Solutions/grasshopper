@@ -38,10 +38,7 @@ from volttron.platform.messaging.health import STATUS_BAD
 from volttron.platform.vip.agent import Agent, Core
 
 from .api import (
-    api_router,
     executor,
-    register_bbmd_config_routes,
-    register_subnet_config_routes,
 )
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
@@ -402,11 +399,6 @@ class Grasshopper(Agent):
             _log.error("Error in who_is_broadcast: %s", e)
             _log.error(traceback.format_exc())
 
-    def setup_routes(self, app: FastAPI) -> None:
-        """Sets up the routes for the web application"""
-        app.state.agent = self
-        register_bbmd_config_routes(app)
-        register_subnet_config_routes(app)
 
     def configure_server_setup(self) -> None:
         """
@@ -437,9 +429,8 @@ class Grasshopper(Agent):
         app = create_app()
         app.extra["agent_data_path"] = agent_data_path
 
-        # Add API routes
-        app.include_router(api_router, prefix="/api")
-        self.setup_routes(app)
+        # Assign the agent to the app state
+        app.state.agent = self
         self.app = app
 
         # Create server
