@@ -8,12 +8,12 @@ from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 from io import BytesIO, StringIO
 from typing import Any, Dict, List, Optional, Union
+from multiprocessing import Queue
 
 import gevent
 from bacpypes3.rdf.core import BACnetNS
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse
-from gevent.queue import Queue
 from pyvis.network import Network
 from rdflib import Graph, Literal, Namespace  # type: ignore
 from rdflib.compare import graph_diff, to_isomorphic
@@ -35,27 +35,27 @@ DEVICE_STATE_CONFIG: str = "device_config.json"
 # Create FastAPI router
 api_router = APIRouter(prefix="/operations", tags=["operations"])
 
-# Setup processing queue
-compare_rdf_queue: Queue = Queue()
-processing_task = None
-executor = ProcessPoolExecutor(max_workers=1)
-
-
 
 def get_agent_data_path(request: Request) -> str:
     """Get agent data path from app state"""
     return request.app.extra.get("agent_data_path", "")
 
+def get_task_queue(request: Request) -> Queue:
+    """Get agent task queue from app state"""
+    return request.app.state.task_queue
 
-def process_compare_rdf_queue():
+def get_processing_task(request: Request):
+    """Get processing task from app state"""
+    return request.app.state.processing_task_queue
+
+def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue):
     """Process the compare RDF queue in background"""
-    global processing_task
     while True:
         try:
-            task = compare_rdf_queue.get()
+            task = task_queue.get()
             if task is None:
                 break
-            processing_task = task
+            processing_task_queue.put(task)
             ttl_filename_1 = task.get("ttl_1")
             ttl_filename_2 = task.get("ttl_2")
             agent_data_path = task.get("agent_data_path")
@@ -78,25 +78,16 @@ def process_compare_rdf_queue():
             g1 = Graph()
             g2 = Graph()
             g1.parse(ttl_filepath_1, format="ttl")
-            gevent.sleep(0)
-
             g2.parse(ttl_filepath_2, format="ttl")
-            gevent.sleep(0)
 
             iso_g1 = to_isomorphic(g1)
             iso_g2 = to_isomorphic(g2)
-            gevent.sleep(0)
 
-            future = executor.submit(graph_diff, iso_g1, iso_g2)
-            while not future.done():
-                gevent.sleep(0)
-
-            in_both, in_first, in_second = future.result()
+            in_both, in_first, in_second = graph_diff(iso_g1, iso_g2)
 
             combined_graph = Graph()
 
             for s, p, o in in_first:
-                gevent.sleep(0)
                 combined_graph.add((s, p, o))
                 triple_id = Literal(f"{s} {p} {o}")
                 combined_graph.add(
@@ -104,7 +95,6 @@ def process_compare_rdf_queue():
                 )
 
             for s, p, o in in_second:
-                gevent.sleep(0)
                 combined_graph.add((s, p, o))
                 triple_id = Literal(f"{s} {p} {o}")
                 combined_graph.add(
@@ -112,7 +102,6 @@ def process_compare_rdf_queue():
                 )
 
             for s, p, o in in_both:
-                gevent.sleep(0)
                 combined_graph.add((s, p, o))
 
             compare_folder_path = os.path.join(agent_data_path, "compare")
@@ -120,12 +109,10 @@ def process_compare_rdf_queue():
             combined_filepath = os.path.join(compare_folder_path, combined_filename)
             combined_graph.serialize(destination=combined_filepath, format="ttl")
 
-            processing_task = None
+            processing_task_queue.get()
         except Exception as e:
             print(f"Error processing task: {e}")
 
-
-gevent.spawn(process_compare_rdf_queue)
 
 
 def build_networkx_graph(g):
@@ -357,13 +344,25 @@ async def get_ttl_network(ttl_filename: str, request: Request):
     net_data = {"nodes": net.nodes, "edges": net.edges}
     return net_data
 
+def get_list_from_queue(queue: Queue) -> List[Dict[str, Any]]:
+    """Get list of tasks from the queue"""
+    tasks = []
+    while not queue.empty():
+        task = queue.get()
+        tasks.append(task)
 
-@api_router.post(
-    "/ttl_compare_queue",
-    response_model=MessageResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def add_ttl_compare_queue(compare_files: CompareTTLFiles, request: Request):
+    for task in tasks:
+        queue.put(task)
+
+    return tasks
+
+@api_router.post("/ttl_compare_queue")
+async def add_ttl_compare_queue(
+    compare_files: CompareTTLFiles,
+    request: Request,
+    queue=Depends(get_task_queue),
+    processing_task=Depends(get_processing_task),
+):
     """Adds ttl compare file request to queue"""
     ttl_filename_1 = compare_files.ttl_1
     ttl_filename_2 = compare_files.ttl_2
@@ -372,12 +371,14 @@ async def add_ttl_compare_queue(compare_files: CompareTTLFiles, request: Request
 
     if not ttl_filepath_1 or not ttl_filepath_2:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or both TTL files not found"
         )
 
-    queue_contents = list(compare_rdf_queue.queue)
-    if processing_task:
-        queue_contents.append(processing_task)
+    queue_contents = get_list_from_queue(queue)
+    current_task = get_list_from_queue(processing_task)
+    if current_task:
+        queue_contents.append(current_task[0])
 
     for task in queue_contents:
         if (
@@ -386,54 +387,88 @@ async def add_ttl_compare_queue(compare_files: CompareTTLFiles, request: Request
             task.get("ttl_1") == ttl_filename_2 and task.get("ttl_2") == ttl_filename_1
         ):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Task already in queue"
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Task already queued or in progress"
             )
 
-    compare_rdf_queue.put(
-        {
-            "id": str(uuid.uuid4()),
-            "ttl_1": ttl_filename_1,
+    # enqueue a new task
+    task = {
+        "id": str(uuid.uuid4()),
+        "ttl_1": ttl_filename_1,
             "ttl_2": ttl_filename_2,
-            "agent_data_path": get_agent_data_path(request),
-        }
-    )
-    return {"message": "File accepted"}
+        "agent_data_path": get_agent_data_path(request),
+    }
+    queue.put(task)
+    return {"message": "File accepted", "task": task}
 
 
 @api_router.get("/ttl_compare_queue")
-async def get_ttl_compare_queue():
+async def get_ttl_compare_queue(
+    queue=Depends(get_task_queue),
+    processing=Depends(get_processing_task),
+):
     """Gets current queue and processing task"""
-    queue_contents = list(compare_rdf_queue.queue)
+    processing_task = get_list_from_queue(processing)
+    if processing_task:
+        current_task = processing_task[0]
+    else:
+        current_task = None
+    queued_tasks = get_list_from_queue(queue)
     return {
-        "processing_task": processing_task if processing_task else "None",
-        "queue": queue_contents,
+        "processing_task": current_task,
+        "queue": queued_tasks,
     }
 
 
 @api_router.delete("/ttl_compare_queue_tasks/{task_id}")
-async def delete_ttl_compare_queue_task(task_id: str):
-    """Removes task from queue"""
-    global compare_rdf_queue
-    if processing_task and processing_task.get("id") == task_id:
+async def delete_ttl_compare_queue_task(
+    task_id: str,
+    request: Request,
+    queue=Depends(get_task_queue),
+    processing=Depends(get_processing_task),
+):
+    """Removes a queued task by ID (unless it’s in progress)."""
+    try:
+        processing_task = get_list_from_queue(processing)
+        if processing_task:
+            assert len(processing_task) == 1
+            current_task = processing_task[0]
+        else:
+            current_task = None
+    except AssertionError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Multiple processing tasks found"
+        )
+    # can’t remove the one in progress
+    if current_task and current_task.get("id") == task_id:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"status": "error", "message": "Task is currently being processed"},
+            content={"status": "error",
+                     "message": "Task is currently being processed"},
         )
 
-    queue_contents = list(compare_rdf_queue.queue)
-    new_queue = [task for task in queue_contents if task["id"] != task_id]
+    # drain the queue into a temp list
+    all_tasks = []
+    while not queue.empty():
+        all_tasks.append(queue.get())
 
-    if len(new_queue) == len(queue_contents):
-        return JSONResponse(
+    # filter out the one to delete
+    new_tasks = [t for t in all_tasks if t.get("id") != task_id]
+
+    if len(new_tasks) == len(all_tasks):
+        # nothing was removed
+        raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            content={"status": "error", "message": f"Task {task_id} not found"},
+            detail=f"Task {task_id} not found"
         )
 
-    compare_rdf_queue = Queue()
-    for task in new_queue:
-        compare_rdf_queue.put(task)
+    # re-enqueue the survivors
+    for t in new_tasks:
+        queue.put(t)
 
-    return {"status": "success", "message": f"Task {task_id} removed from the queue"}
+    return {"status": "success",
+            "message": f"Task {task_id} removed from the queue"}
 
 
 @api_router.get("/ttl_compare", response_model=FileList)

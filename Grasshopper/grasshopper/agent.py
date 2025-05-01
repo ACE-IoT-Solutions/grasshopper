@@ -22,7 +22,7 @@ import signal
 import sys
 import traceback
 import json
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
@@ -39,8 +39,8 @@ from volttron.platform.messaging.health import STATUS_BAD
 from volttron.platform.vip.agent import Agent, Core
 
 from .api import (
-    executor,
     DEVICE_STATE_CONFIG,
+    process_compare_rdf_queue,
 )
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
@@ -391,7 +391,7 @@ class Grasshopper(Agent):
 
             rdf_path = os.path.join(
                 self.agent_data_path,
-                f"ttl/{now.replace(microsecond=0).isoformat()}.ttl",
+                f"ttl/{now.replace(microsecond=0).isoformat().replace(':','_')}.ttl",
             )
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
@@ -416,15 +416,6 @@ class Grasshopper(Agent):
                 else:
                     print(f"Folder '{folder}' already exists.")
 
-        def get_agent_data_path(original_path: str) -> str:
-            agent_name = os.path.basename(original_path)
-            agent_data = f"{agent_name}.agent-data"
-            modified_path = os.path.join(original_path, agent_data)
-            return modified_path
-
-        current_dir = os.getcwd()
-        agent_data_path = get_agent_data_path(current_dir)
-        self.agent_data_path = agent_data_path
 
         # Create cert/key files
         certfile = self.webapp_settings.get("certfile")
@@ -445,7 +436,7 @@ class Grasshopper(Agent):
 
 
         try:
-            self.http_server_process = Process(target=self._start_server,args=(host, port, ssl_context), daemon=True)
+            self.http_server_process = Process(target=self._start_server,args=(host, port, ssl_context), daemon=False)
             self.http_server_process.start()
             
             _log.info(f"[Agent] Starting Uvicorn PID {self.http_server_process.pid}")
@@ -487,6 +478,16 @@ class Grasshopper(Agent):
         )
         server = uvicorn.Server(config)
 
+        q = Queue()
+        processing_task_q = Queue()
+        app.state.task_queue = q
+        app.state.processing_task_queue = processing_task_q
+
+        worker = Process(target=process_compare_rdf_queue, args=(q,processing_task_q))
+        worker.daemon = True
+        worker.start()
+        print(f"[serve_app] queue worker PID={worker.pid}")
+
         server.run()
 
         _log.debug("Running _start_server complete")
@@ -525,6 +526,16 @@ class Grasshopper(Agent):
 
         # Set up device config
         _log.info("Setting up Device Config")
+        def get_agent_data_path(original_path: str) -> str:
+            agent_name = os.path.basename(original_path)
+            agent_data = f"{agent_name}.agent-data"
+            modified_path = os.path.join(original_path, agent_data)
+            return modified_path
+
+        current_dir = os.getcwd()
+        agent_data_path = get_agent_data_path(current_dir)
+        self.agent_data_path = agent_data_path
+
         device_config_path = os.path.join(
             self.agent_data_path, DEVICE_STATE_CONFIG
         )
@@ -553,13 +564,6 @@ class Grasshopper(Agent):
         the message bus.
         """
         _log.debug("in onstop")
-
-        # Kill executor and currently running tasks
-        # We need to access protected member here to clean up processes
-        for process in executor._processes.values():  # pylint: disable=protected-access
-            if process.pid is not None:
-                os.kill(process.pid, signal.SIGKILL)
-        executor.shutdown(wait=False)
 
         # Stop the web server
         self._stop_server()
