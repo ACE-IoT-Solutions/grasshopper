@@ -3,6 +3,7 @@
 import csv
 import os
 import uuid
+import json
 from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 from io import BytesIO, StringIO
@@ -29,6 +30,8 @@ from .serializers import (
     MessageResponse,
 )
 
+DEVICE_STATE_CONFIG: str = "device_config.json"
+
 # Create FastAPI router
 api_router = APIRouter(prefix="/operations", tags=["operations"])
 
@@ -37,8 +40,7 @@ compare_rdf_queue: Queue = Queue()
 processing_task = None
 executor = ProcessPoolExecutor(max_workers=1)
 
-def get_agent(request: Request):
-    return request.app.state.agent
+
 
 def get_agent_data_path(request: Request) -> str:
     """Get agent data path from app state"""
@@ -637,55 +639,107 @@ async def export_csv(ttl_filename: str, request: Request):
     return response
 
 
+def device_config_read_key(agent_data_path: str, key: str) -> Any:
+    """
+    Read a key from the device config
+    """
+    try:
+        config_path = os.path.join(
+            agent_data_path, DEVICE_STATE_CONFIG
+        )
+        if not os.path.exists(config_path):
+            return None
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            if key in config:
+                return config[key]
+            else:
+                return []
+    except FileNotFoundError:
+        return None
+    except json.JSONDecodeError:
+        return None
+    
+
+def device_config_write_key(agent_data_path: str, key: str, value: Any) -> bool:
+    """
+    Write a single key/value into the device config JSON.
+    Returns True on success, False on any error.
+    """
+    config_path = os.path.join(agent_data_path, DEVICE_STATE_CONFIG)
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+    try:
+        if os.path.exists(config_path):
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                if not isinstance(config, dict):
+                    config = {}
+        else:
+            config = {}
+
+        config[key] = value
+        tmp_path = config_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, config_path)
+
+        return True
+
+    except (OSError, json.JSONDecodeError):
+        return False
+    
 @api_router.get("/bbmds", response_model=IPAddressList)
-async def get_bbmd_list(agent=Depends(get_agent)):
+async def get_bbmd_list(agent_data_path=Depends(get_agent_data_path)):
     """Gets the list of BBMD IP Addresses stored in the config"""
-    list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
+    list_of_bbmd_ips:list = device_config_read_key(agent_data_path, "bbmd_devices")
     return {"ip_address_list": list_of_bbmd_ips}
 
 @api_router.post("/bbmds", response_model=Dict[str, List[str]])
-async def add_bbmd(ip_data: IPAddress, agent=Depends(get_agent)):
+async def add_bbmd(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Adds IP address to the list of BBMD IP Addresses stored in the config"""
-    list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
+    list_of_bbmd_ips:list = device_config_read_key(agent_data_path, "bbmd_devices")
     ip = ip_data.ip_address
     if ip and ip not in list_of_bbmd_ips:
         list_of_bbmd_ips.append(ip)
-    agent.config_store_bbmd_devices(list_of_bbmd_ips)
+        device_config_write_key(agent_data_path, "bbmd_devices", list_of_bbmd_ips)
     return {"list_of_bbmd_ips": list_of_bbmd_ips}
 
 @api_router.delete("/bbmds", response_model=Dict[str, List[str]])
-async def delete_bbmd(ip_data: IPAddress, agent=Depends(get_agent)):
+async def delete_bbmd(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Removes IP address from the list of BBMD IP Addresses stored in the config"""
-    list_of_bbmd_ips = agent.config_retrieve_bbmd_devices()
+    list_of_bbmd_ips:list = device_config_read_key(agent_data_path, "bbmd_devices")
     ip = ip_data.ip_address
     if ip and ip in list_of_bbmd_ips:
         list_of_bbmd_ips.remove(ip)
-    agent.config_store_bbmd_devices(list_of_bbmd_ips)
+        device_config_write_key(agent_data_path, "bbmd_devices", list_of_bbmd_ips)
     return {"list_of_bbmd_ips": list_of_bbmd_ips}
 
 
 @api_router.get("/subnets", response_model=IPAddressList)
-async def get_subnet_list(agent=Depends(get_agent)):
+async def get_subnet_list(agent_data_path=Depends(get_agent_data_path)):
     """Gets the list of Subnets CIDR Addresses stored in the config"""
-    list_of_subnets_ips = agent.config_retrieve_subnets()
+    list_of_subnets_ips:list = device_config_read_key(agent_data_path, "subnets")
     return {"ip_address_list": list_of_subnets_ips}
 
 @api_router.post("/subnets", response_model=Dict[str, List[str]])
-async def add_subnet(ip_data: IPAddress, agent=Depends(get_agent)):
+async def add_subnet(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Adds IP address to the list of Subnets CIDR Addresses stored in the config"""
-    list_of_subnets_ips = agent.config_retrieve_subnets()
+    list_of_subnets_ips:list = device_config_read_key(agent_data_path, "subnets")
     ip = ip_data.ip_address
     if ip and ip not in list_of_subnets_ips:
         list_of_subnets_ips.append(ip)
-    agent.config_store_subnets(list_of_subnets_ips)
+        device_config_write_key(agent_data_path, "subnets", list_of_subnets_ips)
     return {"list_of_subnets_ips": list_of_subnets_ips}
 
 @api_router.delete("/subnets", response_model=Dict[str, List[str]])
-async def delete_subnet(ip_data: IPAddress, agent=Depends(get_agent)):
+async def delete_subnet(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Removes IP address from the list of subnets IP Addresses stored in the config"""
-    list_of_subnets_ips = agent.config_retrieve_subnets()
+    list_of_subnets_ips: list = device_config_read_key(agent_data_path, "subnets")
     ip = ip_data.ip_address
     if ip and ip in list_of_subnets_ips:
         list_of_subnets_ips.remove(ip)
-    agent.config_store_subnets(list_of_subnets_ips)
+        device_config_write_key(agent_data_path, "subnets", list_of_subnets_ips)
     return {"list_of_subnets_ips": list_of_subnets_ips}

@@ -21,6 +21,7 @@ import re
 import signal
 import sys
 import traceback
+import json
 from multiprocessing import Process
 from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
@@ -39,6 +40,7 @@ from volttron.platform.vip.agent import Agent, Core
 
 from .api import (
     executor,
+    DEVICE_STATE_CONFIG,
 )
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
@@ -48,7 +50,6 @@ _log = logging.getLogger(__name__)
 utils.setup_logging()
 
 seconds_in_day: int = 86400
-DEVICE_STATE_CONFIG: str = "device_config"
 
 
 def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
@@ -167,7 +168,6 @@ class Grasshopper(Agent):
             "bacpypes_settings": bacpypes_settings,
             "webapp_settings": webapp_settings,
         }
-        self.config_store_lock = gevent.lock.BoundedSemaphore()
         self.http_server_process: Optional[Process] = None
         self.agent_data_path: Optional[str] = None
         self.app: Optional[FastAPI] = None
@@ -197,49 +197,51 @@ class Grasshopper(Agent):
         config: Dict[str, Any] = self.default_config.copy()
         config.update(contents)
 
-        try:
-            self.scan_interval_secs = contents.get("scan_interval_secs", 86400)
-            self.low_limit = contents.get("low_limit", 0)
-            self.high_limit = contents.get("high_limit", 4194303)
-            self.device_broadcast_full_step_size = contents.get(
-                "device_broadcast_full_step_size", 100
-            )
-            self.device_broadcast_empty_step_size = contents.get(
-                "device_broadcast_empty_step_size", 1000
-            )
-            self.bacpypes_settings = contents.get(
-                "bacpypes_settings",
-                {
-                    "name": "Excelsior",
-                    "instance": 999,
-                    "network": 0,
-                    "address": "192.168.1.12/24:47808",
-                    "vendoridentifier": 999,
-                    "foreign": None,
-                    "ttl": 30,
-                    "bbmd": None,
-                },
-            )
-            self.webapp_settings = contents.get(
-                "webapp_settings",
-                {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
-            )
-            vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
-            if vendorid != 999:
-                self.vendor_info = VendorInfo(vendorid)
-                self.vendor_info.register_object_class(56, NetworkPortObject)
+        if config_name == "config":
+            try:
+                self.scan_interval_secs = contents.get("scan_interval_secs", 86400)
+                self.low_limit = contents.get("low_limit", 0)
+                self.high_limit = contents.get("high_limit", 4194303)
+                self.device_broadcast_full_step_size = contents.get(
+                    "device_broadcast_full_step_size", 100
+                )
+                self.device_broadcast_empty_step_size = contents.get(
+                    "device_broadcast_empty_step_size", 1000
+                )
+                self.bacpypes_settings = contents.get(
+                    "bacpypes_settings",
+                    {
+                        "name": "Excelsior",
+                        "instance": 999,
+                        "network": 0,
+                        "address": "192.168.1.12/24:47808",
+                        "vendoridentifier": 999,
+                        "foreign": None,
+                        "ttl": 30,
+                        "bbmd": None,
+                    },
+                )
+                self.webapp_settings = contents.get(
+                    "webapp_settings",
+                    {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
+                )
 
-        except ValueError as e:
-            _log.error("ERROR PROCESSING CONFIGURATION: %s", e)
-            return
+                self.configure_server_and_start()
 
-        self.configure_server_setup()
+                vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
+                if vendorid != 999:
+                    self.vendor_info = VendorInfo(vendorid)
+                    self.vendor_info.register_object_class(56, NetworkPortObject)
 
-        if self.bacnet_analysis is not None:
-            self.bacnet_analysis.kill()  # pylint: disable=no-member
-        self.bacnet_analysis = self.core.periodic(
-            self.scan_interval_secs, self.who_is_broadcast
-        )
+            except ValueError as e:
+                _log.error("ERROR PROCESSING CONFIGURATION: %s", e)
+                return
+
+            if self.bacnet_analysis is not None:
+                self.bacnet_analysis.kill()  # pylint: disable=no-member
+            self.bacnet_analysis = self.core.periodic(
+                self.scan_interval_secs, self.who_is_broadcast
+            )
 
         _log.debug("Config completed")
 
@@ -249,59 +251,58 @@ class Grasshopper(Agent):
         """
         _log.error("grequests error: %s with %s", exception, request)
 
-    def config_store_bbmd_devices(self, bbmd_devices: List[Dict[str, Any]]) -> None:
+    def _device_config_read_key(self, key) -> Optional[Dict[str, Any]]:
         """
-        Updates config list of foreign devices
+        Read a key from the device config
         """
-        _log.debug("config_store_bbmd_devices")
-        with self.config_store_lock:
-            try:
-                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
-            except KeyError:
-                config = {}
-            config["bbmd_devices"] = bbmd_devices
-            self.vip.config.set(DEVICE_STATE_CONFIG, config)
+        _log.debug("device_config_read_key")
+        try:
+            config_path = os.path.join(
+                self.agent_data_path, DEVICE_STATE_CONFIG
+            )
+            if not os.path.exists(config_path):
+                _log.error("Config file not found: %s", config_path)
+                return None
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                if key in config:
+                    return config[key]
+                else:
+                    _log.error("Key %s not found in config", key)
+                    return None
+        except FileNotFoundError:
+            _log.error("Config file not found: %s", config_path)
+            return None
+        except json.JSONDecodeError:
+            _log.error("Error decoding JSON from config file: %s", config_path)
+            return None
 
     def config_retrieve_bbmd_devices(self) -> List[Dict[str, Any]]:
         """
         Retrieve config foreign devices
         """
         _log.debug("config_retrieve_bbmd_devices")
-        with self.config_store_lock:
-            try:
-                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
-                _log.debug("config_retrieve_bbmd_devices config: %s", config)
-            except KeyError as ke:
-                _log.error("Error config_retrieve_subnets: %s", ke)
-                return []
-        return cast(List[Dict[str, Any]], config.get("bbmd_devices", []))
-
-    def config_store_subnets(self, subnets: List[Dict[str, Any]]) -> None:
-        """
-        Updates config list of foreign devices
-        """
-        _log.debug("config_store_subnets")
-        with self.config_store_lock:
-            try:
-                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
-            except KeyError:
-                config = {}
-            config["subnets"] = subnets
-            self.vip.config.set(DEVICE_STATE_CONFIG, config)
+        try:
+            bbmd_devices: Dict[str, Any] = self._device_config_read_key("bbmd_devices")
+            _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
+            return bbmd_devices
+        except KeyError as ke:
+            _log.error("Error config_retrieve_subnets: %s", ke)
+            return []
+            
 
     def config_retrieve_subnets(self) -> List[Dict[str, Any]]:
         """
         Retrieve config subnets
         """
         _log.debug("config_retrieve_subnets")
-        with self.config_store_lock:
-            try:
-                config: Dict[str, Any] = self.vip.config.get(DEVICE_STATE_CONFIG)
-                _log.debug("config_retrieve_subnets config: %s", config)
-            except KeyError as ke:
-                _log.error("Error config_retrieve_subnets: %s", ke)
-                return []
-        return cast(List[Dict[str, Any]], config.get("subnets", []))
+        try:
+            bbmd_devices: Dict[str, Any] = self._device_config_read_key("subnets")
+            _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
+            return bbmd_devices
+        except KeyError as ke:
+            _log.error("Error config_retrieve_subnets: %s", ke)
+            return []
 
     def run_async_function(
         self, func: Callable[[Graph], Coroutine[Any, Any, Any]], graph: Graph
@@ -400,7 +401,7 @@ class Grasshopper(Agent):
             _log.error(traceback.format_exc())
 
 
-    def configure_server_setup(self) -> None:
+    def configure_server_and_start(self) -> None:
         """
         Runs to setup web server and processes when configuration changes
         """
@@ -425,15 +426,7 @@ class Grasshopper(Agent):
         agent_data_path = get_agent_data_path(current_dir)
         self.agent_data_path = agent_data_path
 
-        # Create FastAPI app
-        app = create_app()
-        app.extra["agent_data_path"] = agent_data_path
-
-        # Assign the agent to the app state
-        app.state.agent = self
-        self.app = app
-
-        # Create server
+        # Create cert/key files
         certfile = self.webapp_settings.get("certfile")
         keyfile = self.webapp_settings.get("keyfile")
 
@@ -450,18 +443,35 @@ class Grasshopper(Agent):
         host = self.webapp_settings.get("host")
         port = self.webapp_settings.get("port")
 
-        # Start server in a new process
-        self._start_server(host, port, ssl_context)
 
-        # Create directories
-        folders = ["ttl", "compare", "network_config"]
-        ensure_folders_exist(agent_data_path, folders)
+        try:
+            self.http_server_process = Process(target=self._start_server,args=(host, port, ssl_context), daemon=True)
+            self.http_server_process.start()
+            
+            _log.info(f"[Agent] Starting Uvicorn PID {self.http_server_process.pid}")
+        except Exception as e:  # pylint: disable=broad-except
+            # We need to catch any server errors to properly set status
+            _log.error("Error starting server: %s", e)
+            self.vip.health.set_status(STATUS_BAD)
+            return -1
+        
+        if not self.http_server_process.is_alive():
+            code = self.http_server_process.exitcode
+            _log.error(f"Uvicorn process died immediately with exit code {code}")
+        else:
+            _log.info(f"Server is alive, running on {host}:{port}")
+
 
     def _start_server(
         self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None
     ) -> int:
         """Start the uvicorn server in a separate thread"""
         _log.debug("Running _start_server")
+
+        # Create FastAPI app
+        app = create_app()
+        app.extra["agent_data_path"] = self.agent_data_path
+        self.app = app
 
         if self.app is None:
             _log.error("FastAPI app is not initialized")
@@ -477,22 +487,7 @@ class Grasshopper(Agent):
         )
         server = uvicorn.Server(config)
 
-        try:
-            self.http_server_process = Process(target=server.run, daemon=True)
-            self.http_server_process.start()
-            
-            _log.info(f"[Agent] Starting Uvicorn PID {self.http_server_process.pid}")
-        except Exception as e:  # pylint: disable=broad-except
-            # We need to catch any server errors to properly set status
-            _log.error("Error starting server: %s", e)
-            self.vip.health.set_status(STATUS_BAD)
-            return -1
-
-        if not self.http_server_process.is_alive():
-            code = self.http_server_process.exitcode
-            _log.error(f"Uvicorn process died immediately with exit code {code}")
-        else:
-            _log.info(f"Server is alive, running on {host}:{port}")
+        server.run()
 
         _log.debug("Running _start_server complete")
         return 0
@@ -530,15 +525,20 @@ class Grasshopper(Agent):
 
         # Set up device config
         _log.info("Setting up Device Config")
-        config_list = self.vip.config.list()
-        if DEVICE_STATE_CONFIG not in config_list:
-            _log.info("config: %s not found", DEVICE_STATE_CONFIG)
-            self.vip.config.set(
-                config_name=DEVICE_STATE_CONFIG,
-                contents={"bbmd_devices": [], "subnets": []},
-            )
+        device_config_path = os.path.join(
+            self.agent_data_path, DEVICE_STATE_CONFIG
+        )
+        if not os.path.exists(device_config_path):
+            _log.info("Creating device config file: %s", device_config_path)
+            with open(device_config_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"bbmd_devices": [], "subnets": []},
+                    f,
+                    indent=4,
+                    ensure_ascii=False,
+                )
         else:
-            _log.info("config: %s found", DEVICE_STATE_CONFIG)
+            _log.info("Device config file already exists: %s", device_config_path)
 
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent.
