@@ -2,6 +2,9 @@
 
 ![Grasshopper Logo](https://github.com/ACE-IoT-Solutions/grasshopper/blob/main/grasshopper.svg?raw=true)
 
+[![Python Tests](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/test.yml/badge.svg)](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/test.yml)
+[![Python Linting](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/lint.yml/badge.svg)](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/lint.yml)
+
 ## Description
 
 Grasshopper is an open-source project designed to tackle the complex world of smart building networks. It provides a comprehensive view of building automation systems (BAS) network to help facility managers and integrators understand, manage, and optimize their networks.

@@ -23,8 +23,12 @@ class GraphBuilder(object):
         self.bacnet_namespace = Namespace("http://data.ashrae.org/bacnet/2020#")
 
         if hasattr(self.graph, "namespace_manager"):
-            self.graph.namespace_manager.bind("bacnet", self.bacnet_namespace, override=True)
-            self.graph.namespace_manager.bind("site", self.site_namespace, override=True)
+            self.graph.namespace_manager.bind(
+                "bacnet", self.bacnet_namespace, override=True
+            )
+            self.graph.namespace_manager.bind(
+                "site", self.site_namespace, override=True
+            )
 
     def generate_graph_hash(self) -> str:
         """
@@ -118,7 +122,9 @@ class GraphBuilder(object):
             "units": "unknown",
         }
 
-        this_point = self.site_namespace[f"{device_address}_{device_identifier}_{object_type}_{object_instance}"]
+        this_point = self.site_namespace[
+            f"{device_address}_{device_identifier}_{object_type}_{object_instance}"
+        ]
 
         # Add a RDFS label for the object name
         self.graph.add(
