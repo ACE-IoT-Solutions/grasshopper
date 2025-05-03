@@ -75,6 +75,37 @@ Performed comprehensive improvement of code documentation and fixed test suite i
 - Generate API documentation with tools like Sphinx
 - Improve test coverage for recently modified code
 
+## Session: Project Management Migration to uv and Standard pyproject.toml (May 3, 2025)
+
+### Summary
+Migrated project configuration and documentation from Poetry to use `uv` and standard `pyproject.toml` formats:
+
+1.  **`pyproject.toml` Standardization**
+    *   Replaced the `[tool.poetry]` table with the standard `[project]` table (PEP 621).
+    *   Mapped dependencies from `[tool.poetry.dependencies]` to `[project.dependencies]`.
+    *   Mapped development dependencies from `[tool.poetry.group.dev.dependencies]` to `[project.optional-dependencies.dev]`.
+    *   Updated the `[build-system]` table to use `setuptools` instead of `poetry-core`.
+
+2.  **Documentation Updates**
+    *   Modified `README.md` to replace Poetry installation instructions with `uv` commands (`uv venv`, `uv pip sync`).
+    *   Updated `CONTRIBUTING.md` (assuming it exists and contains setup instructions) with `uv`-based development setup steps.
+
+### Files Modified
+-   `pyproject.toml` - Migrated from Poetry-specific tables to standard project metadata.
+-   `README.md` - Updated installation instructions to use `uv`.
+-   `CONTRIBUTING.md` - Updated development setup instructions to use `uv`.
+-   `agentic-sessions.md` - Documentation update for this session.
+
+### Key Improvements
+-   Adherence to standard Python packaging metadata (PEP 621).
+-   Increased flexibility in choosing build backends and dependency management tools.
+-   Simplified setup instructions using the fast `uv` tool.
+-   Removed Poetry as a mandatory development dependency.
+
+### Future Work
+-   Further explore `uv` features like lock files (`uv pip freeze > requirements.lock.txt`, `uv pip sync requirements.lock.txt`) for reproducible environments.
+-   Ensure build process works correctly with the new `setuptools` backend configuration.
+
 ## Session: CI/CD Implementation (April 23, 2025)
 
 ### Summary

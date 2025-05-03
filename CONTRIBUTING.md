@@ -2,37 +2,42 @@
 
 Thank you for your interest in contributing to Grasshopper! This document provides guidelines and instructions for contributing.
 
-## Development Environment
+## Development Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/ACE-IoT-Solutions/grasshopper.git
-   cd grasshopper
-   ```
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/grasshopper.git
+    cd grasshopper
+    ```
 
-2. Set up your development environment:
-   ```bash
-   # Option 1: Using uv (recommended - faster installation)
-   # Install uv if you don't have it:
-   # curl -LsSf https://astral.sh/uv/install.sh | sh
+2.  **Create and activate a virtual environment:**
+    We recommend using `uv`:
+    ```bash
+    uv venv
+    source .venv/bin/activate # Or equivalent for your shell
+    ```
 
-   # Create a virtual environment and install deps
-   uv venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   cd Grasshopper
-   uv pip install -e .
-   uv pip install pytest pytest-cov httpx black flake8 isort mypy
-   
-   # Option 2: Using venv + pip
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   cd Grasshopper
-   pip install -e .
-   pip install pytest pytest-cov httpx black flake8 isort mypy
-   
-   # Option 3: Using Poetry
-   poetry install
-   ```
+3.  **Install dependencies:**
+    Install main and development dependencies using `uv`:
+    ```bash
+    uv pip sync pyproject.toml --extras dev
+    ```
+
+4.  **Running Tests:**
+    ```bash
+    pytest
+    ```
+
+5.  **Running Linters/Formatters:**
+    ```bash
+    # Example for mypy
+    mypy grasshopper
+    ```
+
+6.  **Adding Dependencies:**
+    *   Install the package into your environment: `uv pip install <package-name>`
+    *   Manually add the package and version specifier to the appropriate list (`dependencies` or `optional-dependencies.dev`) in `pyproject.toml`.
+    *   Re-sync the environment: `uv pip sync pyproject.toml --extras dev`
 
 ## Running Tests
 
