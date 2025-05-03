@@ -44,7 +44,8 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install package in development mode directly
+          # Install directly from Grasshopper directory which has setup.py
+          cd Grasshopper
           pip install -e .
           pip install build wheel
           pip install git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
