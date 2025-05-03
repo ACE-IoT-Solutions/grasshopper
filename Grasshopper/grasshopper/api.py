@@ -30,6 +30,9 @@ from .serializers import (
     MessageResponse,
 )
 
+# Create a multiprocessing queue for compare_rdf operations
+compare_rdf_queue = Queue()
+
 DEVICE_STATE_CONFIG: str = "device_config.json"
 
 # Create FastAPI router
@@ -37,19 +40,56 @@ api_router = APIRouter(prefix="/operations", tags=["operations"])
 
 
 def get_agent_data_path(request: Request) -> str:
-    """Get agent data path from app state"""
+    """Get agent data path from app state.
+    
+    Args:
+        request (Request): The FastAPI request object
+        
+    Returns:
+        str: Path to the agent data directory, or empty string if not found
+    """
     return request.app.extra.get("agent_data_path", "")
 
 def get_task_queue(request: Request) -> Queue:
-    """Get agent task queue from app state"""
+    """Get agent task queue from app state.
+    
+    Args:
+        request (Request): The FastAPI request object
+        
+    Returns:
+        Queue: The multiprocessing queue for tasks
+    """
     return request.app.state.task_queue
 
-def get_processing_task(request: Request):
-    """Get processing task from app state"""
+def get_processing_task(request: Request) -> Queue:
+    """Get processing task queue from app state.
+    
+    Args:
+        request (Request): The FastAPI request object
+        
+    Returns:
+        Queue: The multiprocessing queue for tasks currently being processed
+    """
     return request.app.state.processing_task_queue
 
-def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue):
-    """Process the compare RDF queue in background"""
+def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -> None:
+    """Process the compare RDF queue in background.
+    
+    This function runs as a separate process and continually processes tasks from the queue.
+    For each task, it:
+    1. Gets two TTL files from the queue
+    2. Parses them into RDF graphs
+    3. Computes the difference between the graphs
+    4. Creates a combined graph with difference markers
+    5. Serializes the combined graph to a new TTL file
+    
+    Args:
+        task_queue (Queue): Queue containing tasks to be processed
+        processing_task_queue (Queue): Queue for tracking tasks currently being processed
+        
+    Returns:
+        None: This function runs indefinitely until the process is terminated
+    """
     while True:
         try:
             task = task_queue.get()
@@ -80,13 +120,16 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue):
             g1.parse(ttl_filepath_1, format="ttl")
             g2.parse(ttl_filepath_2, format="ttl")
 
+            # Convert to isomorphic graphs for accurate comparison
             iso_g1 = to_isomorphic(g1)
             iso_g2 = to_isomorphic(g2)
 
+            # Get differences between graphs
             in_both, in_first, in_second = graph_diff(iso_g1, iso_g2)
 
             combined_graph = Graph()
 
+            # Add triples from first graph with source marker
             for s, p, o in in_first:
                 combined_graph.add((s, p, o))
                 triple_id = Literal(f"{s} {p} {o}")
@@ -94,6 +137,7 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue):
                     (triple_id, BACnetNS["rdf_diff_source"], Literal(ttl_filename_1))
                 )
 
+            # Add triples from second graph with source marker
             for s, p, o in in_second:
                 combined_graph.add((s, p, o))
                 triple_id = Literal(f"{s} {p} {o}")
@@ -101,24 +145,40 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue):
                     (triple_id, BACnetNS["rdf_diff_source"], Literal(ttl_filename_2))
                 )
 
+            # Add triples present in both graphs
             for s, p, o in in_both:
                 combined_graph.add((s, p, o))
 
+            # Save the combined graph
             compare_folder_path = os.path.join(agent_data_path, "compare")
             combined_filename = f"{ttl_filename_1.replace('.ttl', '')}_vs_{ttl_filename_2.replace('.ttl', '')}.ttl"
             combined_filepath = os.path.join(compare_folder_path, combined_filename)
             combined_graph.serialize(destination=combined_filepath, format="ttl")
 
+            # Mark task as complete
             processing_task_queue.get()
         except Exception as e:
             print(f"Error processing task: {e}")
 
 
 
-def build_networkx_graph(g):
+def build_networkx_graph(g: Graph):
     """
-    Build a networkx graph from the BACnet graph
-
+    Build a networkx graph from the BACnet RDF graph.
+    
+    This function converts an RDFLib graph to a NetworkX graph that can be used
+    for visualization and network analysis. It also extracts node and edge attributes
+    for display in the UI.
+    
+    Args:
+        g (Graph): The RDFLib graph containing BACnet network information
+        
+    Returns:
+        tuple: Contains:
+            - nx_graph: The NetworkX graph object
+            - node_data: Dictionary of node attributes
+            - edge_data: Dictionary of edge attributes
+    
     Note: device_address_edges is utilized to deal with Bacpypes3 original format, however it is no longer utilized.
     This is utilized for backward compatibility support. It may be removed in the future.
     """
@@ -183,8 +243,22 @@ def build_networkx_graph(g):
     return nx_graph, node_data, edge_data
 
 
-def pass_networkx_to_pyvis(nx_graph, net: Network, node_data, edge_data):
-    """Convert networkx graph to pyvis network"""
+def pass_networkx_to_pyvis(nx_graph, net: Network, node_data: dict, edge_data: dict) -> None:
+    """Convert networkx graph to pyvis network for visualization.
+    
+    This function takes a NetworkX graph and converts it to a PyVis network object,
+    which can be used for interactive visualization. It adds nodes and edges with
+    their associated metadata.
+    
+    Args:
+        nx_graph: The NetworkX graph object
+        net (Network): The PyVis network object to populate
+        node_data (dict): Dictionary of node attributes
+        edge_data (dict): Dictionary of edge attributes
+        
+    Returns:
+        None: The network object is modified in-place
+    """
     for node in nx_graph.nodes:
         net.add_node(node, data=node_data.get(str(node), {}))
 
@@ -197,7 +271,22 @@ def pass_networkx_to_pyvis(nx_graph, net: Network, node_data, edge_data):
 def get_file_path(
     file_name: str, request: Request, folder: str = "ttl"
 ) -> Optional[str]:
-    """Get absolute file path for a file in the agent data directory"""
+    """Get absolute file path for a file in the agent data directory.
+    
+    This function looks for a specified file within the agent data directory
+    and returns its absolute path if found.
+    
+    Args:
+        file_name (str): The name of the file to find
+        request (Request): The FastAPI request object containing app state
+        folder (str, optional): The subdirectory to search in. Defaults to "ttl".
+        
+    Returns:
+        Optional[str]: The absolute path to the file if found, None otherwise
+        
+    Raises:
+        FileNotFoundError: If the specified folder doesn't exist
+    """
     agent_data_path = get_agent_data_path(request)
     folder_path = os.path.join(agent_data_path, folder)
     if not os.path.exists(folder_path):
@@ -213,7 +302,15 @@ def get_file_path(
 
 
 def list_files_in_dir(request: Request, folder: str = "ttl") -> List[str]:
-    """List files in the specified directory"""
+    """List files in the specified directory within the agent data path.
+    
+    Args:
+        request (Request): The FastAPI request object containing app state
+        folder (str, optional): The subdirectory to list files from. Defaults to "ttl".
+        
+    Returns:
+        List[str]: A list of filenames in the specified directory
+    """
     agent_data_path = get_agent_data_path(request)
     folder_path = os.path.join(agent_data_path, folder)
     files = [
@@ -345,7 +442,18 @@ async def get_ttl_network(ttl_filename: str, request: Request):
     return net_data
 
 def get_list_from_queue(queue: Queue) -> List[Dict[str, Any]]:
-    """Get list of tasks from the queue"""
+    """Get list of tasks from the queue without removing them.
+    
+    This function extracts all items from a queue, saves them to a list,
+    and then puts them back into the queue, effectively allowing inspection
+    of queue contents without consuming them.
+    
+    Args:
+        queue (Queue): The multiprocessing queue to inspect
+        
+    Returns:
+        List[Dict[str, Any]]: A list of all tasks currently in the queue
+    """
     tasks = []
     while not queue.empty():
         task = queue.get()
@@ -356,14 +464,30 @@ def get_list_from_queue(queue: Queue) -> List[Dict[str, Any]]:
 
     return tasks
 
-@api_router.post("/ttl_compare_queue")
+@api_router.post("/ttl_compare_queue", status_code=status.HTTP_202_ACCEPTED)
 async def add_ttl_compare_queue(
     compare_files: CompareTTLFiles,
     request: Request,
     queue=Depends(get_task_queue),
     processing_task=Depends(get_processing_task),
 ):
-    """Adds ttl compare file request to queue"""
+    """Add TTL comparison request to the processing queue.
+    
+    This endpoint allows clients to request a comparison between two TTL files.
+    The comparison is performed asynchronously, with the result saved as a new TTL file.
+    
+    Args:
+        compare_files (CompareTTLFiles): Object containing the names of TTL files to compare
+        request (Request): The FastAPI request object
+        queue (Queue): The task queue (injected by FastAPI)
+        processing_task (Queue): The processing task queue (injected by FastAPI)
+        
+    Returns:
+        dict: A message confirming the task was accepted and the task details
+        
+    Raises:
+        HTTPException: If files are not found or a duplicate task already exists
+    """
     ttl_filename_1 = compare_files.ttl_1
     ttl_filename_2 = compare_files.ttl_2
     ttl_filepath_1 = get_file_path(ttl_filename_1, request=request)
@@ -395,7 +519,7 @@ async def add_ttl_compare_queue(
     task = {
         "id": str(uuid.uuid4()),
         "ttl_1": ttl_filename_1,
-            "ttl_2": ttl_filename_2,
+        "ttl_2": ttl_filename_2,
         "agent_data_path": get_agent_data_path(request),
     }
     queue.put(task)
@@ -458,9 +582,9 @@ async def delete_ttl_compare_queue_task(
 
     if len(new_tasks) == len(all_tasks):
         # nothing was removed
-        raise HTTPException(
+        return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Task {task_id} not found"
+            content={"status": "error", "message": f"Task {task_id} not found"}
         )
 
     # re-enqueue the survivors
@@ -676,7 +800,15 @@ async def export_csv(ttl_filename: str, request: Request):
 
 def device_config_read_key(agent_data_path: str, key: str) -> Any:
     """
-    Read a key from the device config
+    Read a key from the device configuration file.
+    
+    Args:
+        agent_data_path (str): Path to the agent data directory
+        key (str): The configuration key to read
+        
+    Returns:
+        Any: The value associated with the key, or None if the key doesn't exist
+              or there was an error reading the configuration file
     """
     try:
         config_path = os.path.join(
@@ -698,8 +830,19 @@ def device_config_read_key(agent_data_path: str, key: str) -> Any:
 
 def device_config_write_key(agent_data_path: str, key: str, value: Any) -> bool:
     """
-    Write a single key/value into the device config JSON.
-    Returns True on success, False on any error.
+    Write a single key/value into the device config JSON file.
+    
+    This function writes or updates a key in the device configuration file,
+    creating the file if it doesn't exist. It uses a safe write pattern with
+    a temporary file to prevent corruption if the process is interrupted.
+    
+    Args:
+        agent_data_path (str): Path to the agent data directory
+        key (str): The configuration key to write
+        value (Any): The value to associate with the key
+        
+    Returns:
+        bool: True on success, False on any error
     """
     config_path = os.path.join(agent_data_path, DEVICE_STATE_CONFIG)
     os.makedirs(os.path.dirname(config_path), exist_ok=True)

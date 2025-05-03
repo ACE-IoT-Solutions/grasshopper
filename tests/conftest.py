@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from tempfile import TemporaryDirectory
 from fastapi import FastAPI
+from multiprocessing import Queue
 
 from Grasshopper.grasshopper.api import api_router, compare_rdf_queue
 
@@ -25,8 +26,11 @@ def api_client():
         os.makedirs(os.path.join(temp_dir, "compare"), exist_ok=True)
         os.makedirs(os.path.join(temp_dir, "network_config"), exist_ok=True)
         
+        # Set up the task queues in app state
+        app.state.task_queue = Queue()
+        app.state.processing_task_queue = Queue()
+        
         # Set app state in both locations used by the code
-        app.state.agent_data_path = temp_dir
         app.extra = {"agent_data_path": temp_dir}
         
         # Clear the queue
