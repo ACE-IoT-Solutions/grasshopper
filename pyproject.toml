@@ -5,7 +5,7 @@ description = "Grasshopper is an open-source project designed to tackle the comp
 authors = [
     { name = "Justice Lee", email = "justice@aceiotsolutions.com" },
     { name = "Jackson Giles", email = "jackson@aceiotsolutions.com" },
-    { name = "Andrew Rodgers", email = "andrew@aceiotsolutionc.om" },
+    { name = "Andrew Rodgers", email = "andrew@aceiotsolutions.com" },
 ]
 readme = "README.md"
 requires-python = ">=3.12"
