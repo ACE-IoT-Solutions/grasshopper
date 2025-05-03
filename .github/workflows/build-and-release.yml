@@ -23,8 +23,6 @@ jobs:
       
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
-        with:
-          version: 0.1.13
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -50,6 +48,7 @@ jobs:
         run: |
           # Install directly from Grasshopper directory which has setup.py
           cd Grasshopper
+          uv venv
           uv pip install -e .
           uv pip install build wheel
           uv pip install git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
