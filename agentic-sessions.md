@@ -1,5 +1,41 @@
 # Agentic Sessions for Grasshopper
 
+## Session: CI/CD Performance Improvement with uv (May 3, 2025)
+
+### Summary
+Upgraded the CI/CD pipelines to use the uv package manager for significant performance improvements:
+
+1. **GitHub Actions Workflow Updates**
+   - Replaced pip with uv in all GitHub Actions workflows
+   - Updated build-and-release.yml to use uv for faster dependency resolution
+   - Modified test.yml workflow to streamline installation with uv
+   - Enhanced lint.yml to use uv for quicker linting tool installation
+
+2. **Developer Experience Improvements**
+   - Added uv installation instructions to CONTRIBUTING.md
+   - Streamlined the development environment setup process
+   - Created clearer documentation for project onboarding
+
+### Files Modified
+- `.github/workflows/build-and-release.yml` - Updated to use uv and fixed Python installation
+- `.github/workflows/test.yml` - Converted to use uv for dependencies
+- `.github/workflows/lint.yml` - Switched to uv for faster linting setup
+- `CONTRIBUTING.md` - Added uv as recommended installation method
+- `agentic-sessions.md` - Documentation update
+
+### Key Improvements
+- Significantly faster CI/CD pipeline execution time
+- More reliable dependency resolution
+- Better isolation from system Python packages
+- Simplified developer onboarding process
+- Consistent environment across development and CI
+
+### Future Work
+- Explore uv's lockfile features for even more deterministic builds
+- Consider integrating pre-commit hooks for local linting
+- Add dependency update automation
+- Evaluate conda-forge integration for scientific dependencies
+
 ## Session: Docstring Enhancement and Test Fix (May 3, 2025)
 
 ### Summary

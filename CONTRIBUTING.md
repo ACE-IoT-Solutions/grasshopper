@@ -10,24 +10,27 @@ Thank you for your interest in contributing to Grasshopper! This document provid
    cd grasshopper
    ```
 
-2. Set up a virtual environment:
+2. Set up your development environment:
    ```bash
-   # If using venv
+   # Option 1: Using uv (recommended - faster installation)
+   # Install uv if you don't have it:
+   # curl -LsSf https://astral.sh/uv/install.sh | sh
+
+   # Create a virtual environment and install deps
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   cd Grasshopper
+   uv pip install -e .
+   uv pip install pytest pytest-cov httpx black flake8 isort mypy
+   
+   # Option 2: Using venv + pip
    python -m venv .venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   
-   # If using Poetry
-   poetry install
-   ```
-
-3. Install dependencies:
-   ```bash
-   # If using pip
-   pip install -r Grasshopper/requirements.txt
-   # For development dependencies
+   cd Grasshopper
+   pip install -e .
    pip install pytest pytest-cov httpx black flake8 isort mypy
    
-   # If using Poetry
+   # Option 3: Using Poetry
    poetry install
    ```
 
