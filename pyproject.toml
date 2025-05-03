@@ -3,7 +3,9 @@ name = "grasshopper"
 version = "0.1.0"
 description = "Grasshopper is an open-source project designed to tackle the complex world of smart building networks."
 authors = [
-    { name = "Justin Scott", email = "jscott3201@gmail.com" },
+    { name = "Justice Lee", email = "justice@aceiotsolutions.com" },
+    { name = "Jackson Giles", email = "jackson@aceiotsolutions.com" },
+    { name = "Andrew Rodgers", email = "andrew@aceiotsolutionc.om" },
 ]
 readme = "README.md"
 requires-python = ">=3.12"

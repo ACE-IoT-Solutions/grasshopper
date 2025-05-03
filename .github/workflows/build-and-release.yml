@@ -49,13 +49,11 @@ jobs:
           # Install directly from Grasshopper directory which has setup.py
           cd Grasshopper
           uv venv
-          uv pip install -e .
-          uv pip install build wheel
-          uv pip install git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
+          uv sync
       
       - name: Build Python package
         working-directory: Grasshopper
-        run: python -m build
+        run: uv build
       
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
