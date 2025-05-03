@@ -14,7 +14,6 @@ dependencies = [
     "pyvis>=0.3.2",
     "fastapi>=0.110.0",
     "uvicorn>=0.27.1",
-    "python-multipart>=0.0.9",
     "fastmcp>=2.2.7",
 ]
 # Classifiers can be added here if desired, e.g.:
@@ -54,3 +53,12 @@ strict_optional = true
 module = "grasshopper.*"
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
+
+[tool.uv.sources]
+bacpypes3 = { git = "https://github.com/ACE-IoT-Solutions/BACpypes3.git", rev = "grasshopper-bandage" }
+
+[dependency-groups]
+dev = [
+    "mock>=5.2.0",
+    "pytest-cov>=6.1.1",
+]

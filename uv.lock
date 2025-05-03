@@ -37,11 +37,7 @@ wheels = [
 [[package]]
 name = "bacpypes3"
 version = "0.0.102"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/09/d2/a82e2d34a812d771149dfc6f45c28964234c6c1d9cda3ff51269b643a3b6/bacpypes3-0.0.102.tar.gz", hash = "sha256:869cdd3d9a73c7f9a390a963b0730b8bafab349dbfeb573ac980adfcd3a43094", size = 262949 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/c7/e0a623a7163337d6f7b9685ffc5825f6a448b6dadb988318201a3d0c22e5/bacpypes3-0.0.102-py3-none-any.whl", hash = "sha256:eb9485eb4d07bb6c3e59c8b711bd936384178f27f89416de107bf0add3b7c894", size = 308749 },
-]
+source = { git = "https://github.com/ACE-IoT-Solutions/BACpypes3.git?rev=grasshopper-bandage#518e0612d90a318198183f6d177a4bdf54ee0c18" }
 
 [[package]]
 name = "certifi"
@@ -195,9 +191,15 @@ dev = [
     { name = "pytest-cov" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "mock" },
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "bacpypes3", specifier = ">=0.0.86" },
+    { name = "bacpypes3", git = "https://github.com/ACE-IoT-Solutions/BACpypes3.git?rev=grasshopper-bandage" },
     { name = "fastapi", specifier = ">=0.110.0" },
     { name = "fastmcp", specifier = ">=2.2.7" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
@@ -211,6 +213,12 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.27.1" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mock", specifier = ">=5.2.0" },
+    { name = "pytest-cov", specifier = ">=6.1.1" },
+]
 
 [[package]]
 name = "h11"
@@ -431,6 +439,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979 },
+]
+
+[[package]]
+name = "mock"
+version = "5.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/8c/14c2ae915e5f9dca5a22edd68b35be94400719ccfa068a03e0fb63d0f6f6/mock-5.2.0.tar.gz", hash = "sha256:4e460e818629b4b173f32d08bf30d3af8123afbb8e04bb5707a1fd4799e503f0", size = 92796 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/d9/617e6af809bf3a1d468e0d58c3997b1dc219a9a9202e650d30c2fc85d481/mock-5.2.0-py3-none-any.whl", hash = "sha256:7ba87f72ca0e915175596069dbbcc7c75af7b5e9b9bc107ad6349ede0819982f", size = 31617 },
 ]
 
 [[package]]
