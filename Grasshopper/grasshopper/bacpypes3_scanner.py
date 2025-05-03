@@ -73,7 +73,7 @@ class BVLLServiceElement(ApplicationServiceElement):
     def create_future_request(
         self, destination: Address, request_class
     ) -> asyncio.Future:
-        task = asyncio.ensure_future(
+        task: asyncio.Future = asyncio.ensure_future(
             self.request(request_class(destination=destination))
         )
         return task
