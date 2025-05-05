@@ -101,7 +101,6 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
         "webapp_settings",
         {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
     )
-    graph_store_limit: Optional[int] = config.get("graph_store_limit", None)
     return Grasshopper(
         scan_interval_secs,
         low_limit,
@@ -109,7 +108,6 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
         device_broadcast_full_step_size,
         device_broadcast_empty_step_size,
         bacpypes_settings,
-        graph_store_limit,
         webapp_settings,
         **kwargs,
     )
@@ -128,7 +126,6 @@ class Grasshopper(Agent):
         device_broadcast_full_step_size: int = 100,
         device_broadcast_empty_step_size: int = 1000,
         bacpypes_settings: Optional[Dict[str, Any]] = None,
-        graph_store_limit: Optional[int] = None,
         webapp_settings: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
@@ -161,14 +158,12 @@ class Grasshopper(Agent):
                 "keyfile": None,
             }
         self.webapp_settings: Dict[str, Any] = webapp_settings
-        self.graph_store_limit: Optional[int] = graph_store_limit
         self.default_config: Dict[str, Any] = {
             "scan_interval_secs": scan_interval_secs,
             "low_limit": low_limit,
             "high_limit": high_limit,
             "device_broadcast_full_step_size": device_broadcast_full_step_size,
             "device_broadcast_empty_step_size": device_broadcast_empty_step_size,
-            "graph_store_limit": graph_store_limit,
             "bacpypes_settings": bacpypes_settings,
             "webapp_settings": webapp_settings,
         }

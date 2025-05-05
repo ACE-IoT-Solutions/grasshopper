@@ -131,7 +131,6 @@ A sample configuration file is provided in the repository. The config file is a 
 - **`low_limit`**: Lower limit for a BACnet `who_is` scan.
 - **`high_limit`**: Upper limit for a BACnet `who_is` scan.
 - **`batch_broadcast_size`**: Batch size for a BACnet `who_is` scan.
-- **`graph_store_limit`**: Limit on how many network graph files to store.
 - **`bacpypes_settings`**: Dictionary settings for the simulated BACnet app, which includes:
   - **`name`**: Name of the BACnet app.
   - **`instance`**: BACnet app instance ID.
