@@ -135,15 +135,15 @@ export default {
   computed: {
     showHideText() {
       if (this.selectedNodeType === 'Network') {
-        return this.hiddenNetworkIds.includes(this.selectedNetwork) ? 'Show' : 'Hide';
+        return this.hiddenNetworkIds.includes(this.selectedNode) ? 'Show' : 'Hide';
       } else if (this.selectedNodeType === 'Router') {
-        return this.hiddenRouterIds.includes(this.selectedRouter) ? 'Show' : 'Hide';
+        return this.hiddenRouterIds.includes(this.selectedNode) ? 'Show' : 'Hide';
       } else if (this.selectedNodeType === 'Device') {
-        return this.hiddenDeviceIds.includes(this.selectedDevice) ? 'Show' : 'Hide';
+        return this.hiddenDeviceIds.includes(this.selectedNode) ? 'Show' : 'Hide';
       } else if (this.selectedNodeType === 'BBMD') {
-        return this.hiddenBbmdIds.includes(this.selectedBbmd) ? 'Show' : 'Hide';
+        return this.hiddenBbmdIds.includes(this.selectedNode) ? 'Show' : 'Hide';
       } else if (this.selectedNodeType === 'Subnet') {
-        return this.hiddenSubnetIds.includes(this.selectedSubnet) ? 'Show' : 'Hide';
+        return this.hiddenSubnetIds.includes(this.selectedNode) ? 'Show' : 'Hide';
       } else {
         return '';
       }
@@ -213,24 +213,21 @@ export default {
 
       allBbmds: [],
       onBbmds: [],
+
+      selectedNode: null,
       
-      selectedNetwork: null,
       networkVisibility: {},
       hiddenNetworkIds: [],
 
-      selectedRouter: null,
       routerVisibility: {},
       hiddenRouterIds: [],
 
-      selectedDevice: null,
       deviceVisibility: {},
       hiddenDeviceIds: [],
 
-      selectedBbmd: null,
       bbmdVisibility: {},
       hiddenBbmdIds: [],
       
-      selectedSubnet: null,
       subnetVisibility: {},
       hiddenSubnetIds: [],
 
@@ -247,51 +244,51 @@ export default {
   methods: {
     toggleHideSelectedNode() {
       if (this.selectedNodeType === 'Network') {
-        if (this.hiddenNetworkIds.includes(this.selectedNetwork)) {
-          this.showSet(this.networkVisibility, this.hiddenNetworkIds, this.selectedNetwork);
+        if (this.hiddenNetworkIds.includes(this.selectedNode)) {
+          this.showSet(this.networkVisibility, this.hiddenNetworkIds, this.selectedNode);
         } else {
-          this.hideSet(this.networkVisibility, this.selectedNetwork, this.hiddenNetworkIds, 'network');
+          this.hideSet(this.networkVisibility, this.selectedNode, this.hiddenNetworkIds, 'network');
         }
       } else if (this.selectedNodeType === 'Router') {
-        if (this.hiddenRouterIds.includes(this.selectedRouter)) {
-          this.showSet(this.routerVisibility, this.hiddenRouterIds, this.selectedRouter);
+        if (this.hiddenRouterIds.includes(this.selectedNode)) {
+          this.showSet(this.routerVisibility, this.hiddenRouterIds, this.selectedNode);
         } else {
-          this.hideSet(this.routerVisibility, this.selectedRouter, this.hiddenRouterIds, 'router');
+          this.hideSet(this.routerVisibility, this.selectedNode, this.hiddenRouterIds, 'router');
         }
       } else if (this.selectedNodeType === 'Device') {
-        if (this.hiddenDeviceIds.includes(this.selectedDevice)) {
+        if (this.hiddenDeviceIds.includes(this.selectedNode)) {
           // this.showDevice(this.selectedDevice);
-          this.showSet(this.deviceVisibility, this.hiddenDeviceIds, this.selectedDevice);
+          this.showSet(this.deviceVisibility, this.hiddenDeviceIds, this.selectedNode);
         } else {
           this.hideDevice();
         }
       } else if (this.selectedNodeType === 'BBMD') {
-        if (this.hiddenBbmdIds.includes(this.selectedBbmd)) {
-          this.showSet(this.bbmdVisibility, this.hiddenBbmdIds, this.selectedBbmd);
+        if (this.hiddenBbmdIds.includes(this.selectedNode)) {
+          this.showSet(this.bbmdVisibility, this.hiddenBbmdIds, this.selectedNode);
         } else {
-          this.hideSet(this.bbmdVisibility, this.selectedBbmd, this.hiddenBbmdIds, null);
+          this.hideSet(this.bbmdVisibility, this.selectedNode, this.hiddenBbmdIds, null);
         }
       } else if (this.selectedNodeType === 'Subnet') {
-        if (this.hiddenSubnetIds.includes(this.selectedSubnet)) {
-          this.showSet(this.subnetVisibility, this.hiddenSubnetIds, this.selectedSubnet);
+        if (this.hiddenSubnetIds.includes(this.selectedNode)) {
+          this.showSet(this.subnetVisibility, this.hiddenSubnetIds, this.selectedNode);
         } else {
-          this.hideSet(this.subnetVisibility, this.selectedSubnet, this.hiddenSubnetIds, 'subnet');
+          this.hideSet(this.subnetVisibility, this.selectedNode, this.hiddenSubnetIds, 'subnet');
         }
       }
     },
     hideEdgeAndNetwork(edge) {
       if (!this.selectedEdge) return;
 
-      this.selectedNetwork = edge;
+      this.selectedNode = edge;
 
-      this.hideSet(this.networkVisibility, this.selectedNetwork, this.hiddenNetworkIds, 'network');
+      this.hideSet(this.networkVisibility, this.selectedNode, this.hiddenNetworkIds, 'network');
     },
     hideEverythingConnectedToRouter(edge) {
       if (!this.selectedEdge) return;
 
-      this.selectedRouter = edge;
+      this.selectedNode = edge;
 
-      this.hideSet(this.routerVisibility, this.selectedRouter, this.hiddenRouterIds, 'router');
+      this.hideSet(this.routerVisibility, this.selectedNode, this.hiddenRouterIds, 'router');
     },
     hideEdgeAndDevice() {
       if (!this.selectedEdge) return;
@@ -299,30 +296,30 @@ export default {
       const edgeId = this.selectedEdge;
       const edgeData = this.network.body.data.edges.get(edgeId);
 
-      this.selectedDevice = edgeData.from;
+      this.selectedNode = edgeData.from;
 
       this.hideDevice();
     },
     hideNetworkAndEdgeToRouter(edge) {
       if (!this.selectedEdge) return;
 
-      this.selectedNetwork = edge;
+      this.selectedNode = edge;
 
-      this.hideSet(this.networkVisibility, this.selectedNetwork, this.hiddenNetworkIds, 'network');
+      this.hideSet(this.networkVisibility, this.selectedNode, this.hiddenNetworkIds, 'network');
     },
     hideEdgeAndSubnet(edge) {
       if (!this.selectedEdge) return;
 
-      this.selectedSubnet = edge;
+      this.selectedNode = edge;
 
-      this.hideSet(this.subnetVisibility, this.selectedSubnet, this.hiddenSubnetIds, 'subnet');
+      this.hideSet(this.subnetVisibility, this.selectedNode, this.hiddenSubnetIds, 'subnet');
     },
     hideEdgeAndBbmd(edge) {
       if (!this.selectedEdge) return;
 
-      this.selectedBbmd = edge;
+      this.selectedNode = edge;
 
-      this.hideSet(this.bbmdVisibility, this.selectedBbmd, this.hiddenBbmdIds, null);
+      this.hideSet(this.bbmdVisibility, this.selectedNode, this.hiddenBbmdIds, null);
     },
     hideSet(setVisibility, nodeId, hiddenIds, setType) {
       if (!nodeId) return;
@@ -424,9 +421,9 @@ export default {
       this.network.body.data.edges.update({ id: edgeId, hidden: true, length: 0 });
     },
     hideDevice() {
-      if (!this.selectedDevice) return;
+      if (!this.selectedNode) return;
 
-      const deviceNodeId = this.selectedDevice;
+      const deviceNodeId = this.selectedNode;
 
       // init storage
       if (!this.deviceVisibility[deviceNodeId]) {
@@ -459,8 +456,6 @@ export default {
       }
     },
     setToShow(type, item) {
-
-      // console.log(type, " | ", item);
       
       const setTypes = {
         'device': { visibility: this.deviceVisibility, ids: this.hiddenDeviceIds },
@@ -955,20 +950,15 @@ export default {
           if (clickedNode) {
             // console.log(clickedNode);
 
-            const cleanedTitle = clickedNode.id;
+            // const cleanedTitle = clickedNode.id;
             const nodeType = clickedNode.data.type;
             const nodeLabel = clickedNode.data.label
 
             this.selectedNodeType = null;
-            
-            if (cleanedTitle.startsWith("bacnet://network/")) {
-              this.altInfo = "Network Node: " + clickedNode.label;
-              this.altCard = true;
-              this.selectedNetwork = clickedNode.id;
-              this.selectedNodeType = 'Network';
-            } else if (nodeType == 'BBMD') {
+
+            if (nodeType == 'BBMD') {
               this.cardInfo = this.formatData(clickedNode.data);
-              this.tableLabel = "BBMD";
+              this.tableLabel = nodeType;
               this.altCard = false;
               this.selectedBbmd = clickedNode.id;
               this.selectedNodeType = 'BBMD';
@@ -978,42 +968,28 @@ export default {
               );
               this.toggleBdtEdges(matchingEdges, true)
 
-            } else if (cleanedTitle.startsWith("bacnet://router/")) {
-              this.altInfo = "Router Node: " + clickedNode.label;
-              this.altCard = true;
-              this.selectedRouter = clickedNode.id;
-              this.selectedNodeType = 'Router';
-            } else if (cleanedTitle.startsWith("bacnet://subnet/")) {
-              this.altInfo = "Subnet Node: " + clickedNode.label;
-              this.altCard = true;
-              this.selectedSubnet = clickedNode.id;
-              this.selectedNodeType = 'Subnet';
-            } else if (cleanedTitle.startsWith("bacnet://Grasshopper")) {
-              this.cardInfo = this.formatData(clickedNode.data);
-              this.altCard = false;
             } else {
               this.cardInfo = this.formatData(clickedNode.data);
-              this.tableLabel = "Device";
+              this.tableLabel = nodeType;
               this.altCard = false;
               this.selectedDevice = clickedNode.id;
-              this.selectedNodeType = 'Device';
+              this.selectedNodeType = nodeType;
+
+              this.selectedNode = clickedNode.id;
             }
+
             this.showHiddenMenu = false;
             this.cardToggled = true;
             this.showEdgeMenu = false;
           }
         }
-
-        // if (!params.edges.length) {
-        //   this.store.setBdtEdges(false);
-        // }
         
         if (params.edges.length > 0) {
           const edgeId = params.edges[0];
           let clickedEdge = data.edges.find((edge) => edge.id === edgeId);
 
           if (clickedEdge && params.nodes.length == 0) {
-            // console.log(JSON.stringify(clickedEdge));
+            // console.log(clickedEdge);
             
             const cleanedLabel = clickedEdge.label.replace('http://data.ashrae.org/bacnet/2020#', '');
             this.selectedEdge = clickedEdge.id;
