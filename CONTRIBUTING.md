@@ -2,34 +2,42 @@
 
 Thank you for your interest in contributing to Grasshopper! This document provides guidelines and instructions for contributing.
 
-## Development Environment
+## Development Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/ACE-IoT-Solutions/grasshopper.git
-   cd grasshopper
-   ```
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/grasshopper.git
+    cd grasshopper
+    ```
 
-2. Set up a virtual environment:
-   ```bash
-   # If using venv
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   
-   # If using Poetry
-   poetry install
-   ```
+2.  **Create and activate a virtual environment:**
+    We recommend using `uv`:
+    ```bash
+    uv venv
+    source .venv/bin/activate # Or equivalent for your shell
+    ```
 
-3. Install dependencies:
-   ```bash
-   # If using pip
-   pip install -r Grasshopper/requirements.txt
-   # For development dependencies
-   pip install pytest pytest-cov httpx black flake8 isort mypy
-   
-   # If using Poetry
-   poetry install
-   ```
+3.  **Install dependencies:**
+    Install main and development dependencies using `uv`:
+    ```bash
+    uv pip sync pyproject.toml --extras dev
+    ```
+
+4.  **Running Tests:**
+    ```bash
+    pytest
+    ```
+
+5.  **Running Linters/Formatters:**
+    ```bash
+    # Example for mypy
+    mypy grasshopper
+    ```
+
+6.  **Adding Dependencies:**
+    *   Install the package into your environment: `uv pip install <package-name>`
+    *   Manually add the package and version specifier to the appropriate list (`dependencies` or `optional-dependencies.dev`) in `pyproject.toml`.
+    *   Re-sync the environment: `uv pip sync pyproject.toml --extras dev`
 
 ## Running Tests
 

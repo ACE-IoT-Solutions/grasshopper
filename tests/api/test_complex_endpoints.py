@@ -30,7 +30,9 @@ def test_add_ttl_compare_queue(api_client):
     )
 
     assert response.status_code == 202
-    assert response.json() == {"message": "File accepted"}
+    assert "message" in response.json()
+    assert response.json()["message"] == "File accepted"
+    assert "task" in response.json()
 
     # Check queue
     response = client.get("/operations/ttl_compare_queue")
