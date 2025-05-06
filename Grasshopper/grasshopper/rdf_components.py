@@ -170,9 +170,7 @@ class BaseNode:
             predicate (URIRef): The predicate (relationship) to set
             new_object (Union[URIRef, Literal]): The object (value) to set
         """
-        if "device-on-network" not in str(predicate) and "router-to-network" not in str(
-            predicate
-        ):
+        if str(predicate) in BACnetEdgeType._value2member_map_:
             self.graph.set((self.node_iri, predicate, new_object))  # type: ignore
         else:
             self.graph.add((self.node_iri, predicate, new_object))  # type: ignore
