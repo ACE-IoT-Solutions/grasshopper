@@ -12,57 +12,67 @@
             icon=""
             size="medium"
             density="compact"
-            >
-              <v-icon>mdi-minus</v-icon>
-            </v-btn>
-            <v-btn
-              @click="zoom('in')"
-              variant="plain"
-              id="no-background-hover"
-              :ripple="false"
-              icon=""
-              size="medium"
-              density="compact"
-            >
-                <v-icon>mdi-plus</v-icon>
-            </v-btn>
-        </div>
-        <div style="display: flex; gap: 20px;">
+          >
+            <v-icon>mdi-minus</v-icon>
+          </v-btn>
           <v-btn
-            @click="showSearch = true; showEdgeMenu = false;"
+            @click="zoom('in')"
             variant="plain"
             id="no-background-hover"
             :ripple="false"
             icon=""
             size="medium"
-            density="compact"><v-icon>mdi-magnify</v-icon></v-btn>
+            density="compact"
+          >
+            <v-icon>mdi-plus</v-icon>
+          </v-btn>
+        </div>
+        <div style="display: flex; gap: 20px">
+          <v-btn
+            @click="
+              showSearch = true;
+              showEdgeMenu = false;
+            "
+            variant="plain"
+            id="no-background-hover"
+            :ripple="false"
+            icon=""
+            size="medium"
+            density="compact"
+            ><v-icon>mdi-magnify</v-icon></v-btn
+          >
         </div>
       </div>
       <EdgeCard
         v-if="showEdgeMenu"
         :edgeInfo="edgeInfo"
         :edgeOptions="edgeOptions"
-        @close="showEdgeMenu = false" />
+        @close="showEdgeMenu = false"
+      />
       <!-- physics menu -->
       <ConfigMenu
         :showConfig="showConfig"
         :store="store"
         @close="showConfig = false"
         @storeConfig="storeConfig()"
-        ref="configMenu" />
+        ref="configMenu"
+      />
       <!-- graph -->
       <div ref="networkContainer" class="network-graph"></div>
+      <!-- add note card -->
+      <NoteCard v-if="store.showNoteCard" :store="store" />
       <!-- node info -->
-       <NodeCard
+      <NodeCard
         v-if="cardToggled"
         :altCard="altCard"
         :selectedNodeType="selectedNodeType"
         :cardInfo="cardInfo"
         :altInfo="altInfo"
         :showHideText="showHideText"
+        :store="store"
         @closeCard="cardToggled = false"
         @toggleHideSelectedNode="toggleHideSelectedNode()"
-        />
+      />
       <!-- search card -->
       <SearchCard
         v-if="showSearch"
@@ -92,7 +102,10 @@
         </v-btn>
         <v-btn
           v-if="showHiddenMenuButton"
-          @click="showHiddenMenu = true; cardToggled = false;"
+          @click="
+            showHiddenMenu = true;
+            cardToggled = false;
+          "
           variant="plain"
           size="small"
           >Hidden Items
@@ -103,93 +116,105 @@
 </template>
 
 <script>
-import { Network } from "vis-network";
-import NodeCard from '../components/NodeCard.vue';
-import SearchCard from '../components/SearchCard.vue';
-import HiddenItemsMenu from '../components/HiddenItemsMenu.vue';
-import EdgeCard from '../components/EdgeCard.vue';
-import ConfigMenu from '../components/ConfigMenu.vue';
+import { Network } from 'vis-network'
+import NodeCard from '../components/NodeCard.vue'
+import SearchCard from '../components/SearchCard.vue'
+import HiddenItemsMenu from '../components/HiddenItemsMenu.vue'
+import EdgeCard from '../components/EdgeCard.vue'
+import ConfigMenu from '../components/ConfigMenu.vue'
+import NoteCard from '../components/NoteCard.vue'
 
 export default {
-  props: ["store"],
+  props: ['store'],
   components: {
     NodeCard,
     SearchCard,
     HiddenItemsMenu,
     EdgeCard,
     ConfigMenu,
+    NoteCard,
   },
   mounted() {
-    this.generate();
+    this.generate()
   },
   watch: {
     // eslint-disable-next-line no-unused-vars
     'store.physicsConfig'(newVal, oldVal) {
-      this.network.physics.options = newVal;
+      this.network.physics.options = newVal
     },
     'store.showBdtEdges'(visible) {
-      const allEdges = this.network.body.data.edges.get();
-      this.toggleBdtEdges(allEdges, visible);
-    }
+      const allEdges = this.network.body.data.edges.get()
+      this.toggleBdtEdges(allEdges, visible)
+    },
   },
   computed: {
     showHideText() {
       if (this.selectedNodeType === 'Network') {
-        return this.hiddenNetworkIds.includes(this.selectedNode) ? 'Show' : 'Hide';
+        return this.hiddenNetworkIds.includes(this.selectedNode)
+          ? 'Show'
+          : 'Hide'
       } else if (this.selectedNodeType === 'Router') {
-        return this.hiddenRouterIds.includes(this.selectedNode) ? 'Show' : 'Hide';
+        return this.hiddenRouterIds.includes(this.selectedNode)
+          ? 'Show'
+          : 'Hide'
       } else if (this.selectedNodeType === 'Device') {
-        return this.hiddenDeviceIds.includes(this.selectedNode) ? 'Show' : 'Hide';
+        return this.hiddenDeviceIds.includes(this.selectedNode)
+          ? 'Show'
+          : 'Hide'
       } else if (this.selectedNodeType === 'BBMD') {
-        return this.hiddenBbmdIds.includes(this.selectedNode) ? 'Show' : 'Hide';
+        return this.hiddenBbmdIds.includes(this.selectedNode) ? 'Show' : 'Hide'
       } else if (this.selectedNodeType === 'Subnet') {
-        return this.hiddenSubnetIds.includes(this.selectedNode) ? 'Show' : 'Hide';
+        return this.hiddenSubnetIds.includes(this.selectedNode)
+          ? 'Show'
+          : 'Hide'
       } else {
-        return '';
+        return ''
       }
     },
     showHiddenMenuButton() {
       return (
-        this.hiddenNetworkIds.length > 0 || 
-        this.hiddenRouterIds.length > 0 || 
+        this.hiddenNetworkIds.length > 0 ||
+        this.hiddenRouterIds.length > 0 ||
         this.hiddenDeviceIds.length > 0 ||
-        this.hiddenBbmdIds.length > 0 || 
+        this.hiddenBbmdIds.length > 0 ||
         this.hiddenSubnetIds.length > 0
-      );
+      )
     },
     nodes() {
-      return this.store.currentGraph?.nodes || [];
+      return this.store.currentGraph?.nodes || []
     },
     edges() {
-      return this.store.currentGraph?.edges.map((edge, i) => ({
-        ...edge,
-        id: Date.now() + i
-      })) || [];
-    }
+      return (
+        this.store.currentGraph?.edges.map((edge, i) => ({
+          ...edge,
+          id: Date.now() + i,
+        })) || []
+      )
+    },
   },
   data() {
     return {
       network: null,
       showConfig: false,
-      cardInfo: [{ title: "", value: "" }],
+      cardInfo: [{ title: '', value: '' }],
       tableLabel: null,
       edgeInfo: {
         type: null,
         from: null,
-        to: null
+        to: null,
       },
       edgeOptions: [
         {
-          title: "Test",
+          title: 'Test',
           action: () => this.hideEdge(),
-        }
+        },
       ],
       altInfo: null,
       altCard: false,
       showCard: false,
       showSearch: false,
       cardToggled: false,
-      nodeSearch: "",
+      nodeSearch: '',
       searchResults: [],
       networkHidden: false,
       networkColors: {},
@@ -198,7 +223,7 @@ export default {
       showFilter: false,
       networkItems: [],
       networkFilter: null,
-      networkSearch: "",
+      networkSearch: '',
       networkSizes: {},
       networkEdgeLengths: {},
       selectedEdge: null,
@@ -215,7 +240,7 @@ export default {
       onBbmds: [],
 
       selectedNode: null,
-      
+
       networkVisibility: {},
       hiddenNetworkIds: [],
 
@@ -227,7 +252,7 @@ export default {
 
       bbmdVisibility: {},
       hiddenBbmdIds: [],
-      
+
       subnetVisibility: {},
       hiddenSubnetIds: [],
 
@@ -239,236 +264,318 @@ export default {
 
       bdtEdges: [],
       closestBbmd: null,
-    };
+
+      // showNoteCard: false,
+    }
   },
   methods: {
     toggleHideSelectedNode() {
       if (this.selectedNodeType === 'Network') {
         if (this.hiddenNetworkIds.includes(this.selectedNode)) {
-          this.showSet(this.networkVisibility, this.hiddenNetworkIds, this.selectedNode);
+          this.showSet(
+            this.networkVisibility,
+            this.hiddenNetworkIds,
+            this.selectedNode,
+          )
         } else {
-          this.hideSet(this.networkVisibility, this.selectedNode, this.hiddenNetworkIds, 'network');
+          this.hideSet(
+            this.networkVisibility,
+            this.selectedNode,
+            this.hiddenNetworkIds,
+            'network',
+          )
         }
       } else if (this.selectedNodeType === 'Router') {
         if (this.hiddenRouterIds.includes(this.selectedNode)) {
-          this.showSet(this.routerVisibility, this.hiddenRouterIds, this.selectedNode);
+          this.showSet(
+            this.routerVisibility,
+            this.hiddenRouterIds,
+            this.selectedNode,
+          )
         } else {
-          this.hideSet(this.routerVisibility, this.selectedNode, this.hiddenRouterIds, 'router');
+          this.hideSet(
+            this.routerVisibility,
+            this.selectedNode,
+            this.hiddenRouterIds,
+            'router',
+          )
         }
       } else if (this.selectedNodeType === 'Device') {
         if (this.hiddenDeviceIds.includes(this.selectedNode)) {
           // this.showDevice(this.selectedDevice);
-          this.showSet(this.deviceVisibility, this.hiddenDeviceIds, this.selectedNode);
+          this.showSet(
+            this.deviceVisibility,
+            this.hiddenDeviceIds,
+            this.selectedNode,
+          )
         } else {
-          this.hideDevice();
+          this.hideDevice()
         }
       } else if (this.selectedNodeType === 'BBMD') {
         if (this.hiddenBbmdIds.includes(this.selectedNode)) {
-          this.showSet(this.bbmdVisibility, this.hiddenBbmdIds, this.selectedNode);
+          this.showSet(
+            this.bbmdVisibility,
+            this.hiddenBbmdIds,
+            this.selectedNode,
+          )
         } else {
-          this.hideSet(this.bbmdVisibility, this.selectedNode, this.hiddenBbmdIds, null);
+          this.hideSet(
+            this.bbmdVisibility,
+            this.selectedNode,
+            this.hiddenBbmdIds,
+            null,
+          )
         }
       } else if (this.selectedNodeType === 'Subnet') {
         if (this.hiddenSubnetIds.includes(this.selectedNode)) {
-          this.showSet(this.subnetVisibility, this.hiddenSubnetIds, this.selectedNode);
+          this.showSet(
+            this.subnetVisibility,
+            this.hiddenSubnetIds,
+            this.selectedNode,
+          )
         } else {
-          this.hideSet(this.subnetVisibility, this.selectedNode, this.hiddenSubnetIds, 'subnet');
+          this.hideSet(
+            this.subnetVisibility,
+            this.selectedNode,
+            this.hiddenSubnetIds,
+            'subnet',
+          )
         }
       }
     },
     hideEdgeAndNetwork(edge) {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      this.selectedNode = edge;
+      this.selectedNode = edge
 
-      this.hideSet(this.networkVisibility, this.selectedNode, this.hiddenNetworkIds, 'network');
+      this.hideSet(
+        this.networkVisibility,
+        this.selectedNode,
+        this.hiddenNetworkIds,
+        'network',
+      )
     },
     hideEverythingConnectedToRouter(edge) {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      this.selectedNode = edge;
+      this.selectedNode = edge
 
-      this.hideSet(this.routerVisibility, this.selectedNode, this.hiddenRouterIds, 'router');
+      this.hideSet(
+        this.routerVisibility,
+        this.selectedNode,
+        this.hiddenRouterIds,
+        'router',
+      )
     },
     hideEdgeAndDevice() {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      const edgeId = this.selectedEdge;
-      const edgeData = this.network.body.data.edges.get(edgeId);
+      const edgeId = this.selectedEdge
+      const edgeData = this.network.body.data.edges.get(edgeId)
 
-      this.selectedNode = edgeData.from;
+      this.selectedNode = edgeData.from
 
-      this.hideDevice();
+      this.hideDevice()
     },
     hideNetworkAndEdgeToRouter(edge) {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      this.selectedNode = edge;
+      this.selectedNode = edge
 
-      this.hideSet(this.networkVisibility, this.selectedNode, this.hiddenNetworkIds, 'network');
+      this.hideSet(
+        this.networkVisibility,
+        this.selectedNode,
+        this.hiddenNetworkIds,
+        'network',
+      )
     },
     hideEdgeAndSubnet(edge) {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      this.selectedNode = edge;
+      this.selectedNode = edge
 
-      this.hideSet(this.subnetVisibility, this.selectedNode, this.hiddenSubnetIds, 'subnet');
+      this.hideSet(
+        this.subnetVisibility,
+        this.selectedNode,
+        this.hiddenSubnetIds,
+        'subnet',
+      )
     },
     hideEdgeAndBbmd(edge) {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      this.selectedNode = edge;
+      this.selectedNode = edge
 
-      this.hideSet(this.bbmdVisibility, this.selectedNode, this.hiddenBbmdIds, null);
+      this.hideSet(
+        this.bbmdVisibility,
+        this.selectedNode,
+        this.hiddenBbmdIds,
+        null,
+      )
     },
     hideSet(setVisibility, nodeId, hiddenIds, setType) {
-      if (!nodeId) return;
-      
+      if (!nodeId) return
+
       // init storage
       if (!setVisibility[nodeId]) {
         setVisibility[nodeId] = {
           nodes: {},
           edges: {},
-        };
+        }
       }
 
       // current node init
-      let currentNodeId;
+      let currentNodeId
 
       // init traversal
-      const visitedNodes = new Set();
-      const visitedEdges = new Set();
-      const nodesToVisit = [nodeId];
+      const visitedNodes = new Set()
+      const visitedEdges = new Set()
+      const nodesToVisit = [nodeId]
 
       while (nodesToVisit.length > 0) {
-        currentNodeId = nodesToVisit.shift();
+        currentNodeId = nodesToVisit.shift()
 
-        if (visitedNodes.has(currentNodeId)) continue;
+        if (visitedNodes.has(currentNodeId)) continue
 
         // exception node init
         const ignore = {
-          'subnet': this.allBbmds.includes(currentNodeId),
-          'router': currentNodeId.startsWith('bacnet://subnet/'),
-          'network': currentNodeId.startsWith('bacnet://router/'),
+          subnet: this.allBbmds.includes(currentNodeId),
+          router: currentNodeId.startsWith('bacnet://subnet/'),
+          network: currentNodeId.startsWith('bacnet://router/'),
         }
 
         // applies node exception based on setType
         // eslint-disable-next-line no-prototype-builtins
         if (setType && ignore.hasOwnProperty(setType) && ignore[setType]) {
-          continue;
+          continue
         }
 
         // ignore grasshopper node
         if (currentNodeId.startsWith('bacnet://Grasshopper')) {
-          continue;
+          continue
         }
 
-        visitedNodes.add(currentNodeId);
+        visitedNodes.add(currentNodeId)
 
         // store/hide the current node
-        const currentNodeData = this.network.body.data.nodes.get(currentNodeId);
+        const currentNodeData = this.network.body.data.nodes.get(currentNodeId)
         setVisibility[nodeId].nodes[currentNodeId] = {
           hidden: currentNodeData.hidden || false,
-        };
-        this.network.body.data.nodes.update({ id: currentNodeId, hidden: true });
+        }
+        this.network.body.data.nodes.update({ id: currentNodeId, hidden: true })
 
         // get connected edges
-        const connectedEdges = this.network.getConnectedEdges(currentNodeId);
+        const connectedEdges = this.network.getConnectedEdges(currentNodeId)
 
         connectedEdges.forEach(edgeId => {
-          if (visitedEdges.has(edgeId)) return;
+          if (visitedEdges.has(edgeId)) return
 
-          const edgeData = this.network.body.data.edges.get(edgeId);
+          const edgeData = this.network.body.data.edges.get(edgeId)
 
           // other node connected by this edge
-          const otherNodeId = edgeData.from === currentNodeId ? edgeData.to : edgeData.from;
+          const otherNodeId =
+            edgeData.from === currentNodeId ? edgeData.to : edgeData.from
 
           // eslint-disable-next-line no-prototype-builtins
           if (setType && ignore.hasOwnProperty(setType) && ignore[setType]) {
-            return;
+            return
           }
 
           if (otherNodeId.startsWith('bacnet://Grasshopper')) {
-            return;
+            return
           }
 
-          visitedEdges.add(edgeId);
+          visitedEdges.add(edgeId)
 
           // store/hide edge
-          const edge = this.network.body.data.edges.get(edgeId);
-          setVisibility[nodeId].edges[edgeId] = edge;
-          this.network.body.data.edges.remove(edgeId);
+          const edge = this.network.body.data.edges.get(edgeId)
+          setVisibility[nodeId].edges[edgeId] = edge
+          this.network.body.data.edges.remove(edgeId)
 
           if (!visitedNodes.has(otherNodeId)) {
-            nodesToVisit.push(otherNodeId);
+            nodesToVisit.push(otherNodeId)
           }
-        });
+        })
       }
 
       // add to hiddenRouterIds
       if (!hiddenIds.includes(nodeId)) {
-        hiddenIds.push(nodeId);
+        hiddenIds.push(nodeId)
       }
     },
     hideEdge() {
-      if (!this.selectedEdge) return;
+      if (!this.selectedEdge) return
 
-      const edgeId = this.selectedEdge;
+      const edgeId = this.selectedEdge
       // eslint-disable-next-line no-unused-vars
-      const edgeData = this.network.body.data.edges.get(edgeId);
+      const edgeData = this.network.body.data.edges.get(edgeId)
 
       // Hide the edge
-      this.network.body.data.edges.update({ id: edgeId, hidden: true, length: 0 });
+      this.network.body.data.edges.update({
+        id: edgeId,
+        hidden: true,
+        length: 0,
+      })
     },
     hideDevice() {
-      if (!this.selectedNode) return;
+      if (!this.selectedNode) return
 
-      const deviceNodeId = this.selectedNode;
+      const deviceNodeId = this.selectedNode
 
       // init storage
       if (!this.deviceVisibility[deviceNodeId]) {
         this.deviceVisibility[deviceNodeId] = {
           nodes: {},
           edges: {},
-        };
+        }
       }
 
-      const connectedEdges = this.network.getConnectedEdges(deviceNodeId);
+      const connectedEdges = this.network.getConnectedEdges(deviceNodeId)
 
       // hide selected device node
-      const selectedNodeData = this.network.body.data.nodes.get(deviceNodeId);
+      const selectedNodeData = this.network.body.data.nodes.get(deviceNodeId)
       this.deviceVisibility[deviceNodeId].nodes[deviceNodeId] = {
         hidden: selectedNodeData.hidden || false,
-      };
-      this.network.body.data.nodes.update({ id: deviceNodeId, hidden: true });
+      }
+      this.network.body.data.nodes.update({ id: deviceNodeId, hidden: true })
 
       // hide connected edges
       connectedEdges.forEach(edgeId => {
-        const edgeData = this.network.body.data.edges.get(edgeId);
+        const edgeData = this.network.body.data.edges.get(edgeId)
         this.deviceVisibility[deviceNodeId].edges[edgeId] = edgeData
-        this.network.body.data.edges.remove(edgeId);
-
-      });
+        this.network.body.data.edges.remove(edgeId)
+      })
 
       // add to hiddenDeviceIds
       if (!this.hiddenDeviceIds.includes(deviceNodeId)) {
-        this.hiddenDeviceIds.push(deviceNodeId);
+        this.hiddenDeviceIds.push(deviceNodeId)
       }
     },
     setToShow(type, item) {
-      
       const setTypes = {
-        'device': { visibility: this.deviceVisibility, ids: this.hiddenDeviceIds },
-        'network': { visibility: this.networkVisibility, ids: this.hiddenNetworkIds },
-        'router': { visibility: this.routerVisibility, ids: this.hiddenRouterIds },
-        'subnet': { visibility: this.subnetVisibility, ids: this.hiddenSubnetIds },
-        'bbmd': { visibility: this.bbmdVisibility, ids: this.hiddenBbmdIds },
-      };
+        device: {
+          visibility: this.deviceVisibility,
+          ids: this.hiddenDeviceIds,
+        },
+        network: {
+          visibility: this.networkVisibility,
+          ids: this.hiddenNetworkIds,
+        },
+        router: {
+          visibility: this.routerVisibility,
+          ids: this.hiddenRouterIds,
+        },
+        subnet: {
+          visibility: this.subnetVisibility,
+          ids: this.hiddenSubnetIds,
+        },
+        bbmd: { visibility: this.bbmdVisibility, ids: this.hiddenBbmdIds },
+      }
 
-      this.showSet(setTypes[type].visibility, setTypes[type].ids, item);
+      this.showSet(setTypes[type].visibility, setTypes[type].ids, item)
     },
     showSet(setVisibility, hiddenIds, showId) {
-      if (!setVisibility[showId]) return;
+      if (!setVisibility[showId]) return
 
       // Restore the visibility of nodes
       Object.keys(setVisibility[showId].nodes).forEach(nodeId => {
@@ -476,57 +583,57 @@ export default {
         this.network.body.data.nodes.update({
           id: nodeId,
           hidden: false,
-        });
-      });
+        })
+      })
 
       // Restore the visibility of edges
       Object.keys(setVisibility[showId].edges).forEach(edgeId => {
-        const original = setVisibility[showId].edges[edgeId];
-        this.network.body.data.edges.add(original);
-        delete setVisibility[showId].edges[edgeId];
-      });
+        const original = setVisibility[showId].edges[edgeId]
+        this.network.body.data.edges.add(original)
+        delete setVisibility[showId].edges[edgeId]
+      })
 
       // Remove from hiddenRouterIds
-      const index = hiddenIds.indexOf(showId);
+      const index = hiddenIds.indexOf(showId)
       if (index > -1) {
-        hiddenIds.splice(index, 1);
+        hiddenIds.splice(index, 1)
       }
 
       // Clear stored data
-      delete setVisibility[showId];
+      delete setVisibility[showId]
     },
     zoom(inOut) {
-      const currentScale = this.network.getScale();
-      
+      const currentScale = this.network.getScale()
+
       if (inOut == 'in') {
         this.network.moveTo({
           scale: currentScale + 0.3,
           animation: {
-            duration: 500
-          }
-        });
+            duration: 500,
+          },
+        })
       } else {
         this.network.moveTo({
           scale: currentScale - 0.3,
           animation: {
-            duration: 500
-          }
-        });
+            duration: 500,
+          },
+        })
       }
     },
     triggerSearch() {
-      const searchQuery = this.nodeSearch.toLowerCase().trim();
-      if (searchQuery === "") {
-        this.searchResults = [];
-        return;
+      const searchQuery = this.nodeSearch.toLowerCase().trim()
+      if (searchQuery === '') {
+        this.searchResults = []
+        return
       }
 
-      this.searchResults = this.nodes.filter((node) =>
-        node.label.toLowerCase().includes(searchQuery)
-      );
+      this.searchResults = this.nodes.filter(node =>
+        node.label.toLowerCase().includes(searchQuery),
+      )
 
       if (this.searchResults.length === 0) {
-        console.log("No nodes found with the label:", searchQuery);
+        console.log('No nodes found with the label:', searchQuery)
       }
     },
     selectNode(nodeId) {
@@ -534,62 +641,63 @@ export default {
         scale: 1.5,
         animation: {
           duration: 500,
-          easingFunction: "easeInOutQuad",
+          easingFunction: 'easeInOutQuad',
         },
-      });
+      })
 
-      const params = { nodes: [nodeId], edges: [] };
-      this.network.emit("click", params);
-      
-      this.searchResults = [];
-      this.nodeSearch = "";
+      const params = { nodes: [nodeId], edges: [] }
+      this.network.emit('click', params)
+
+      this.searchResults = []
+      this.nodeSearch = ''
     },
     createNode(label, data, nodeMap) {
-      const sortedPrefixes = Object.keys(nodeMap).sort((a, b) => b.length - a.length);
-      const prefix = sortedPrefixes.find(prefix => label.startsWith(prefix));
-      const bbmdOn = '/assets/bbmd-on.svg';
-      const bbmdOff = '/assets/bbmd-off.svg';
-      
+      const sortedPrefixes = Object.keys(nodeMap).sort(
+        (a, b) => b.length - a.length,
+      )
+      const prefix = sortedPrefixes.find(prefix => label.startsWith(prefix))
+      const bbmdOn = '/assets/bbmd-on.svg'
+      const bbmdOff = '/assets/bbmd-off.svg'
+
       if (prefix) {
-        let config = nodeMap[prefix];
+        let config = nodeMap[prefix]
 
         // Check if the config is a nested object
         if (typeof config === 'object' && !config.image) {
-          config = config[data.type];
+          config = config[data.type]
 
           if (config) {
-
-            if (data.type == 'BBMD') this.allBbmds.push(label);
+            if (data.type == 'BBMD') this.allBbmds.push(label)
 
             return {
               shape: 'image',
-              image: data.type == 'BBMD' ? 
-                this.onBbmds.includes(data.label) ?
-                  bbmdOn :
-                  bbmdOff :
-                  config.image,
+              image:
+                data.type == 'BBMD'
+                  ? this.onBbmds.includes(data.label)
+                    ? bbmdOn
+                    : bbmdOff
+                  : config.image,
               label: label.replace(prefix, ''),
-              font: { align: 'left', color: "white", background: "none" },
-              mass: config.mass
-            };
+              font: { align: 'left', color: 'white', background: 'none' },
+              mass: config.mass,
+            }
           }
         } else {
-
           return {
             shape: 'image',
             image: config.image,
             label: label.replace(prefix, ''),
-            font: { align: 'left', color: "white", background: "none" },
-            mass: config.mass
-          };
+            font: { align: 'left', color: 'white', background: 'none' },
+            mass: config.mass,
+          }
         }
       }
       return {
         shape: 'dot',
-        color: "white",
+        color: 'white',
         label: label,
-        font: { align: 'left', color: "white", background: "none" },
-      };
+        font: { align: 'left', color: 'white', background: 'none' },
+      }
     },
     getNodeConfig(label, data) {
       // define image and mass based on prefix
@@ -597,14 +705,17 @@ export default {
         'bacnet://router/': { image: '/assets/router.svg', mass: 2 },
         'bacnet://network/': { image: '/assets/network.svg', mass: 2 },
         'bacnet://': {
-          'Device': { image: '/assets/device.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd-off.svg', mass: 2 }
+          Device: { image: '/assets/device.svg', mass: 1 },
+          BBMD: { image: '/assets/bbmd-off.svg', mass: 2 },
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://Grasshopper': {
+          image: '/assets/grasshopper icon.svg',
+          mass: 5,
+        },
         'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
-      };
+      }
 
-      return this.createNode(label, data, nodeMap);
+      return this.createNode(label, data, nodeMap)
     },
     subtractConfig(label, data) {
       // #DF1219
@@ -612,14 +723,17 @@ export default {
         'bacnet://router/': { image: '/assets/router-sub.svg', mass: 2 },
         'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2 },
         'bacnet://': {
-          'Device': { image: '/assets/device-sub.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd-sub.svg', mass: 4 }
+          Device: { image: '/assets/device-sub.svg', mass: 1 },
+          BBMD: { image: '/assets/bbmd-sub.svg', mass: 4 },
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://Grasshopper': {
+          image: '/assets/grasshopper icon.svg',
+          mass: 5,
+        },
         'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2 },
-      };
+      }
 
-      return this.createNode(label, data, nodeMap);
+      return this.createNode(label, data, nodeMap)
     },
     addConfig(label, data) {
       // #14AE5C
@@ -627,25 +741,30 @@ export default {
         'bacnet://router/': { image: '/assets/router-add.svg', mass: 2 },
         'bacnet://network/': { image: '/assets/network-add.svg', mass: 2 },
         'bacnet://': {
-          'Device': { image: '/assets/device-add.svg', mass: 1 },
-          'BBMD': { image: '/assets/bbmd-add.svg', mass: 4 }
+          Device: { image: '/assets/device-add.svg', mass: 1 },
+          BBMD: { image: '/assets/bbmd-add.svg', mass: 4 },
         },
-        'bacnet://Grasshopper': { image: '/assets/grasshopper icon.svg', mass: 5 },
+        'bacnet://Grasshopper': {
+          image: '/assets/grasshopper icon.svg',
+          mass: 5,
+        },
         'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2 },
-      };
+      }
 
-      return this.createNode(label, data, nodeMap);
+      return this.createNode(label, data, nodeMap)
     },
     getCompareConfig(label, data, file1, file2) {
       if (data['http://data.ashrae.org/bacnet/2020#rdf_diff_source'] == file1) {
         // added
-        return this.addConfig(label, data);
-      } else if(data['http://data.ashrae.org/bacnet/2020#rdf_diff_source'] == file2) {
+        return this.addConfig(label, data)
+      } else if (
+        data['http://data.ashrae.org/bacnet/2020#rdf_diff_source'] == file2
+      ) {
         // subtracted
-        return this.subtractConfig(label, data);
+        return this.subtractConfig(label, data)
       } else {
         // unchanged
-        return this.getNodeConfig(label, data);
+        return this.getNodeConfig(label, data)
       }
     },
     getCompareEdgeColor(data, file1, file2) {
@@ -653,126 +772,134 @@ export default {
         // added
         return {
           color: {
-            color: "#14AE5C",
-            highlight: "#14AE5C",
-            hover: "#14AE5C",
+            color: '#14AE5C',
+            highlight: '#14AE5C',
+            hover: '#14AE5C',
             opacity: 1.0,
           },
-        };
-      } else if (data['http://data.ashrae.org/bacnet/2020#rdf_diff_source'] == file2) {
+        }
+      } else if (
+        data['http://data.ashrae.org/bacnet/2020#rdf_diff_source'] == file2
+      ) {
         // removed
         return {
           color: {
-            color: "#DF1219",
-            highlight: "#DF1219",
-            hover: "#DF1219",
+            color: '#DF1219',
+            highlight: '#DF1219',
+            hover: '#DF1219',
             opacity: 1.0,
           },
-        };
+        }
       } else {
         // unchanged
         return {
           color: {
-            color: "#BFBFBF",
-            highlight: "#BFBFBF",
-            hover: "#BFBFBF",
+            color: '#BFBFBF',
+            highlight: '#BFBFBF',
+            hover: '#BFBFBF',
             opacity: 1.0,
           },
-        };
+        }
       }
     },
     storeConfig() {
-      delete this.network.physics.options.repulsion.avoidOverlap;
+      delete this.network.physics.options.repulsion.avoidOverlap
 
-      this.store.setSavableConfig(this.network.physics.options);
-      this.store.setControlMenu('config', 'Save Config');
+      this.store.setSavableConfig(this.network.physics.options)
+      this.store.setControlMenu('config', 'Save Config')
     },
     formatData(data) {
-      const formattedData = [];
+      const formattedData = []
 
-      Object.keys(data).forEach((originalKey) => {
-        let displayKey = originalKey;
+      Object.keys(data).forEach(originalKey => {
+        let displayKey = originalKey
 
         // rename
-        if (originalKey.toLowerCase() === "http://data.ashrae.org/bacnet/2020#rdf_diff_source") {
-          displayKey = "source";
+        if (
+          originalKey.toLowerCase() ===
+          'http://data.ashrae.org/bacnet/2020#rdf_diff_source'
+        ) {
+          displayKey = 'source'
         }
 
-        const words = displayKey.split(/[-_]/);
+        const words = displayKey.split(/[-_]/)
 
         const capitalizedWords = words.map(word => {
-          if (word.toLowerCase() === "id") {
-            return "ID";
+          if (word.toLowerCase() === 'id') {
+            return 'ID'
           }
-          return word.charAt(0).toUpperCase() + word.slice(1);
-        });
+          return word.charAt(0).toUpperCase() + word.slice(1)
+        })
 
-        const title = capitalizedWords.join(' ');
+        const title = capitalizedWords.join(' ')
 
-        let value = data[originalKey];
+        let value = data[originalKey]
 
         if (typeof value === 'string' && value.startsWith('bacnet://vendor/')) {
-          value = value.replace(/^bacnet:\/\/vendor\//, '');
+          value = value.replace(/^bacnet:\/\/vendor\//, '')
         } else if (typeof value === 'string' && value.startsWith('bacnet:')) {
-          value = value.replace(/^bacnet:\//, '');
+          value = value.replace(/^bacnet:\//, '')
         }
 
-        formattedData.push({ title, value });
-      });
+        formattedData.push({ title, value })
+      })
 
-      return formattedData;
+      return formattedData
     },
     highlightNode(nodeId) {
       if (this.highlightedNodeId) {
-        this.unhighlightNode();
-        this.toggleBdtEdges(this.bdtEdges, false);
+        this.unhighlightNode()
+        this.toggleBdtEdges(this.bdtEdges, false)
       }
 
-      const currentNode = this.network.body.data.nodes.get(nodeId);
+      const currentNode = this.network.body.data.nodes.get(nodeId)
       this.highlightedNodeOriginalStyle = {
         font: currentNode.font || null,
-        borderWidth: currentNode.borderWidth || null
-      };
+        borderWidth: currentNode.borderWidth || null,
+      }
 
       this.network.body.data.nodes.update({
         id: nodeId,
         font: {
-          color: "white",
-          background: "rgba(193, 210, 0, 0.6)",
-          borderRadius: "15px"
+          color: 'white',
+          background: 'rgba(193, 210, 0, 0.6)',
+          borderRadius: '15px',
         },
-        borderWidth: 4
-      });
+        borderWidth: 4,
+      })
 
-      this.highlightedNodeId = nodeId;
+      this.highlightedNodeId = nodeId
     },
     unhighlightNode() {
-      if (!this.highlightedNodeId) return;
+      if (!this.highlightedNodeId) return
 
       // restore
       this.network.body.data.nodes.update({
         id: this.highlightedNodeId,
         font: this.highlightedNodeOriginalStyle.font,
-        borderWidth: this.highlightedNodeOriginalStyle.borderWidth
-      });
+        borderWidth: this.highlightedNodeOriginalStyle.borderWidth,
+      })
 
-      this.highlightedNodeId = null;
-      this.highlightedNodeOriginalStyle = null;
+      this.highlightedNodeId = null
+      this.highlightedNodeOriginalStyle = null
     },
     processEdges(closestBbmd) {
+      this.onBbmds = []
+      this.bdtEdges = []
 
-      this.onBbmds = [];
-      this.bdtEdges = [];
-      
       return this.edges.filter(edge => {
         if (edge.from === edge.to) {
-          this.onBbmds.push(edge.from);
-          return false;
-        } else if (edge.label.includes('bdt-entry') && edge.from !== closestBbmd && edge.to !== closestBbmd) {
-          this.bdtEdges.push(edge);
+          this.onBbmds.push(edge.from)
+          return false
+        } else if (
+          edge.label.includes('bdt-entry') &&
+          edge.from !== closestBbmd &&
+          edge.to !== closestBbmd
+        ) {
+          this.bdtEdges.push(edge)
         }
-        return true;
-      });
+        return true
+      })
     },
     toggleBdtEdges(bdtEdges, visible) {
       bdtEdges.forEach(edge => {
@@ -783,283 +910,324 @@ export default {
           edge.from !== this.closestBbmd &&
           edge.to !== this.closestBbmd
         ) {
-
           this.network.body.data.edges.update({
-            id:       edge.id,
-            color:    { opacity: visible ? 1 : 0 }
-          });
+            id: edge.id,
+            color: { opacity: visible ? 1 : 0 },
+          })
         }
-      });
+      })
     },
     findClosestBbmdInData(nodes, edges) {
-      const graph = new Map();
-      nodes.forEach(n => graph.set(n.id, []));
+      const graph = new Map()
+      nodes.forEach(n => graph.set(n.id, []))
       edges.forEach(e => {
         if (graph.has(e.from) && graph.has(e.to)) {
-          graph.get(e.from).push(e.to);
-          graph.get(e.to).push(e.from);
+          graph.get(e.from).push(e.to)
+          graph.get(e.to).push(e.from)
         }
-      });
+      })
 
       // find grasshopper node
-      const startNode = nodes.find(node => node.id == "bacnet://Grasshopper");
-      if (!startNode) return null;
-      const startId = startNode.id;
+      const startNode = nodes.find(node => node.id == 'bacnet://Grasshopper')
+      if (!startNode) return null
+      const startId = startNode.id
 
       // search
-      const queue   = [ startId ];
-      const parent  = { [startId]: null };
-      const visited = new Set([ startId ]);
+      const queue = [startId]
+      const parent = { [startId]: null }
+      const visited = new Set([startId])
 
       while (queue.length) {
-        const current = queue.shift();
+        const current = queue.shift()
 
         for (const next of graph.get(current)) {
-          if (visited.has(next)) continue;
-          visited.add(next);
-          parent[next] = current;
+          if (visited.has(next)) continue
+          visited.add(next)
+          parent[next] = current
 
           // check if this neighbour is a BBMD
-          const node = nodes.find(node => node.id === next);
-          if (node?.data?.type === "BBMD") {
-            const path = [];
+          const node = nodes.find(node => node.id === next)
+          if (node?.data?.type === 'BBMD') {
+            const path = []
             for (let p = next; p != null; p = parent[p]) {
-              path.unshift(p);
+              path.unshift(p)
             }
-            return next;
+            return next
           }
 
-          queue.push(next);
+          queue.push(next)
         }
       }
 
-      return null;
+      return null
     },
     generate() {
-      const container = this.$refs.networkContainer;
-      const configContainer = this.$refs.configMenu.$refs.config;
-      
-      const closestBbmd = this.findClosestBbmdInData(this.nodes, this.edges);
+      const container = this.$refs.networkContainer
+      const configContainer = this.$refs.configMenu.$refs.config
 
-      this.closestBbmd = closestBbmd;
-      
-      const processedEdges = this.processEdges(closestBbmd);
+      const closestBbmd = this.findClosestBbmdInData(this.nodes, this.edges)
 
-      let file1;
-      let file2;
-      let nodeDiffSources = {};
+      this.closestBbmd = closestBbmd
+
+      const processedEdges = this.processEdges(closestBbmd)
+
+      let file1
+      let file2
+      let nodeDiffSources = {}
 
       if (this.store.compareMode) {
+        const parts = this.store.fileName.split('_vs_')
 
-        const parts = this.store.fileName.split('_vs_');
-        
-        file1 = `${parts[0]}.ttl`;
-        file2 = `${parts[1]}`;
+        file1 = `${parts[0]}.ttl`
+        file2 = `${parts[1]}`
 
-        this.nodes.forEach((node) => {
+        this.nodes.forEach(node => {
           nodeDiffSources[node.id] =
-            node.data["http://data.ashrae.org/bacnet/2020#rdf_diff_source"] || null;
-        });
+            node.data['http://data.ashrae.org/bacnet/2020#rdf_diff_source'] ||
+            null
+        })
       }
-      
+
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
-          ...(this.store.compareMode ? this.getCompareConfig(node.id, node.data, file1, file2) : this.getNodeConfig(node.id, node.data)),
+          ...(this.store.compareMode
+            ? this.getCompareConfig(node.id, node.data, file1, file2)
+            : this.getNodeConfig(node.id, node.data)),
         })),
         edges: processedEdges.map(edge => {
           const base = {
             ...edge,
             ...(this.store.compareMode
               ? this.getCompareEdgeColor(edge.data, file1, file2)
-              : {})
-          };
+              : {}),
+          }
 
-          if (edge.label.includes('bdt-entry') && this.allBbmds.includes(edge.from) && this.allBbmds.includes(edge.to)) {
+          if (
+            edge.label.includes('bdt-entry') &&
+            this.allBbmds.includes(edge.from) &&
+            this.allBbmds.includes(edge.to)
+          ) {
             return {
               ...base,
               color: {
-                opacity: (edge.from === closestBbmd || edge.to === closestBbmd) ? 1 : 0
+                opacity:
+                  edge.from === closestBbmd || edge.to === closestBbmd ? 1 : 0,
               },
-              physics: edge.from === closestBbmd || edge.to === closestBbmd
-            };
+              physics: edge.from === closestBbmd || edge.to === closestBbmd,
+            }
           }
 
-          return base;
-        })
-      };
+          return base
+        }),
+      }
 
       const options = {
-        "configure": {
-            "enabled": true,
-            "filter": [
-                "physics"
-            ],
-            "container": configContainer,
+        configure: {
+          enabled: true,
+          filter: ['physics'],
+          container: configContainer,
         },
-        "edges": {
-          "color": {
-            "inherit": true
+        edges: {
+          color: {
+            inherit: true,
           },
-          "smooth": {
-            "enabled": false,
-              "type": "dynamic"
+          smooth: {
+            enabled: false,
+            type: 'dynamic',
           },
-          "font": {
-            "size": 0
-          }
-        },
-        "nodes": {
-          "shapeProperties": {
-            "interpolation": false
+          font: {
+            size: 0,
           },
         },
-        "interaction": {
-            "dragNodes": true,
-            "hideEdgesOnDrag": false,
-            "hideNodesOnDrag": false
+        nodes: {
+          shapeProperties: {
+            interpolation: false,
+          },
         },
-        "physics": this.store.physicsConfig,
-        "layout": {
-          "improvedLayout": false
-        }
-      };
+        interaction: {
+          dragNodes: true,
+          hideEdgesOnDrag: false,
+          hideNodesOnDrag: false,
+        },
+        physics: this.store.physicsConfig,
+        layout: {
+          improvedLayout: false,
+        },
+      }
 
-      options.physics.enabled = true;
+      options.physics.enabled = true
 
-      this.network = new Network(container, data, options);
+      this.network = new Network(container, data, options)
 
+      this.network.on('stabilizationIterationsDone', () => {
+        this.loaded = true
+      })
 
-      this.network.on("stabilizationIterationsDone", () => {
-        this.loaded = true;
-      });
-
-      this.network.on("click", (params) => {
-
+      this.network.on('click', params => {
         if (!params.nodes.length) {
-          this.unhighlightNode();
-          this.toggleBdtEdges(this.bdtEdges, false);
-          this.store.setBdtEdges(false);
+          this.unhighlightNode()
+          this.toggleBdtEdges(this.bdtEdges, false)
+          this.store.setBdtEdges(false)
         }
 
         if (params.nodes.length > 0) {
-          const nodeId = params.nodes[0];
-          this.highlightNode(nodeId);
-          const clickedNode = data.nodes.find((node) => node.id === nodeId);
+          const nodeId = params.nodes[0]
+          this.highlightNode(nodeId)
+          const clickedNode = data.nodes.find(node => node.id === nodeId)
+          this.store.setShowNoteCard(false)
 
           if (clickedNode) {
-            // console.log(clickedNode);
+            // console.log(clickedNode)
 
             // const cleanedTitle = clickedNode.id;
-            const nodeType = clickedNode.data.type;
+            const nodeType = clickedNode.data.type
             const nodeLabel = clickedNode.data.label
 
-            this.selectedNodeType = null;
+            this.store.setSelectedNode(
+              clickedNode.data.type + ' - ' + clickedNode.label,
+            )
+
+            this.selectedNodeType = null
 
             if (nodeType == 'BBMD') {
-              this.cardInfo = this.formatData(clickedNode.data);
-              this.tableLabel = nodeType;
-              this.altCard = false;
-              this.selectedBbmd = clickedNode.id;
-              this.selectedNodeType = 'BBMD';
+              this.cardInfo = this.formatData(clickedNode.data)
+              this.tableLabel = nodeType
+              this.altCard = false
+              this.selectedBbmd = clickedNode.id
+              this.selectedNodeType = 'BBMD'
               // show connecting bdt edges
-              const matchingEdges = this.bdtEdges.filter(edge =>
-                edge.from === nodeLabel || edge.to === nodeLabel
-              );
+              const matchingEdges = this.bdtEdges.filter(
+                edge => edge.from === nodeLabel || edge.to === nodeLabel,
+              )
               this.toggleBdtEdges(matchingEdges, true)
-
             } else {
-              this.cardInfo = this.formatData(clickedNode.data);
-              this.tableLabel = nodeType;
-              this.altCard = false;
-              this.selectedDevice = clickedNode.id;
-              this.selectedNodeType = nodeType;
+              this.cardInfo = this.formatData(clickedNode.data)
+              this.tableLabel = nodeType
+              this.altCard = false
+              this.selectedDevice = clickedNode.id
+              this.selectedNodeType = nodeType
 
-              this.selectedNode = clickedNode.id;
+              this.selectedNode = clickedNode.id
             }
 
-            this.showHiddenMenu = false;
-            this.cardToggled = true;
-            this.showEdgeMenu = false;
+            this.showHiddenMenu = false
+            this.cardToggled = true
+            this.showEdgeMenu = false
           }
         }
-        
+
         if (params.edges.length > 0) {
-          const edgeId = params.edges[0];
-          let clickedEdge = data.edges.find((edge) => edge.id === edgeId);
+          const edgeId = params.edges[0]
+          let clickedEdge = data.edges.find(edge => edge.id === edgeId)
 
           if (clickedEdge && params.nodes.length == 0) {
             // console.log(clickedEdge);
-            
-            const cleanedLabel = clickedEdge.label.replace('http://data.ashrae.org/bacnet/2020#', '');
-            this.selectedEdge = clickedEdge.id;
+
+            const cleanedLabel = clickedEdge.label.replace(
+              'http://data.ashrae.org/bacnet/2020#',
+              '',
+            )
+            this.selectedEdge = clickedEdge.id
             this.edgeInfo = {
               type: cleanedLabel,
               from: clickedEdge.from,
               to: clickedEdge.to,
-            };
-            
+            }
+
             const deviceToBase = {
-              "bacnet://subnet/": { title: "Hide Edge and Subnet", action: () => this.hideEdgeAndSubnet(clickedEdge.to) },
-              "bacnet://network/": { title: "Hide Edge and Connected Network", action: () => this.hideEdgeAndNetwork(clickedEdge.to) },
-              "bacnet://Grasshopper": {},
-              "bacnet://": { title: "Hide Edge and Device", action: () => this.hideEdgeAndDevice() },
-            };
+              'bacnet://subnet/': {
+                title: 'Hide Edge and Subnet',
+                action: () => this.hideEdgeAndSubnet(clickedEdge.to),
+              },
+              'bacnet://network/': {
+                title: 'Hide Edge and Connected Network',
+                action: () => this.hideEdgeAndNetwork(clickedEdge.to),
+              },
+              'bacnet://Grasshopper': {},
+              'bacnet://': {
+                title: 'Hide Edge and Device',
+                action: () => this.hideEdgeAndDevice(),
+              },
+            }
 
             const deviceFromBase = {
-              "bacnet://subnet/": { title: "Hide Edge and Subnet", action: () => this.hideEdgeAndSubnet(clickedEdge.from) },
-              "bacnet://network/": { title: "Hide Edge and Connected Network", action: () => this.hideEdgeAndNetwork(clickedEdge.from) },
-              "bacnet://router/": { title: "Hide Edge and Router", action: () => this.hideEverythingConnectedToRouter(clickedEdge.from) },
-              "bacnet://Grasshopper": {},
-              "bacnet://": { title: "Hide Edge and Device", action: () => this.hideEdgeAndDevice() }
-            };
+              'bacnet://subnet/': {
+                title: 'Hide Edge and Subnet',
+                action: () => this.hideEdgeAndSubnet(clickedEdge.from),
+              },
+              'bacnet://network/': {
+                title: 'Hide Edge and Connected Network',
+                action: () => this.hideEdgeAndNetwork(clickedEdge.from),
+              },
+              'bacnet://router/': {
+                title: 'Hide Edge and Router',
+                action: () =>
+                  this.hideEverythingConnectedToRouter(clickedEdge.from),
+              },
+              'bacnet://Grasshopper': {},
+              'bacnet://': {
+                title: 'Hide Edge and Device',
+                action: () => this.hideEdgeAndDevice(),
+              },
+            }
 
             const bbmdEntriesTo = this.allBbmds.reduce((acc, bbmd) => {
               acc[bbmd] = {
-                title: "Hide Edge and BBMD",
-                action: () => this.hideEdgeAndBbmd(clickedEdge.to)
-              };
-              return acc;
-            }, {});
+                title: 'Hide Edge and BBMD',
+                action: () => this.hideEdgeAndBbmd(clickedEdge.to),
+              }
+              return acc
+            }, {})
 
             const bbmdEntriesFrom = this.allBbmds.reduce((acc, bbmd) => {
               acc[bbmd] = {
-                title: "Hide Edge and BBMD",
-                action: () => this.hideEdgeAndBbmd(clickedEdge.from)
-              };
-              return acc;
-            }, {});
+                title: 'Hide Edge and BBMD',
+                action: () => this.hideEdgeAndBbmd(clickedEdge.from),
+              }
+              return acc
+            }, {})
 
             const deviceTo = {
               ...bbmdEntriesTo,
-              ...deviceToBase
-            };
+              ...deviceToBase,
+            }
 
             const deviceFrom = {
               ...bbmdEntriesFrom,
-              ...deviceFromBase
-            };
+              ...deviceFromBase,
+            }
             // set edgeOptions based on edgeInfo.type
-            if (this.edgeInfo.type === "router-to-network") {
+            if (this.edgeInfo.type === 'router-to-network') {
               this.edgeOptions = [
-                { title: "Hide Edge and Connected Network", action: () => this.hideEdgeAndNetwork(clickedEdge.to) },
-                { title: "Hide Edge and Router", action: () => this.hideEverythingConnectedToRouter(clickedEdge.from) },
-              ];
-            } else if (this.edgeInfo.type === "device-on-network") {
-
+                {
+                  title: 'Hide Edge and Connected Network',
+                  action: () => this.hideEdgeAndNetwork(clickedEdge.to),
+                },
+                {
+                  title: 'Hide Edge and Router',
+                  action: () =>
+                    this.hideEverythingConnectedToRouter(clickedEdge.from),
+                },
+              ]
+            } else if (this.edgeInfo.type === 'device-on-network') {
               // populate this.edgeOptions based on edge to and from node names
-              const toKey = Object.keys(deviceTo).find(prefix => this.edgeInfo.to.startsWith(prefix));
-              const fromKey = Object.keys(deviceFrom).find(prefix => this.edgeInfo.from.startsWith(prefix));
+              const toKey = Object.keys(deviceTo).find(prefix =>
+                this.edgeInfo.to.startsWith(prefix),
+              )
+              const fromKey = Object.keys(deviceFrom).find(prefix =>
+                this.edgeInfo.from.startsWith(prefix),
+              )
 
-              this.edgeOptions = [];
+              this.edgeOptions = []
 
               // match prefix in deviceTo
               if (toKey) {
                 if (deviceTo[toKey].title) {
                   this.edgeOptions.push({
                     title: deviceTo[toKey].title,
-                    action: deviceTo[toKey].action
-                  });
+                    action: deviceTo[toKey].action,
+                  })
                 }
               }
               // match prefix in deviceFrom
@@ -1067,28 +1235,28 @@ export default {
                 if (deviceFrom[fromKey].title) {
                   this.edgeOptions.push({
                     title: deviceFrom[fromKey].title,
-                    action: deviceFrom[fromKey].action
-                  });
+                    action: deviceFrom[fromKey].action,
+                  })
                 }
               }
             } else {
               // Default options
               this.edgeOptions = [
-                { title: "Hide Edge", action: () => this.hideEdge() },
-              ];
+                { title: 'Hide Edge', action: () => this.hideEdge() },
+              ]
             }
-            this.showEdgeMenu = true;
-            this.cardToggled = false;
-            this.showSearch = false;
+            this.showEdgeMenu = true
+            this.cardToggled = false
+            this.showSearch = false
           }
         }
-      });
+      })
     },
   },
   beforeUnmount() {
-    this.network.destroy();
+    this.network.destroy()
   },
-};
+}
 </script>
 
 <style scoped>
@@ -1180,7 +1348,7 @@ export default {
   margin: 10px 0;
   max-height: 150px;
   overflow-y: auto;
-  background-color: #2A2A2A;
+  background-color: #2a2a2a;
   border-radius: 8px;
   box-shadow: 0px 1px 1px rgba(0, 0, 0, 0.1);
 }
@@ -1250,7 +1418,7 @@ export default {
 }
 .line {
   width: 100%;
-  color: #CDCDCD;
+  color: #cdcdcd;
   opacity: 30%;
   margin: 8px 0px;
 }
