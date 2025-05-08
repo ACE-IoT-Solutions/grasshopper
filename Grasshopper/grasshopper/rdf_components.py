@@ -78,7 +78,7 @@ class DeviceTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.overwrite_triple(RDF.type, BACnetNS.Device)
+        device.add_connection(RDF.type, BACnetNS.Device)
 
 
 class BBMDTypeHandler(BaseTypeHandler):
@@ -90,7 +90,7 @@ class BBMDTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.overwrite_triple(RDF.type, BACnetNS.BBMD)
+        device.add_connection(RDF.type, BACnetNS.BBMD)
 
 
 class RouterTypeHandler(BaseTypeHandler):
@@ -102,7 +102,7 @@ class RouterTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.overwrite_triple(RDF.type, BACnetNS.Router)
+        device.add_connection(RDF.type, BACnetNS.Router)
 
 
 class SubnetTypeHandler(BaseTypeHandler):
@@ -114,7 +114,7 @@ class SubnetTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.overwrite_triple(RDF.type, BACnetNS.Subnet)
+        device.add_connection(RDF.type, BACnetNS.Subnet)
 
 
 class NetworkTypeHandler(BaseTypeHandler):
@@ -126,7 +126,7 @@ class NetworkTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.overwrite_triple(RDF.type, BACnetNS.Network)
+        device.add_connection(RDF.type, BACnetNS.Network)
 
 
 class BaseNode:
@@ -155,25 +155,23 @@ class BaseNode:
         self.type_handler = type_handler
         self.set_type()
 
-    def overwrite_triple(
+    def add_connection(
         self, predicate: URIRef, new_object: Union[URIRef, Literal]
     ) -> None:
         """
-        Overwrites existing triples, except for special network relationships.
-        
-        For most predicates, this method removes existing triples with the same
-        subject and predicate before adding the new triple. For network relationship
-        predicates like 'device-on-network' and 'router-to-network', it preserves
-        existing triples and just adds the new one.
+        Adds triples.
+
+        This method adds a new triple to the graph with the given predicate and object.
+        It uses the node's IRI as the subject. The method is designed to be used for
+        adding properties to the node. The predicate should be a URIRef that represents
+        the property being set, and the object can be either a URIRef or a Literal
+        representing the value of the property.
         
         Args:
             predicate (URIRef): The predicate (relationship) to set
             new_object (Union[URIRef, Literal]): The object (value) to set
         """
-        if str(predicate) in BACnetEdgeType._value2member_map_:
-            self.graph.set((self.node_iri, predicate, new_object))  # type: ignore
-        else:
-            self.graph.add((self.node_iri, predicate, new_object))  # type: ignore
+        self.graph.add((self.node_iri, predicate, new_object))  # type: ignore
 
     def set_type(self):
         """
@@ -197,7 +195,7 @@ class BaseNode:
             **kwargs: Additional properties to add to the node
         """
         if label:
-            self.overwrite_triple(RDFS.label, Literal(label))
+            self.add_connection(RDFS.label, Literal(label))
 
 
 class SubnetNode(BaseNode):
@@ -232,7 +230,7 @@ class SubnetComponent(BaseBACnetComponent):
     def add_properties(self, device: BaseNode, **kwargs):
         subnet = kwargs.get("subnet")
         if subnet:
-            device.overwrite_triple(
+            device.add_connection(
                 BACnetNS[self.edge_type.value], BACnetURI["//subnet/" + str(subnet)]
             )
 
@@ -243,7 +241,7 @@ class NetworkComponent(BaseBACnetComponent):
     def add_properties(self, device: BaseNode, **kwargs):
         network_id = kwargs.get("network_id")
         if network_id:
-            device.overwrite_triple(
+            device.add_connection(
                 BACnetNS[self.edge_type.value],
                 BACnetURI["//network/" + str(network_id)],
             )
@@ -255,7 +253,7 @@ class AttachDeviceComponent(BaseBACnetComponent):
     def add_properties(self, device: BaseNode, **kwargs):
         device_iri = kwargs.get("device_iri")
         if device_iri:
-            device.overwrite_triple(BACnetNS[self.edge_type.value], device_iri)
+            device.add_connection(BACnetNS[self.edge_type.value], device_iri)
 
 
 class BACnetNode(BaseNode):
@@ -283,13 +281,13 @@ class BACnetNode(BaseNode):
         """Add properties common to all devices."""
         super().add_properties(label=label, **kwargs)
         if device_identifier:
-            self.overwrite_triple(
+            self.add_connection(
                 BACnetNS["device-instance"], Literal(device_identifier)
             )
         if device_address:
-            self.overwrite_triple(BACnetNS["address"], Literal(str(device_address)))
+            self.add_connection(BACnetNS["address"], Literal(str(device_address)))
         if vendor_id:
-            self.overwrite_triple(
+            self.add_connection(
                 BACnetNS["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)]
             )
 
