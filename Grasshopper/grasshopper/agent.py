@@ -451,7 +451,7 @@ class Grasshopper(Agent):
             # align perfectly
             # Spawn a task to run the async function
             gevent.spawn(
-                self.run_async_function, scanner.get_device_and_router, graph
+                self.run_async_function(scanner.get_device_and_router, graph)  # type: ignore
             )  # type: ignore
 
             rdf_path = os.path.join(
