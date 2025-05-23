@@ -39,7 +39,11 @@ from volttron.platform.agent import utils
 from volttron.platform.messaging.health import STATUS_BAD
 from volttron.platform.vip.agent import Agent, Core
 
-from .api import DEVICE_STATE_CONFIG, process_compare_rdf_queue
+from .api import (
+    DEVICE_STATE_CONFIG,
+    process_compare_rdf_queue,
+)
+from .remote_web_host import post_request_with_ttl_file
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
 from .web_app import create_app
@@ -82,6 +86,13 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     device_broadcast_empty_step_size: int = config.get(
         "device_broadcast_empty_step_size", 1000
     )
+    ttl_post_to_cloud: Dict[str, Any] = config.get(
+        "ttl_post_to_cloud", 
+        {
+            "enabled": False,
+            "url": "localhost"
+        }
+    )
     bacpypes_settings: Dict[str, Any] = config.get(
         "bacpypes_settings",
         {
@@ -97,7 +108,7 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     )
     webapp_settings: Dict[str, Any] = config.get(
         "webapp_settings",
-        {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
+        {"enabled": False, "host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
     )
     return Grasshopper(
         scan_interval_secs,
@@ -107,6 +118,7 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
         device_broadcast_empty_step_size,
         bacpypes_settings,
         webapp_settings,
+        ttl_post_to_cloud,
         **kwargs,
     )
 
@@ -125,6 +137,7 @@ class Grasshopper(Agent):
         device_broadcast_empty_step_size: int = 1000,
         bacpypes_settings: Optional[Dict[str, Any]] = None,
         webapp_settings: Optional[Dict[str, Any]] = None,
+        ttl_post_to_cloud: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(enable_web=True, **kwargs)
@@ -156,6 +169,12 @@ class Grasshopper(Agent):
                 "keyfile": None,
             }
         self.webapp_settings: Dict[str, Any] = webapp_settings
+        if ttl_post_to_cloud is None:
+            ttl_post_to_cloud = {
+                "enabled": False,
+                "url": "localhost"
+            }
+        self.ttl_post_to_cloud: Dict[str, Any] = ttl_post_to_cloud
         self.default_config: Dict[str, Any] = {
             "scan_interval_secs": scan_interval_secs,
             "low_limit": low_limit,
@@ -164,6 +183,7 @@ class Grasshopper(Agent):
             "device_broadcast_empty_step_size": device_broadcast_empty_step_size,
             "bacpypes_settings": bacpypes_settings,
             "webapp_settings": webapp_settings,
+            "ttl_post_to_cloud": ttl_post_to_cloud,
         }
         self.http_server_process: Optional[Process] = None
         self.agent_data_path: str
@@ -236,6 +256,14 @@ class Grasshopper(Agent):
                         "certfile": None,
                         "keyfile": None,
                     },
+                )
+                self.ttl_post_to_cloud = contents.get(
+                    "ttl_post_to_cloud",
+                    {"enabled": False, "url": "localhost"}
+                )
+                self.ttl_post_to_cloud = contents.get(
+                    "ttl_post_to_cloud",
+                    {"enabled": False, "url": "localhost"}
                 )
 
                 self.configure_server_and_start()
@@ -465,7 +493,17 @@ class Grasshopper(Agent):
                 f"ttl/{now.replace(microsecond=0).isoformat().replace(':','_')}.ttl",
             )
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
-            graph.serialize(destination=rdf_path, format="turtle")
+            serialized_graph = graph.serialize(destination=rdf_path, format="turtle")
+
+            if self.ttl_post_to_cloud.get("enabled", False):
+                url = self.ttl_post_to_cloud.get("url")
+                if url:
+                    post_request_with_ttl_file(
+                        url,
+                        rdf_path,
+                        field_name="file",
+                        data={"filename": os.path.basename(rdf_path)},
+                    )
         except Exception as e:  # pylint: disable=broad-except
             # We need to catch any exception during broadcast to prevent crash
             _log.error("Error in who_is_broadcast: %s", e)
