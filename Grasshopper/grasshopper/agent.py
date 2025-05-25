@@ -256,7 +256,10 @@ class Grasshopper(Agent):
                     {"enabled": False, "url": "localhost"}
                 )
 
-                self.configure_server_and_start()
+                if self.webapp_settings.get("enabled", False):
+                    if self.http_server_process is not None:
+                        self._stop_server()
+                    self.configure_server_and_start()
 
                 vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
                 if vendorid != 999:
@@ -512,17 +515,6 @@ class Grasshopper(Agent):
             None
         """
         _log.debug("configure_server_setup")
-
-        def ensure_folders_exist(agent_data_path: str, folder_names: List[str]) -> None:
-            """Create necessary folders in the agent data directory if they don't exist."""
-            for folder in folder_names:
-                folder_path = os.path.join(agent_data_path, folder)
-                if not os.path.exists(folder_path):
-                    os.makedirs(folder_path)
-                    print(f"Folder '{folder}' created.")
-                else:
-                    print(f"Folder '{folder}' already exists.")
-
 
         # Create cert/key files
         certfile = self.webapp_settings.get("certfile")
