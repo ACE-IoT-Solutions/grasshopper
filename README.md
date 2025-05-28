@@ -173,3 +173,8 @@ A sample configuration file is provided in the repository. The config file is a 
     }
 }
 ```
+## Changelog
+
+### 0.1.0
+
+  - Latest stable version for release
