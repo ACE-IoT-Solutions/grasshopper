@@ -22,6 +22,7 @@ import signal
 import sys
 import traceback
 import json
+import ssl
 from multiprocessing import Process, Queue
 from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
@@ -555,6 +556,10 @@ class Grasshopper(Agent):
         app.extra["agent_data_path"] = self.agent_data_path
         self.app = app
 
+        _ctx = ssl.SSLContext(ssl.PROTOCOL_TLS)           # PROTOCOL_TLS = “best default” (formerly SSLv23)
+        _all = _ctx.get_ciphers()
+        tls12_ciphers = ":".join([c["name"] for c in _all if c["protocol"] == "TLSv1.2"])
+
         if self.app is None:
             _log.error("FastAPI app is not initialized")
             return -1
@@ -565,6 +570,8 @@ class Grasshopper(Agent):
             port=port,
             ssl_certfile=ssl_context.get("certfile") if ssl_context else None,
             ssl_keyfile=ssl_context.get("keyfile") if ssl_context else None,
+            ssl_version=ssl.PROTOCOL_TLSv1_2,
+            ssl_ciphers=tls12_ciphers,
             log_level="info",
         )
         server = uvicorn.Server(config)
