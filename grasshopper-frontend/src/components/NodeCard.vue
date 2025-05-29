@@ -31,9 +31,9 @@
           </tbody>
         </v-table>
         <div class="card-buttons" v-if="selectedNodeType">
-          <v-btn @click="toggleNote()" variant="plain" append-icon="mdi-plus" size="x-small">
+          <!-- <v-btn @click="toggleNote()" variant="plain" append-icon="mdi-plus" size="x-small">
             Add Note
-          </v-btn>
+          </v-btn> -->
           <v-btn @click="toggleHideSelectedNode()" variant="plain" size="x-small">
             {{ showHideText }} {{ selectedNodeType }}
           </v-btn>
