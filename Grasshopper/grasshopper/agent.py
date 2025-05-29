@@ -166,7 +166,7 @@ class Grasshopper(Agent):
             "webapp_settings": webapp_settings,
         }
         self.http_server_process: Optional[Process] = None
-        self.agent_data_path: Optional[str] = None
+        self.agent_data_path: str
         self.app: Optional[FastAPI] = None
         self.vendor_info: Optional[VendorInfo] = None
 
@@ -273,7 +273,7 @@ class Grasshopper(Agent):
         """
         _log.error("grequests error: %s with %s", exception, request)
 
-    def _device_config_read_key(self, key: str) -> Optional[Dict[str, Any]]:
+    def _device_config_read_key(self, key: str) -> Optional[Any]:
         """
         Read a key from the device configuration file.
 
@@ -283,7 +283,7 @@ class Grasshopper(Agent):
             key (str): The configuration key to read
 
         Returns:
-            Optional[Dict[str, Any]]: The value associated with the key, or None if:
+            Optional[Any]: The value associated with the key, or None if:
                 - The configuration file doesn't exist
                 - The key doesn't exist in the configuration
                 - There was an error reading or parsing the configuration file
@@ -308,26 +308,27 @@ class Grasshopper(Agent):
             _log.error("Error decoding JSON from config file: %s", config_path)
             return None
 
-    def config_retrieve_bbmd_devices(self) -> List[Dict[str, Any]]:
+    def config_retrieve_bbmd_devices(self) -> List[str]:
         """
         Retrieve the list of BBMD (BACnet Broadcast Management Device) devices from configuration.
 
         This method reads the 'bbmd_devices' key from the device configuration file.
 
         Returns:
-            List[Dict[str, Any]]: A list of BBMD device configurations, or an empty list if
+            List[str, Any]: A list of BBMD device configurations, or an empty list if
                 the configuration doesn't exist or there was an error
         """
         _log.debug("config_retrieve_bbmd_devices")
         try:
-            bbmd_devices: Dict[str, Any] = self._device_config_read_key("bbmd_devices")
+            bbmd_devices_from_config = self._device_config_read_key("bbmd_devices")
+            bbmd_devices: List[str] = bbmd_devices_from_config if bbmd_devices_from_config is not None else []
             _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
             return bbmd_devices
         except KeyError as ke:
             _log.error("Error config_retrieve_subnets: %s", ke)
             return []
 
-    def config_retrieve_subnets(self) -> List[Dict[str, Any]]:
+    def config_retrieve_subnets(self) -> List[str]:
         """
         Retrieve the list of BACnet subnets from configuration.
 
@@ -339,7 +340,8 @@ class Grasshopper(Agent):
         """
         _log.debug("config_retrieve_subnets")
         try:
-            bbmd_devices: Dict[str, Any] = self._device_config_read_key("subnets")
+            subnets_from_config = self._device_config_read_key("subnets")
+            bbmd_devices: List[str] = subnets_from_config if subnets_from_config is not None else []
             _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
             return bbmd_devices
         except KeyError as ke:
@@ -519,7 +521,7 @@ class Grasshopper(Agent):
             # We need to catch any server errors to properly set status
             _log.error("Error starting server: %s", e)
             self.vip.health.set_status(STATUS_BAD)
-            return -1
+            return None
 
         if not self.http_server_process.is_alive():
             code = self.http_server_process.exitcode
@@ -577,8 +579,8 @@ class Grasshopper(Agent):
         )
         server = uvicorn.Server(config)
 
-        q = Queue()
-        processing_task_q = Queue()
+        q: Queue[Any] = Queue()
+        processing_task_q: Queue[Any] = Queue()
         app.state.task_queue = q
         app.state.processing_task_queue = processing_task_q
 
@@ -607,7 +609,8 @@ class Grasshopper(Agent):
         if self.http_server_process and self.http_server_process.is_alive():
             print(f"[Agent] Terminating Uvicorn PID {self.http_server_process.pid}")
             # Send SIGINT for a clean shutdown, or SIGTERM if you prefer
-            os.kill(self.http_server_process.pid, signal.SIGINT)
+            if isinstance(self.http_server_process.pid, int):
+                os.kill(self.http_server_process.pid, signal.SIGINT)
             # Give it a moment to exit gracefully...
             self.http_server_process.join(timeout=5)
             if self.http_server_process.is_alive():
