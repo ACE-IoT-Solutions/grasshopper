@@ -1,0 +1,64 @@
+name: Python Linting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    
+    - name: Setup uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: 0.1.13
+
+    - name: Create virtual environment with uv
+      run: |
+        cd Grasshopper
+        uv venv
+    
+    - name: Install dependencies
+      run: |
+        cd Grasshopper
+        source .venv/bin/activate
+        uv pip install -e .
+        uv pip install black flake8 isort mypy
+        uv pip install BACpypes3@git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
+    
+    - name: Lint with flake8
+      run: |
+        cd Grasshopper
+        source .venv/bin/activate
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 grasshopper --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings
+        flake8 grasshopper --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
+    
+    - name: Check formatting with black
+      run: |
+        cd Grasshopper
+        source .venv/bin/activate
+        black --check --diff grasshopper
+    
+    - name: Check imports with isort
+      run: |
+        cd Grasshopper
+        source .venv/bin/activate
+        isort --check-only --profile black grasshopper
+    
+    - name: Type check with mypy
+      run: |
+        cd Grasshopper
+        source .venv/bin/activate
+        mypy --ignore-missing-imports grasshopper

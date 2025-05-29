@@ -76,6 +76,8 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     bbmdList: [],
     compareQueue: [],
     currentTask: null,
+    legendEnabled: false,
+    showBdtEdges: false,
   }),
   actions: {
     setControlMenu(type, title) {
@@ -90,7 +92,7 @@ export const useGrasshopperStore = defineStore("grasshopper", {
         }
     },
     setSetupGraphs(graphs) {
-      this.setupGraphs = graphs;
+      this.setupGraphs = graphs.sort();
     },
     setReload() {
       this.diagramKey++;
@@ -101,16 +103,16 @@ export const useGrasshopperStore = defineStore("grasshopper", {
       this.setReload();
     },
     setIpList(ips) {
-      this.ipList = ips;
+      this.ipList = ips.sort();
     },
     setCompareList(compares) {
-      this.compareList = compares;
+      this.compareList = compares.sort();
     },
     setDeleteGraphs(list) {
-      this.deleteList = list;
+      this.deleteList = list.sort();
     },
     setDeleteCompareGraphs(list) {
-      this.deleteCompareList = list;
+      this.deleteCompareList = list.sort();
     },
     setCompareLoad(load) {
       this.compareLoad = load;
@@ -125,14 +127,14 @@ export const useGrasshopperStore = defineStore("grasshopper", {
       this.reloadKey++;
     },
     setBbmdList(list) {
-      this.bbmdList = list;
+      this.bbmdList = list.sort();
     },
     setQueue(task, list) {
       this.currentTask = task;
       this.compareQueue = list;
     },
     setConfigList(list) {
-      this.configList = list;
+      this.configList = list.sort();
     },
     setConfigSelect(value) {
       this.configSelect = value;
@@ -142,6 +144,15 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     },
     setSavableConfig(config) {
       this.configToSave = config;
+    },
+    setLegend(enabled) {
+      this.legendEnabled = enabled;
+    },
+    toggleLegend() {
+      this.legendEnabled = !this.legendEnabled;
+    },
+    setBdtEdges(enabled) {
+      this.showBdtEdges = enabled;
     }
   },
 });

@@ -1,1 +1,2 @@
 recursive-include grasshopper/dist *
+include grasshopper/py.typed
