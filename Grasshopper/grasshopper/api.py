@@ -8,7 +8,7 @@ from concurrent.futures import ProcessPoolExecutor
 from http import HTTPStatus
 from io import BytesIO, StringIO
 from multiprocessing import Queue
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 import gevent
 from bacpypes3.rdf.core import BACnetNS
@@ -31,7 +31,7 @@ from .serializers import (
 )
 
 # Create a multiprocessing queue for compare_rdf operations
-compare_rdf_queue = Queue()
+compare_rdf_queue: Queue[Any] = Queue()
 
 DEVICE_STATE_CONFIG: str = "device_config.json"
 
@@ -48,31 +48,31 @@ def get_agent_data_path(request: Request) -> str:
     Returns:
         str: Path to the agent data directory, or empty string if not found
     """
-    return request.app.extra.get("agent_data_path", "")
+    return str(request.app.extra.get("agent_data_path", ""))
 
 
-def get_task_queue(request: Request) -> Queue:
+def get_task_queue(request: Request) -> Queue[Any]:
     """Get agent task queue from app state.
 
     Args:
         request (Request): The FastAPI request object
 
     Returns:
-        Queue: The multiprocessing queue for tasks
+        Queue[Any]: The multiprocessing queue for tasks
     """
-    return request.app.state.task_queue
+    return cast(Queue[Any], request.app.state.task_queue)
 
 
-def get_processing_task(request: Request) -> Queue:
+def get_processing_task(request: Request) -> Queue[Any]:
     """Get processing task queue from app state.
 
     Args:
         request (Request): The FastAPI request object
 
     Returns:
-        Queue: The multiprocessing queue for tasks currently being processed
+        Queue[Any]: The multiprocessing queue for tasks currently being processed
     """
-    return request.app.state.processing_task_queue
+    return cast(Queue[Any], request.app.state.processing_task_queue)
 
 
 def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -> None:
@@ -189,24 +189,25 @@ def build_networkx_graph(g: Graph):
     is_directed = nx_graph.is_directed()
     print(f"Is the graph directed? {is_directed}")
 
-    remove_nodes = []
-    rdf_edges = {}
-    device_address_edges = []
-    rdf_diff_list = []
-    node_data = {}
-    edge_data = {}
+    remove_nodes: List[Any] = []
+    rdf_edges: Dict[Any, Any] = {}
+    device_address_edges: List[Any] = []
+    rdf_diff_list: List[Any] = []
+    node_data: Dict[str, Dict[str, Any]] = {}
+    edge_data: Dict[str, Dict[str, Any]] = {}
     for u, v, attr in nx_graph.edges(data=True):
         edge_label = attr.get("triples", [])[0][1] if "triples" in attr else None
-        if "rdf_diff_source" in edge_label:
-            rdf_diff_list.append((u, v, edge_label))
-        elif all(edge.value not in edge_label for edge in BACnetEdgeType):
-            label = edge_label.split("#")[-1]
-            val = str(v).split("#")[-1]
-            if str(u) in node_data:
-                node_data[str(u)][label] = val
-            else:
-                node_data[str(u)] = {label: val}
-            remove_nodes.append(v)
+        if edge_label:
+            if "rdf_diff_source" in edge_label:
+                rdf_diff_list.append((u, v, edge_label))
+            elif all(edge.value not in edge_label for edge in BACnetEdgeType):
+                label = edge_label.split("#")[-1]
+                val = str(v).split("#")[-1]
+                if str(u) in node_data:
+                    node_data[str(u)][label] = val
+                else:
+                    node_data[str(u)] = {label: val}
+                remove_nodes.append(v)
 
     for u, v in device_address_edges:
         if str(u) in node_data:

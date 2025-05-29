@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import ipaddress
 import logging
-from typing import List, Set, Union
+from typing import Any, List, Set, Union
 
 import gevent
 import rdflib
@@ -20,7 +20,7 @@ from bacpypes3.ipv4.bvll import (
     ReadForeignDeviceTableAck,
 )
 from bacpypes3.ipv4.service import BVLLServiceAccessPoint
-from bacpypes3.pdu import Address, IPv4Address
+from bacpypes3.pdu import Address, IPv4Address, IPv6Address
 from bacpypes3.primitivedata import ObjectIdentifier
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
 from rdflib import RDF, Graph, Literal, Namespace  # type: ignore
@@ -240,15 +240,15 @@ class bacpypes3_scanner:
         ]
         self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
         self.device_broadcast_full_step_size = device_broadcast_full_step_size
-        self.scanner_node: Union[None, DeviceNode] = None
+        self.scanner_node: DeviceNode
         self.low_limit = scan_low_limit
         self.high_limit = scan_high_limit
-        self.bbmd_in_subnet = {}
-        self.scanned_networks = set()
-        self.scanned_bbmds = []
-        self.scanned_ipaddress_bbmd = {}
-        self.scanned_bbmds_bdt = {}
-        self.scanned_bbmds_fdt = {}
+        self.bbmd_in_subnet: dict[Union[ipaddress.IPv4Network, ipaddress.IPv6Network], str] = {}
+        self.scanned_networks: set[int] = set()
+        self.scanned_bbmds: list[BBMDNode] = []
+        self.scanned_ipaddress_bbmd: dict[ipaddress.IPv4Address, BBMDNode] = {}
+        self.scanned_bbmds_bdt: dict[ipaddress.IPv4Address, list[ipaddress.IPv4Address]] = {}
+        self.scanned_bbmds_fdt: dict[Address, Any] = {}
 
     async def set_application(self, graph: Graph) -> Application:
         """
@@ -414,9 +414,12 @@ class bacpypes3_scanner:
         _log.debug("bacpypes3_scanner: check_if_device_is_bbmd")
         try:
             bdt = await ase.read_broadcast_distribution_table(device_address)
-            if bdt is not None:
-                self.scanned_bbmds_bdt[ipaddress.ip_address(device_address)] = [
-                    ipaddress.ip_address(bdt_entry) for bdt_entry in bdt
+            ip = ipaddress.ip_address(device_address)
+            if bdt is not None and isinstance(ip, ipaddress.IPv4Address):
+                self.scanned_bbmds_bdt[ip] = [
+                    ipaddr for bdt_entry in bdt 
+                    for ipaddr in [ipaddress.ip_address(bdt_entry)] 
+                    if isinstance(ipaddr, ipaddress.IPv4Address)
                 ]
                 return True
         except Exception as e:
@@ -554,9 +557,8 @@ class bacpypes3_scanner:
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_iri = BACnetURI["//" + str(device_identifier[1])]
                 try:
-                    ip = ipaddress.ip_address(device_address)
-
-                    # Check if device is a BBMD
+                    ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(device_address)
+                    device: Union[BBMDNode, DeviceNode]
                     if (
                         await self.check_if_device_is_bbmd(ase, device_address)
                         or ip in self.bbmds
@@ -580,7 +582,6 @@ class bacpypes3_scanner:
                         self.bbmd_in_subnet[device_subnet] = device_iri
                         self.scanned_bbmds.append(device)
                         self.scanned_ipaddress_bbmd[ip] = device
-
                 except ValueError:
                     device = DeviceNode(graph, device_iri)
                     device.add_properties(
