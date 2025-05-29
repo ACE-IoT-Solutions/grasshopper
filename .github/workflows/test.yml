@@ -34,6 +34,7 @@ jobs:
     
     - name: Install dependencies
       run: |
+        cd Grasshopper
         uv pip install -e .
         uv pip install pytest pytest-cov httpx
     
