@@ -26,10 +26,14 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: 0.1.13
+
+    - name: Create virtual environment with uv
+      run: |
+        cd Grasshopper
+        uv venv
     
     - name: Install dependencies
       run: |
-        cd Grasshopper
         uv pip install -e .
         uv pip install pytest pytest-cov httpx
     
