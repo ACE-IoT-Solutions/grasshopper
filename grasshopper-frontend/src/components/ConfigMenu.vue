@@ -45,18 +45,7 @@
                 </v-list>
              </v-menu>
         </div>
-        <hr class="line" style="margin-bottom: 0" />
-        <v-checkbox
-            v-model="show"
-            false-icon="mdi-eye-off-outline"
-            true-icon="mdi-eye-outline"
-            label="BDT Edges"
-            hide-details="auto"
-            density="compact"
-            @update:modelValue="val => store.setBdtEdges(val)"
-            color="#FFFD94"
-            />
-        <hr class="line" style="margin-top: 0" />
+        <hr class="line" />
         <div ref="config"></div>
     </div>
 </template>
@@ -76,9 +65,6 @@ export default {
                     ease: "power2.out",
                 });
             }
-        },
-        'store.showBdtEdges'(newVal) {
-            this.show = newVal;
         }
     },
     data() {
@@ -90,7 +76,6 @@ export default {
                 { title: "Reload with Default", action: () => this.defaultConfig() },
                 { title: "Delete a Config", action: () => this.deleteConfig() },
             ],
-            show: false
         };
     },
     methods: {

@@ -4,7 +4,7 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/:graphName?',
+      path: '/',
       name: 'network-graph',
       component: () => import('../views/NetworkGraphView.vue'),
     },

@@ -2,7 +2,7 @@
     <div>
         <div class="network-header">
             <RouterLink to="/" class="nav-link">
-                <img style="width: 70%;" src="/assets/grasshopper-drk-bg.svg" alt="Grasshopper Logo" />
+                <img style="width: 70%;" src="/assets/grasshopper.svg" alt="Grasshopper Logo" />
             </RouterLink>
             <div class="buttons" style="margin-right: 1.5vw; gap: 20px; align-items: center;">
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('compare', 'Compare Graphs')" style="text-decoration: none;">Compare Graphs</v-btn>
@@ -10,25 +10,6 @@
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('bbmd', 'BBMD')">BBMD</v-btn>
                 <v-btn variant="plain" size="small" @click="store.setControlMenu('subnet', 'Subnet')">Subnet</v-btn>
                 <v-btn variant="outlined" size="small" @click="store.setControlMenu('setup', 'Setup')" color="#CDCDCD">Graph Setup</v-btn>
-                <!-- legend -->
-                <v-btn
-                    v-if="store.fileName"
-                    @click="store.toggleLegend()"
-                    variant="plain"
-                    :ripple="false"
-                    icon=""
-                    id="no-background-hover"
-                    size="small"
-                    density="compact"
-                    color="#FDFD94"
-                    alt="Legend"
-                >
-                    <v-tooltip text="Legend" bottom delay="1000">
-                        <template v-slot:activator="{ props }">
-                            <v-icon v-bind="props">mdi-map-legend</v-icon>
-                        </template>
-                    </v-tooltip>
-                </v-btn>
                 <v-btn
                     v-if="store.fileName"
                     @click="store.setReload()"

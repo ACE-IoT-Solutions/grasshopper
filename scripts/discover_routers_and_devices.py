@@ -107,7 +107,6 @@ async def object_identifiers(
 
     return object_list
 
-
 async def get_router_networks(app, g):
     """
     Get the router to network information from the graph
@@ -115,28 +114,14 @@ async def get_router_networks(app, g):
     _log.debug("get_router_networks")
     routers = await app.nse.who_is_router_to_network()
     for adapter, i_am_router_to_network in routers:
-        _log.debug(
-            f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}"
-        )
+        _log.debug(f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}")
         for net in i_am_router_to_network.iartnNetworkList:
-            g.add(
-                (
-                    BACnetURI["//router/" + str(i_am_router_to_network.pduSource)],
-                    BACnetNS["router-to-network"],
-                    BACnetURI["//network/" + str(net)],
-                )
-            )
+            g.add((BACnetURI["//router/"+str(i_am_router_to_network.pduSource)], BACnetNS["router-to-network"],
+                BACnetURI["//network/"+str(net)]))
     _log.debug("get_router_networks Completed")
 
 
-async def get_device_objects(
-    low_limit,
-    high_limit,
-    batch_broadcast_size,
-    app: Application,
-    bacnet_graph,
-    get_properties,
-):
+async def get_device_objects(low_limit, high_limit, batch_broadcast_size, app:Application, bacnet_graph, get_properties):
     """
     Get the device objects from the graph
     """
@@ -150,39 +135,23 @@ async def get_device_objects(
             track_upper = high_limit
         i_ams = await app.who_is(track_lower, track_upper)
         for i_am in i_ams:
-            print(
-                "////////////////////////////////////////////////////////////////////////////"
-            )
+            print('////////////////////////////////////////////////////////////////////////////')
             print(f"i am: {i_am.pduSource}")
             device_address: Address = i_am.pduSource
             for attr in dir(device_address):
                 print(f"{attr}: {getattr(device_address,attr)}")
             device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
             device_graph = bacnet_graph.create_device(device_address, device_identifier)
-            bacnet_graph.graph.add(
-                (
-                    device_graph.device_iri,
-                    BACnetNS["vendor_id"],
-                    BACnetURI["//vendor/" + str(i_am.vendorID)],
-                )
-            )
+            bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["vendor_id"], BACnetURI["//vendor/"+str(i_am.vendorID)]))
 
             # Need to add bbmd subnet to figure out which bbmd to connect to as well
-            bacnet_graph.graph.add(
-                (
-                    device_graph.device_iri,
-                    BACnetNS["device-on-network"],
-                    BACnetURI["//network/" + str(device_address.addrNet)],
-                )
-            )
+            bacnet_graph.graph.add((device_graph.device_iri, BACnetNS["device-on-network"], BACnetURI["//network/"+str(device_address.addrNet)]))
 
             if get_properties:
-                object_list = await object_identifiers(
-                    app, device_address, device_identifier
-                )
+                object_list = await object_identifiers(app, device_address, device_identifier)
 
                 vendor_info = get_vendor_info(i_am.vendorID)
-
+                
                 for object_identifier in object_list:
                     object_proxy = device_graph.create_object(object_identifier)
                     # read the property list
@@ -210,9 +179,9 @@ async def get_device_objects(
                     except Exception as e:
                         print("Error found identifying property list: ", e)
 
+
         track_lower += batch_broadcast_size
     print("get_device_objects Completed")
-
 
 async def main() -> None:
     app = None
@@ -224,19 +193,21 @@ async def main() -> None:
         parser.add_argument(
             "lower",
             type=int,
-            nargs="?",  # Makes this argument optional
+            nargs='?',  # Makes this argument optional
             default=0,  # Default value if not provided
-            help="lower bound of who-is range (optional)",
+            help="lower bound of who-is range (optional)"
         )
         parser.add_argument(
             "upper",
             type=int,
-            nargs="?",  # Makes this argument optional
+            nargs='?',  # Makes this argument optional
             default=4194303,  # Default value if not provided
-            help="upper bound of who-is range (optional)",
+            help="upper bound of who-is range (optional)"
         )
         parser.add_argument(
-            "properties", action="store_true", help="Scan for points of device"
+            "properties",
+            action="store_true",
+            help="Scan for points of device"
         )
         parser.add_argument(
             "-o",
@@ -269,14 +240,13 @@ async def main() -> None:
         app = Application.from_args(args)
         print("App Started")
 
+
         # Check router to network
         await get_router_networks(app, g)
-
+        
         # Check device objects
         print("lower bounds: ", args.lower, "   upper bounds: ", args.upper)
-        await get_device_objects(
-            args.lower, args.upper, 10000, app, bacnet_graph, args.properties
-        )
+        await get_device_objects(args.lower, args.upper, 10000, app, bacnet_graph, args.properties)
 
         # dump the graph
         if args.output:

@@ -1,11 +1,18 @@
 <template>
   <v-app id="app">
+    <!-- <header class="main-header">
+      <RouterLink to="/" class="nav-link">
+        <img style="width: 70%;"src="/assets/grasshopper.svg" alt="Grasshopper Logo" />
+      </RouterLink>
+      <v-btn class="header-btn" variant="plain" size="small">Logout</v-btn>
+    </header> -->
     <RouterView :store="grasshopperStore" />
   </v-app>
 
 </template>
 
 <script setup>
+import { RouterLink, RouterView } from 'vue-router';
 import { useGrasshopperStore } from "./stores/index.js";
 
 const grasshopperStore = useGrasshopperStore();
@@ -13,6 +20,7 @@ const grasshopperStore = useGrasshopperStore();
 
 <style scoped>
 #app {
+  /* background-color: #212121; */
   background: linear-gradient(to bottom right, #212121, #121212) !important;
 }
 header {
@@ -34,9 +42,16 @@ header {
 
 .nav-link {
   margin: 0 1.5vw;
+  /* font-size: 1.5em; */
+  /* font-weight: 100; */
+  /* color: #a6a9b2; */
+  /* color: #c1d200; */
+  /* text-decoration: none; */
+  /* color: #43354f; */
   padding: 0;
 }
 .nav-link:hover {
+  /* color: #c1d200; */
   color: #a6a9b2;
 }
 
@@ -47,6 +62,18 @@ header {
 }
 
 @media (min-width: 1024px) {
+  /* header {
+    display: flex;
+    place-items: center;
+    padding-right: calc(var(--section-gap) / 2);
+  }
+
+  header .wrapper {
+    display: flex;
+    place-items: flex-start;
+    flex-wrap: wrap;
+  } */
+
   nav {
     text-align: left;
     margin-left: -1rem;

@@ -1,66 +1,19 @@
-[project]
+[tool.poetry]
 name = "grasshopper"
 version = "0.1.0"
 description = "Grasshopper is an open-source project designed to tackle the complex world of smart building networks."
-authors = [
-    { name = "Justice Lee", email = "justice@aceiotsolutions.com" },
-    { name = "Jackson Giles", email = "jackson@aceiotsolutions.com" },
-    { name = "Andrew Rodgers", email = "andrew@aceiotsolutions.com" },
-]
+authors = ["Justin Scott <jscott3201@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "rdflib>=7.0.0",
-    "bacpypes3>=0.0.86",
-    "pydantic>=2.6.4",
-    "pyvis>=0.3.2",
-    "fastapi>=0.110.0",
-    "uvicorn>=0.27.1",
-    "fastmcp>=2.2.7",
-]
-# Classifiers can be added here if desired, e.g.:
-# classifiers = [
-#     "Programming Language :: Python :: 3",
-#     "License :: OSI Approved :: MIT License", # Choose appropriate license
-#     "Operating System :: OS Independent",
-# ]
+packages = [{ include = "grasshopper" }]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "httpx>=0.27.0",
-    "mypy>=1.8.0",
-]
+[tool.poetry.dependencies]
+python = "^3.12"
+rdflib = "^7.0.0"
+bacpypes3 = "^0.0.86"
+pydantic = "^2.6.4"
+pyvis = "^0.3.2"
 
-# If you plan to build wheels/sdists, you need a build backend.
-# setuptools is a common choice. Hatchling is another modern option.
+
 [build-system]
-requires = ["setuptools>=61.0"] # Or hatchling
-build-backend = "setuptools.build_meta" # Or "hatchling.build"
-
-# Keep other tool configurations like mypy
-[tool.mypy]
-python_version = "3.9"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = true
-disallow_untyped_decorators = false
-no_implicit_optional = true
-strict_optional = true
-
-[[tool.mypy.overrides]]
-module = "grasshopper.*"
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-
-[tool.uv.sources]
-bacpypes3 = { git = "https://github.com/ACE-IoT-Solutions/BACpypes3.git", rev = "grasshopper-bandage" }
-
-[dependency-groups]
-dev = [
-    "mock>=5.2.0",
-    "pytest-cov>=6.1.1",
-]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

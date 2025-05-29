@@ -35,22 +35,22 @@
       <p class="text">{{ store.menuTitle }}</p>
     </div>
     <div v-if="store.menuType == 'compare'" class="alt-container">
-      <v-autocomplete
+      <v-select
         v-model="compareGraph1"
         label="Select a Graph"
         variant="solo-filled"
         density="compact"
         :items="store.setupGraphs"
         clearable
-      ></v-autocomplete>
-      <v-autocomplete
+      ></v-select>
+      <v-select
         v-model="compareGraph2"
         label="Select a Graph"
         variant="solo-filled"
         density="compact"
         :items="store.setupGraphs"
         clearable
-      ></v-autocomplete>
+      ></v-select>
       <div style="display: flex; align-items: center; justify-content: center">
         <v-btn
           @click="createCompare()"
@@ -73,7 +73,7 @@
           gap: 20px;
         "
       >
-        <v-autocomplete
+        <v-select
           v-model="compareGraph"
           :items="store.compareList"
           label="Past Comparisons"
@@ -81,7 +81,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           @click="loadCompare()"
           :loading="compareLoad"
@@ -103,7 +103,7 @@
           gap: 20px;
         "
       >
-        <v-autocomplete
+        <v-select
           v-model="deletedGraph"
           :items="store.deleteList"
           label="Select a Graph"
@@ -111,7 +111,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           @click="deleteGraph()"
           :loading="deleteLoad"
@@ -131,7 +131,7 @@
           gap: 20px;
         "
       >
-        <v-autocomplete
+        <v-select
           v-model="deletedCompareGraph"
           :items="store.deleteCompareList"
           label="Select a Compare Graph"
@@ -139,7 +139,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           @click="deleteCompareGraph()"
           :loading="deleteCompareLoad"
@@ -159,7 +159,7 @@
           gap: 20px;
         "
       >
-        <v-autocomplete
+        <v-select
           v-model="config"
           label="Select Config"
           variant="solo-filled"
@@ -167,7 +167,7 @@
           hide-details="auto"
           :items="store.configList"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           @click="deleteConfig()"
           :loading="configLoad"
@@ -240,7 +240,7 @@
           gap: 20px;
         "
       >
-        <v-autocomplete
+        <v-select
           v-model="subnetToDelete"
           :items="store.ipList"
           label="Select a Subnet"
@@ -248,7 +248,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           @click="deleteSubnet()"
           variant="tonal"
@@ -330,7 +330,7 @@
           gap: 20px;
         "
       >
-        <v-autocomplete
+        <v-select
           v-model="bbmdToDelete"
           :items="store.bbmdList"
           label="Select a BBMD"
@@ -338,7 +338,7 @@
           density="compact"
           hide-details="auto"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           @click="deleteBbmd()"
           variant="tonal"
@@ -376,7 +376,7 @@
       <div
         :class="store.configSelect ? 'setup-config' : 'setup-default'"
       >
-        <v-autocomplete
+        <v-select
           v-model="setupGraph"
           label="Select a Graph"
           variant="solo-filled"
@@ -384,8 +384,8 @@
           hide-details="auto"
           :items="store.setupGraphs"
           clearable
-        ></v-autocomplete>
-        <v-autocomplete
+        ></v-select>
+        <v-select
           v-if="store.configSelect"
           v-model="config"
           label="Select a Config (Optional)"
@@ -394,7 +394,7 @@
           hide-details="auto"
           :items="store.configList"
           clearable
-        ></v-autocomplete>
+        ></v-select>
         <v-btn
           v-if="!store.configSelect"
           @click="goToGraph()"
@@ -481,7 +481,7 @@
         :rules="configRules"
         clearable
       ></v-text-field>
-      <v-autocomplete
+      <v-select
         v-if="store.menuTitle == 'Load Config'"
         v-model="config"
         label="Select Config"
@@ -489,7 +489,7 @@
         density="compact"
         :items="store.configList"
         clearable
-      ></v-autocomplete>
+      ></v-select>
       <div style="display: flex; justify-content: center;">
         <v-btn
           v-if="store.menuTitle == 'Save Config'"
@@ -607,12 +607,6 @@ export default {
       })
     },
   },
-  watch: {
-    // eslint-disable-next-line no-unused-vars
-    'store.reloadKey'(newVal, oldVal) {
-      this.refresh();
-    },
-  },
   mounted() {
     let animateClass = null
 
@@ -633,7 +627,7 @@ export default {
     })
 
     this.decodeCookie();
-    this.refresh();
+    
   },
   methods: {
     checkFileName() {
@@ -744,8 +738,6 @@ export default {
           this.store.setCurrentGraph(response.data, this.setupGraph)
           this.store.setControlMenu(null, null)
           this.setupLoad = false
-          this.$router.push({ params: { graphName: this.setupGraph } })
-
         })
         .catch(error => {
           console.log(error)
@@ -783,7 +775,6 @@ export default {
           this.store.setCurrentGraph(response.data, this.compareGraph)
           this.store.setControlMenu(null, null)
           this.compareLoad = false
-          this.$router.push({ params: { graphName: this.compareGraph } })
         })
         .catch(error => {
           console.log(error)
@@ -799,6 +790,8 @@ export default {
         .post(`${this.host}/api/operations/ttl`, formData)
         // eslint-disable-next-line no-unused-vars
         .then(response => {
+          // console.log(response);
+          // this.store.setControlMenu(null, null);
           this.uploadLoad = false
           this.store.triggerReload()
           this.fileUpload = null
@@ -947,100 +940,6 @@ export default {
           this.config = value;
         }
       }
-    },
-    async fetchGraphs() {
-      await axios
-        .get(
-          `${this.host}/api/operations/ttl`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setSetupGraphs(response.data.data);
-          this.store.setDeleteGraphs(response.data.data);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchIps() {
-      await axios
-        .get(
-          `${this.host}/api/operations/subnets`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setIpList(response.data.ip_address_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchCompareGraphs() {
-      await axios
-        .get(
-          `${this.host}/api/operations/ttl_compare`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setCompareList(response.data.file_list);
-          this.store.setDeleteCompareGraphs(response.data.file_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchBbmds() {
-      await axios
-        .get(
-          `${this.host}/api/operations/bbmds`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-          this.store.setBbmdList(response.data.ip_address_list);
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async fetchConfig() {
-      await axios
-        .get(
-          `${this.host}/api/operations/network_config`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-
-          if (response.data.data.length === 0) {
-            this.store.setConfigSelect(false);
-            this.store.setPhysicsConfig(this.store.defaultConfig);
-          } else {
-            this.store.setConfigSelect(true);
-            this.store.setConfigList(response.data.data);
-          }
-          
-        })
-        .catch((error) => {
-          console.log(error);
-        });
-    },
-    async refresh() {
-        await Promise.all([
-            this.fetchGraphs(),
-            this.fetchIps(),
-            this.fetchCompareGraphs(),
-            this.fetchBbmds(),
-            this.fetchConfig()
-        ]);
     },
   },
 }
