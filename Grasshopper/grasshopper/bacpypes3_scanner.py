@@ -56,7 +56,7 @@ utils.setup_logging()
 class BVLLServiceElement(ApplicationServiceElement):
     """
     A service element for handling BACnet Virtual Link Layer (BVLL) messages.
-    
+
     This class extends ApplicationServiceElement to process BVLL messages like
     read broadcast distribution table (BDT) and foreign device table (FDT) requests.
     It provides asynchronous interfaces for these operations.
@@ -65,7 +65,7 @@ class BVLLServiceElement(ApplicationServiceElement):
     def __init__(self):
         """
         Initialize the BVLLServiceElement with empty future dictionaries.
-        
+
         The dictionaries track pending requests for BDT and FDT operations.
         """
         self.read_bdt_future = {}  # Maps addresses to futures for BDT responses
@@ -74,10 +74,10 @@ class BVLLServiceElement(ApplicationServiceElement):
     async def confirmation(self, pdu: LPDU):
         """
         Process incoming BVLL confirmations.
-        
+
         This method handles responses to BDT and FDT read requests by resolving
         the appropriate future with the received data.
-        
+
         Args:
             pdu (LPDU): The received protocol data unit
         """
@@ -96,13 +96,13 @@ class BVLLServiceElement(ApplicationServiceElement):
     ) -> asyncio.Future:
         """
         Create a future for a BVLL request.
-        
+
         This method creates and schedules an asynchronous request to a BACnet device.
-        
+
         Args:
             destination (Address): The address of the target device
             request_class: The class of the request to create (e.g., ReadBroadcastDistributionTable)
-            
+
         Returns:
             asyncio.Future: A future representing the pending request
         """
@@ -116,16 +116,16 @@ class BVLLServiceElement(ApplicationServiceElement):
     ):
         """
         Create a BVLL request and await its completion.
-        
+
         This method creates a request, registers a future for its response, sends the request,
         and waits for the response with a timeout. It also includes error handling and cleanup.
-        
+
         Args:
             destination (Address): The address of the target device
             request_class: The class of the request to create
             request_registry (dict): Dictionary mapping addresses to response futures
             timeout (int, optional): Timeout in seconds. Defaults to 5.
-            
+
         Returns:
             Any: The response data if successful, None if timeout or error
         """
@@ -159,14 +159,14 @@ class BVLLServiceElement(ApplicationServiceElement):
     async def read_broadcast_distribution_table(self, address: IPv4Address, timeout=5):
         """
         Read the Broadcast Distribution Table (BDT) from a BBMD device.
-        
+
         This method sends a ReadBroadcastDistributionTable request to a device
         and waits for the response containing the BDT entries.
-        
+
         Args:
             address (IPv4Address): The address of the BBMD device
             timeout (int, optional): Timeout in seconds. Defaults to 5.
-            
+
         Returns:
             list: The Broadcast Distribution Table entries if successful, None otherwise
         """
@@ -177,14 +177,14 @@ class BVLLServiceElement(ApplicationServiceElement):
     async def read_foreign_device_table(self, address: IPv4Address, timeout=5):
         """
         Read the Foreign Device Table (FDT) from a BBMD device.
-        
+
         This method sends a ReadForeignDeviceTable request to a device
         and waits for the response containing the FDT entries.
-        
+
         Args:
             address (IPv4Address): The address of the BBMD device
             timeout (int, optional): Timeout in seconds. Defaults to 5.
-            
+
         Returns:
             list: The Foreign Device Table entries if successful, None otherwise
         """
@@ -196,12 +196,12 @@ class BVLLServiceElement(ApplicationServiceElement):
 class bacpypes3_scanner:
     """
     Scanner for discovering and mapping BACnet networks and devices.
-    
+
     This class provides functionality to scan BACnet networks, discover devices and routers,
     and build an RDF graph representation of the network topology. It uses the BACpypes3
     library for BACnet communication.
     """
-    
+
     def __init__(
         self,
         bacpypes_settings: dict,
@@ -215,7 +215,7 @@ class bacpypes3_scanner:
     ) -> None:
         """
         Initialize the BACpypes3 scanner with the given settings.
-        
+
         Args:
             bacpypes_settings (dict): BACpypes application configuration settings
             prev_graph (Graph): Previous RDF graph of the network (for incremental scanning)
@@ -321,7 +321,7 @@ class bacpypes3_scanner:
     async def get_device_and_router(self, graph: Graph) -> None:
         """
         Main scanning method that discovers devices and routers on the BACnet network.
-        
+
         This method performs the complete scanning process:
         1. Sets up the BACnet application
         2. Creates the scanner node in the graph
@@ -329,10 +329,10 @@ class bacpypes3_scanner:
         4. Discovers routers and their networks
         5. Reads BBMD tables
         6. Updates the graph with subnet and network information
-        
+
         Args:
             graph (Graph): The RDF graph to populate with discovered devices and topology
-            
+
         Returns:
             None
         """
@@ -354,19 +354,19 @@ class bacpypes3_scanner:
     async def get_router_networks(self, app: Application, graph: Graph) -> None:
         """
         Discover routers and their connected networks on the BACnet internetwork.
-        
+
         This method sends Who-Is-Router-To-Network requests for each network ID that
         has been discovered during device scanning. It creates Router nodes in the graph
         for each discovered router and associates them with their networks.
-        
-        Who-is-router-to-network is called for individual networks found existing in 
+
+        Who-is-router-to-network is called for individual networks found existing in
         the graph from device broadcasts to prevent overloading the network.
         Valid network ranges go from 1 to 65,534.
-        
+
         Args:
             app (Application): The BACnet application object
             graph (Graph): The RDF graph to populate with router information
-            
+
         Returns:
             None
         """
@@ -400,14 +400,14 @@ class bacpypes3_scanner:
     ) -> bool:
         """
         Check if a device is a BBMD by attempting to read its Broadcast Distribution Table.
-        
+
         This method tries to read the BDT from the device. If successful, it stores the BDT
         entries and identifies the device as a BBMD.
-        
+
         Args:
             ase (BVLLServiceElement): The BVLL service element for sending the request
             device_address (Address): The address of the device to check
-            
+
         Returns:
             bool: True if the device is a BBMD, False otherwise
         """
@@ -429,15 +429,15 @@ class bacpypes3_scanner:
     ) -> None:
         """
         Read the Foreign Device Table from a BBMD device.
-        
+
         This method attempts to read the FDT from a device and stores it
         if successful. The FDT contains information about foreign devices
         registered with this BBMD.
-        
+
         Args:
             ase (BVLLServiceElement): The BVLL service element for sending the request
             device_address (Address): The address of the BBMD device
-            
+
         Returns:
             None
         """
@@ -454,15 +454,15 @@ class bacpypes3_scanner:
     ) -> Union[ipaddress.IPv4Network, ipaddress.IPv6Network]:
         """
         Associate a device with its subnet based on its IP address.
-        
+
         This method finds which subnet the device belongs to based on its IP address.
         If the device doesn't match any known subnet, a new /24 subnet is created
         and added to the list of known subnets.
-        
+
         Args:
             device (BACnetNode): The device node to associate with a subnet
             ip (Address): The IP address of the device
-            
+
         Returns:
             Union[ipaddress.IPv4Network, ipaddress.IPv6Network]: The subnet the device belongs to
         """
@@ -486,22 +486,22 @@ class bacpypes3_scanner:
     ) -> None:
         """
         Discover BACnet devices on the network and add them to the graph.
-        
+
         This method sends Who-Is broadcasts to discover devices within the configured
         instance ID range. For each discovered device, it:
         1. Creates a Device or BBMD node in the graph
         2. Adds device properties (ID, address, vendor ID)
         3. Associates the device with its subnet
         4. Checks if the device is a BBMD by attempting to read its BDT
-        
+
         The method uses an adaptive scanning approach, adjusting the scan range based on
         the density of devices in previous scans to optimize network traffic.
-        
+
         Args:
             app (Application): The BACnet application object
             ase (BVLLServiceElement): The BVLL service element for BBMD operations
             graph (Graph): The RDF graph to populate with device information
-            
+
         Returns:
             None
         """
@@ -510,15 +510,15 @@ class bacpypes3_scanner:
         def get_known_device_end_range(graph: Graph, start_pos: int) -> int:
             """
             Determine the optimal upper bound for the next Who-Is request.
-            
+
             This helper function analyzes the existing graph to find an appropriate
             upper bound for the next device scan range. It helps optimize scanning
             by using smaller steps in device-dense areas and larger steps in sparse areas.
-            
+
             Args:
                 graph (Graph): The RDF graph containing previously discovered devices
                 start_pos (int): The starting device instance ID for this range
-                
+
             Returns:
                 int: The ending device instance ID for this range
             """
@@ -598,13 +598,13 @@ class bacpypes3_scanner:
     async def set_subnet_network(self, graph: Graph) -> None:
         """
         Create subnet and network nodes in the graph and establish relationships.
-        
+
         This method creates nodes for all discovered subnets and networks in the graph.
         It also establishes relationships between BBMD devices based on their BDT entries.
-        
+
         Args:
             graph (Graph): The RDF graph to update with subnet and network information
-            
+
         Returns:
             None
         """

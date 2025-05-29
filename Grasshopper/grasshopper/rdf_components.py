@@ -15,7 +15,7 @@ from rdflib.namespace import RDFS
 class BACnetEdgeType(Enum):
     """
     Enumeration defining the relationship types between BACnet entities in the RDF graph.
-    
+
     These edge types represent the various relationships between BACnet entities such as
     devices, routers, BBMDs, networks, and subnets in the network topology. They are used
     to create consistent edge predicates in the RDF graph.
@@ -23,24 +23,24 @@ class BACnetEdgeType(Enum):
 
     # BBMD connects to a subnet
     BBMD_BROADCAST_DOMAIN = "bbmd-broadcast-domain"
-    
+
     # Router is connected to a subnet
     BACNET_ROUTER_ON_SUBNET = "bacnet-router-on-subnet"
-    
+
     # Device is connected to a subnet
     DEVICE_ON_SUBNET = "device-on-subnet"
-    
+
     # Device is assigned to a BACnet network
     # This can be an MSTP network ID or a BACnet global network ID on an IP subnet
     # By default 1 on IP, typically hidden for IP devices
     DEVICE_ON_NETWORK = "device-on-network"
-    
+
     # Router provides routing for a subnet (not yet implemented)
     ROUTER_FOR_SUBNET = "router-for-subnet"
-    
+
     # BBMD has another BBMD in its Broadcast Distribution Table
     BDT_ENTRY = "bdt-entry"
-    
+
     # BBMD has a device registered as a Foreign Device
     FDR_ENTRY = "fdr-entry"
 
@@ -48,7 +48,7 @@ class BACnetEdgeType(Enum):
 class BaseTypeHandler(ABC):
     """
     Abstract base class for BACnet device type handlers.
-    
+
     Type handlers are responsible for assigning the correct RDF type to BACnet nodes
     in the graph. This class defines the interface that all type handlers must implement.
     The Strategy pattern is used here to allow different types of BACnet entities to be
@@ -59,10 +59,10 @@ class BaseTypeHandler(ABC):
     def set_type(self, device):
         """
         Assign RDF.type for the given device.
-        
+
         Args:
             device: The BACnet node to assign a type to
-        
+
         Raises:
             NotImplementedError: If the subclass does not implement this method
         """
@@ -72,7 +72,7 @@ class BaseTypeHandler(ABC):
 class DeviceTypeHandler(BaseTypeHandler):
     """
     Handles assigning RDF.type for a standard BACnet device.
-    
+
     This type handler assigns the BACnet Device type to nodes in the RDF graph.
     Standard devices are the most common type of BACnet entity.
     """
@@ -84,7 +84,7 @@ class DeviceTypeHandler(BaseTypeHandler):
 class BBMDTypeHandler(BaseTypeHandler):
     """
     Handles assigning RDF.type for a BBMD (BACnet Broadcast Management Device).
-    
+
     This type handler assigns the BACnet BBMD type to nodes in the RDF graph.
     BBMDs are special devices that manage broadcast communications across IP subnets.
     """
@@ -96,7 +96,7 @@ class BBMDTypeHandler(BaseTypeHandler):
 class RouterTypeHandler(BaseTypeHandler):
     """
     Handles assigning RDF.type for a BACnet Router device.
-    
+
     This type handler assigns the BACnet Router type to nodes in the RDF graph.
     Routers connect different BACnet networks and allow devices to communicate across them.
     """
@@ -108,7 +108,7 @@ class RouterTypeHandler(BaseTypeHandler):
 class SubnetTypeHandler(BaseTypeHandler):
     """
     Handles assigning RDF.type for a Subnet entity.
-    
+
     This type handler assigns the BACnet Subnet type to nodes in the RDF graph.
     Subnets represent IP subnets that contain BACnet devices.
     """
@@ -120,7 +120,7 @@ class SubnetTypeHandler(BaseTypeHandler):
 class NetworkTypeHandler(BaseTypeHandler):
     """
     Handles assigning RDF.type for a Network entity.
-    
+
     This type handler assigns the BACnet Network type to nodes in the RDF graph.
     Networks represent BACnet networks, which can be IP, MSTP, or other types.
     """
@@ -132,7 +132,7 @@ class NetworkTypeHandler(BaseTypeHandler):
 class BaseNode:
     """
     Core BACnet node that assigns an IRI and manages RDF properties.
-    
+
     This is the base class for all BACnet entities in the RDF graph. It provides
     common functionality for managing node properties and types in the graph.
     It uses the Strategy pattern with type handlers to determine the RDF type
@@ -144,7 +144,7 @@ class BaseNode:
     ) -> None:
         """
         Initialize a BaseNode with the given graph, IRI, and type handler.
-        
+
         Args:
             graph (Graph): The RDF graph to add this node to
             node_iri (URIRef): The IRI that uniquely identifies this node
@@ -166,7 +166,7 @@ class BaseNode:
         adding properties to the node. The predicate should be a URIRef that represents
         the property being set, and the object can be either a URIRef or a Literal
         representing the value of the property.
-        
+
         Args:
             predicate (URIRef): The predicate (relationship) to set
             new_object (Union[URIRef, Literal]): The object (value) to set
@@ -176,7 +176,7 @@ class BaseNode:
     def set_type(self):
         """
         Delegate type setting to the assigned handler.
-        
+
         This method calls the set_type method of the type handler to assign
         the appropriate RDF type to this node.
         """
@@ -186,10 +186,10 @@ class BaseNode:
     def add_properties(self, label: Optional[str] = None, **kwargs) -> None:
         """
         Add properties to the node.
-        
+
         This method adds a label to the node if provided. Subclasses can override
         this method to add additional properties.
-        
+
         Args:
             label (Optional[str], optional): The label for the node. Defaults to None.
             **kwargs: Additional properties to add to the node
@@ -276,14 +276,12 @@ class BACnetNode(BaseNode):
         device_identifier: Optional[str] = None,
         device_address: Optional[str] = None,
         vendor_id: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Add properties common to all devices."""
         super().add_properties(label=label, **kwargs)
         if device_identifier:
-            self.add_connection(
-                BACnetNS["device-instance"], Literal(device_identifier)
-            )
+            self.add_connection(BACnetNS["device-instance"], Literal(device_identifier))
         if device_address:
             self.add_connection(BACnetNS["address"], Literal(str(device_address)))
         if vendor_id:
