@@ -39,25 +39,26 @@ jobs:
     - name: Lint with flake8
       run: |
         cd Grasshopper
+        source .venv/bin/activate
         # stop the build if there are Python syntax errors or undefined names
-        uv flake8 Grasshopper/grasshopper --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 grasshopper --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings
-        uv flake8 Grasshopper/grasshopper --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
+        flake8 grasshopper --count --exit-zero --max-complexity=10 --max-line-length=100 --statistics
     
     - name: Check formatting with black
       run: |
         cd Grasshopper
         source .venv/bin/activate
-        black --check --diff Grasshopper/grasshopper
+        black --check --diff grasshopper
     
     - name: Check imports with isort
       run: |
         cd Grasshopper
         source .venv/bin/activate
-        isort --check-only --profile black Grasshopper/grasshopper
+        isort --check-only --profile black grasshopper
     
     - name: Type check with mypy
       run: |
         cd Grasshopper
         source .venv/bin/activate
-        mypy --ignore-missing-imports Grasshopper/grasshopper
+        mypy --ignore-missing-imports grasshopper

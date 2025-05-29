@@ -40,15 +40,20 @@ jobs:
     
     - name: Install BACpypes3 from GitHub
       run: |
+        cd Grasshopper
         uv pip install BACpypes3@git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
     
     - name: Run tests
       run: |
+        cd Grasshopper
+        source .venv/bin/activate
         pytest tests/api/ -v
     
     - name: Generate coverage report
       run: |
-        pytest tests/api/ --cov=Grasshopper/grasshopper --cov-report=xml
+        cd Grasshopper
+        source .venv/bin/activate
+        pytest tests/api/ --cov=grasshopper --cov-report=xml
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
