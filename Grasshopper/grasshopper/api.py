@@ -41,40 +41,43 @@ api_router = APIRouter(prefix="/operations", tags=["operations"])
 
 def get_agent_data_path(request: Request) -> str:
     """Get agent data path from app state.
-    
+
     Args:
         request (Request): The FastAPI request object
-        
+
     Returns:
         str: Path to the agent data directory, or empty string if not found
     """
     return request.app.extra.get("agent_data_path", "")
 
+
 def get_task_queue(request: Request) -> Queue:
     """Get agent task queue from app state.
-    
+
     Args:
         request (Request): The FastAPI request object
-        
+
     Returns:
         Queue: The multiprocessing queue for tasks
     """
     return request.app.state.task_queue
 
+
 def get_processing_task(request: Request) -> Queue:
     """Get processing task queue from app state.
-    
+
     Args:
         request (Request): The FastAPI request object
-        
+
     Returns:
         Queue: The multiprocessing queue for tasks currently being processed
     """
     return request.app.state.processing_task_queue
 
+
 def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -> None:
     """Process the compare RDF queue in background.
-    
+
     This function runs as a separate process and continually processes tasks from the queue.
     For each task, it:
     1. Gets two TTL files from the queue
@@ -82,11 +85,11 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -
     3. Computes the difference between the graphs
     4. Creates a combined graph with difference markers
     5. Serializes the combined graph to a new TTL file
-    
+
     Args:
         task_queue (Queue): Queue containing tasks to be processed
         processing_task_queue (Queue): Queue for tracking tasks currently being processed
-        
+
     Returns:
         None: This function runs indefinitely until the process is terminated
     """
@@ -161,24 +164,23 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -
             print(f"Error processing task: {e}")
 
 
-
 def build_networkx_graph(g: Graph):
     """
     Build a networkx graph from the BACnet RDF graph.
-    
+
     This function converts an RDFLib graph to a NetworkX graph that can be used
     for visualization and network analysis. It also extracts node and edge attributes
     for display in the UI.
-    
+
     Args:
         g (Graph): The RDFLib graph containing BACnet network information
-        
+
     Returns:
         tuple: Contains:
             - nx_graph: The NetworkX graph object
             - node_data: Dictionary of node attributes
             - edge_data: Dictionary of edge attributes
-    
+
     Note: device_address_edges is utilized to deal with Bacpypes3 original format, however it is no longer utilized.
     This is utilized for backward compatibility support. It may be removed in the future.
     """
@@ -243,19 +245,21 @@ def build_networkx_graph(g: Graph):
     return nx_graph, node_data, edge_data
 
 
-def pass_networkx_to_pyvis(nx_graph, net: Network, node_data: dict, edge_data: dict) -> None:
+def pass_networkx_to_pyvis(
+    nx_graph, net: Network, node_data: dict, edge_data: dict
+) -> None:
     """Convert networkx graph to pyvis network for visualization.
-    
+
     This function takes a NetworkX graph and converts it to a PyVis network object,
     which can be used for interactive visualization. It adds nodes and edges with
     their associated metadata.
-    
+
     Args:
         nx_graph: The NetworkX graph object
         net (Network): The PyVis network object to populate
         node_data (dict): Dictionary of node attributes
         edge_data (dict): Dictionary of edge attributes
-        
+
     Returns:
         None: The network object is modified in-place
     """
@@ -272,18 +276,18 @@ def get_file_path(
     file_name: str, request: Request, folder: str = "ttl"
 ) -> Optional[str]:
     """Get absolute file path for a file in the agent data directory.
-    
+
     This function looks for a specified file within the agent data directory
     and returns its absolute path if found.
-    
+
     Args:
         file_name (str): The name of the file to find
         request (Request): The FastAPI request object containing app state
         folder (str, optional): The subdirectory to search in. Defaults to "ttl".
-        
+
     Returns:
         Optional[str]: The absolute path to the file if found, None otherwise
-        
+
     Raises:
         FileNotFoundError: If the specified folder doesn't exist
     """
@@ -303,11 +307,11 @@ def get_file_path(
 
 def list_files_in_dir(request: Request, folder: str = "ttl") -> List[str]:
     """List files in the specified directory within the agent data path.
-    
+
     Args:
         request (Request): The FastAPI request object containing app state
         folder (str, optional): The subdirectory to list files from. Defaults to "ttl".
-        
+
     Returns:
         List[str]: A list of filenames in the specified directory
     """
@@ -441,16 +445,17 @@ async def get_ttl_network(ttl_filename: str, request: Request):
     net_data = {"nodes": net.nodes, "edges": net.edges}
     return net_data
 
+
 def get_list_from_queue(queue: Queue) -> List[Dict[str, Any]]:
     """Get list of tasks from the queue without removing them.
-    
+
     This function extracts all items from a queue, saves them to a list,
     and then puts them back into the queue, effectively allowing inspection
     of queue contents without consuming them.
-    
+
     Args:
         queue (Queue): The multiprocessing queue to inspect
-        
+
     Returns:
         List[Dict[str, Any]]: A list of all tasks currently in the queue
     """
@@ -464,6 +469,7 @@ def get_list_from_queue(queue: Queue) -> List[Dict[str, Any]]:
 
     return tasks
 
+
 @api_router.post("/ttl_compare_queue", status_code=status.HTTP_202_ACCEPTED)
 async def add_ttl_compare_queue(
     compare_files: CompareTTLFiles,
@@ -472,19 +478,19 @@ async def add_ttl_compare_queue(
     processing_task=Depends(get_processing_task),
 ):
     """Add TTL comparison request to the processing queue.
-    
+
     This endpoint allows clients to request a comparison between two TTL files.
     The comparison is performed asynchronously, with the result saved as a new TTL file.
-    
+
     Args:
         compare_files (CompareTTLFiles): Object containing the names of TTL files to compare
         request (Request): The FastAPI request object
         queue (Queue): The task queue (injected by FastAPI)
         processing_task (Queue): The processing task queue (injected by FastAPI)
-        
+
     Returns:
         dict: A message confirming the task was accepted and the task details
-        
+
     Raises:
         HTTPException: If files are not found or a duplicate task already exists
     """
@@ -496,7 +502,7 @@ async def add_ttl_compare_queue(
     if not ttl_filepath_1 or not ttl_filepath_2:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="One or both TTL files not found"
+            detail="One or both TTL files not found",
         )
 
     queue_contents = get_list_from_queue(queue)
@@ -512,7 +518,7 @@ async def add_ttl_compare_queue(
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Task already queued or in progress"
+                detail="Task already queued or in progress",
             )
 
     # enqueue a new task
@@ -562,14 +568,13 @@ async def delete_ttl_compare_queue_task(
     except AssertionError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Multiple processing tasks found"
+            detail="Multiple processing tasks found",
         )
     # can’t remove the one in progress
     if current_task and current_task.get("id") == task_id:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content={"status": "error",
-                     "message": "Task is currently being processed"},
+            content={"status": "error", "message": "Task is currently being processed"},
         )
 
     # drain the queue into a temp list
@@ -584,15 +589,14 @@ async def delete_ttl_compare_queue_task(
         # nothing was removed
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
-            content={"status": "error", "message": f"Task {task_id} not found"}
+            content={"status": "error", "message": f"Task {task_id} not found"},
         )
 
     # re-enqueue the survivors
     for t in new_tasks:
         queue.put(t)
 
-    return {"status": "success",
-            "message": f"Task {task_id} removed from the queue"}
+    return {"status": "success", "message": f"Task {task_id} removed from the queue"}
 
 
 @api_router.get("/ttl_compare", response_model=FileList)
@@ -801,19 +805,17 @@ async def export_csv(ttl_filename: str, request: Request):
 def device_config_read_key(agent_data_path: str, key: str) -> Any:
     """
     Read a key from the device configuration file.
-    
+
     Args:
         agent_data_path (str): Path to the agent data directory
         key (str): The configuration key to read
-        
+
     Returns:
         Any: The value associated with the key, or None if the key doesn't exist
               or there was an error reading the configuration file
     """
     try:
-        config_path = os.path.join(
-            agent_data_path, DEVICE_STATE_CONFIG
-        )
+        config_path = os.path.join(agent_data_path, DEVICE_STATE_CONFIG)
         if not os.path.exists(config_path):
             return None
         with open(config_path, "r", encoding="utf-8") as f:
@@ -826,21 +828,21 @@ def device_config_read_key(agent_data_path: str, key: str) -> Any:
         return None
     except json.JSONDecodeError:
         return None
-    
+
 
 def device_config_write_key(agent_data_path: str, key: str, value: Any) -> bool:
     """
     Write a single key/value into the device config JSON file.
-    
+
     This function writes or updates a key in the device configuration file,
     creating the file if it doesn't exist. It uses a safe write pattern with
     a temporary file to prevent corruption if the process is interrupted.
-    
+
     Args:
         agent_data_path (str): Path to the agent data directory
         key (str): The configuration key to write
         value (Any): The value to associate with the key
-        
+
     Returns:
         bool: True on success, False on any error
     """
@@ -868,27 +870,30 @@ def device_config_write_key(agent_data_path: str, key: str, value: Any) -> bool:
 
     except (OSError, json.JSONDecodeError):
         return False
-    
+
+
 @api_router.get("/bbmds", response_model=IPAddressList)
 async def get_bbmd_list(agent_data_path=Depends(get_agent_data_path)):
     """Gets the list of BBMD IP Addresses stored in the config"""
-    list_of_bbmd_ips:list = device_config_read_key(agent_data_path, "bbmd_devices")
+    list_of_bbmd_ips: list = device_config_read_key(agent_data_path, "bbmd_devices")
     return {"ip_address_list": list_of_bbmd_ips}
+
 
 @api_router.post("/bbmds", response_model=Dict[str, List[str]])
 async def add_bbmd(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Adds IP address to the list of BBMD IP Addresses stored in the config"""
-    list_of_bbmd_ips:list = device_config_read_key(agent_data_path, "bbmd_devices")
+    list_of_bbmd_ips: list = device_config_read_key(agent_data_path, "bbmd_devices")
     ip = ip_data.ip_address
     if ip and ip not in list_of_bbmd_ips:
         list_of_bbmd_ips.append(ip)
         device_config_write_key(agent_data_path, "bbmd_devices", list_of_bbmd_ips)
     return {"list_of_bbmd_ips": list_of_bbmd_ips}
 
+
 @api_router.delete("/bbmds", response_model=Dict[str, List[str]])
 async def delete_bbmd(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Removes IP address from the list of BBMD IP Addresses stored in the config"""
-    list_of_bbmd_ips:list = device_config_read_key(agent_data_path, "bbmd_devices")
+    list_of_bbmd_ips: list = device_config_read_key(agent_data_path, "bbmd_devices")
     ip = ip_data.ip_address
     if ip and ip in list_of_bbmd_ips:
         list_of_bbmd_ips.remove(ip)
@@ -899,21 +904,25 @@ async def delete_bbmd(ip_data: IPAddress, agent_data_path=Depends(get_agent_data
 @api_router.get("/subnets", response_model=IPAddressList)
 async def get_subnet_list(agent_data_path=Depends(get_agent_data_path)):
     """Gets the list of Subnets CIDR Addresses stored in the config"""
-    list_of_subnets_ips:list = device_config_read_key(agent_data_path, "subnets")
+    list_of_subnets_ips: list = device_config_read_key(agent_data_path, "subnets")
     return {"ip_address_list": list_of_subnets_ips}
+
 
 @api_router.post("/subnets", response_model=Dict[str, List[str]])
 async def add_subnet(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
     """Adds IP address to the list of Subnets CIDR Addresses stored in the config"""
-    list_of_subnets_ips:list = device_config_read_key(agent_data_path, "subnets")
+    list_of_subnets_ips: list = device_config_read_key(agent_data_path, "subnets")
     ip = ip_data.ip_address
     if ip and ip not in list_of_subnets_ips:
         list_of_subnets_ips.append(ip)
         device_config_write_key(agent_data_path, "subnets", list_of_subnets_ips)
     return {"list_of_subnets_ips": list_of_subnets_ips}
 
+
 @api_router.delete("/subnets", response_model=Dict[str, List[str]])
-async def delete_subnet(ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)):
+async def delete_subnet(
+    ip_data: IPAddress, agent_data_path=Depends(get_agent_data_path)
+):
     """Removes IP address from the list of subnets IP Addresses stored in the config"""
     list_of_subnets_ips: list = device_config_read_key(agent_data_path, "subnets")
     ip = ip_data.ip_address
