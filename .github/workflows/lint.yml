@@ -33,7 +33,7 @@ jobs:
         cd Grasshopper
         uv pip install -e .
         uv pip install black flake8 isort mypy
-        uv pip install BACpypes3 git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
+        uv pip install BACpypes3 @ git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
     
     - name: Lint with flake8
       run: |
