@@ -1067,8 +1067,11 @@ export default {
       this.network.on('click', params => {
         if (!params.nodes.length) {
           this.unhighlightNode()
-          this.toggleBdtEdges(this.bdtEdges, false)
-          this.store.setBdtEdges(false)
+
+          if (!this.store.showBdtEdges) {
+            this.store.setBdtEdges(false)
+            this.toggleBdtEdges(this.bdtEdges, false)
+          }
         }
 
         if (params.nodes.length > 0) {
