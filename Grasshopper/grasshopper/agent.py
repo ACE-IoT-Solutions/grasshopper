@@ -321,7 +321,9 @@ class Grasshopper(Agent):
         _log.debug("config_retrieve_bbmd_devices")
         try:
             bbmd_devices_from_config = self._device_config_read_key("bbmd_devices")
-            bbmd_devices: List[str] = bbmd_devices_from_config if bbmd_devices_from_config is not None else []
+            bbmd_devices: List[str] = (
+                bbmd_devices_from_config if bbmd_devices_from_config is not None else []
+            )
             _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
             return bbmd_devices
         except KeyError as ke:
@@ -341,7 +343,9 @@ class Grasshopper(Agent):
         _log.debug("config_retrieve_subnets")
         try:
             subnets_from_config = self._device_config_read_key("subnets")
-            bbmd_devices: List[str] = subnets_from_config if subnets_from_config is not None else []
+            bbmd_devices: List[str] = (
+                subnets_from_config if subnets_from_config is not None else []
+            )
             _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
             return bbmd_devices
         except KeyError as ke:
