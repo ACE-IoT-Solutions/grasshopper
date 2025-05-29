@@ -243,11 +243,15 @@ class bacpypes3_scanner:
         self.scanner_node: DeviceNode
         self.low_limit = scan_low_limit
         self.high_limit = scan_high_limit
-        self.bbmd_in_subnet: dict[Union[ipaddress.IPv4Network, ipaddress.IPv6Network], str] = {}
+        self.bbmd_in_subnet: dict[
+            Union[ipaddress.IPv4Network, ipaddress.IPv6Network], str
+        ] = {}
         self.scanned_networks: set[int] = set()
         self.scanned_bbmds: list[BBMDNode] = []
         self.scanned_ipaddress_bbmd: dict[ipaddress.IPv4Address, BBMDNode] = {}
-        self.scanned_bbmds_bdt: dict[ipaddress.IPv4Address, list[ipaddress.IPv4Address]] = {}
+        self.scanned_bbmds_bdt: dict[
+            ipaddress.IPv4Address, list[ipaddress.IPv4Address]
+        ] = {}
         self.scanned_bbmds_fdt: dict[Address, Any] = {}
 
     async def set_application(self, graph: Graph) -> Application:
@@ -417,8 +421,9 @@ class bacpypes3_scanner:
             ip = ipaddress.ip_address(device_address)
             if bdt is not None and isinstance(ip, ipaddress.IPv4Address):
                 self.scanned_bbmds_bdt[ip] = [
-                    ipaddr for bdt_entry in bdt 
-                    for ipaddr in [ipaddress.ip_address(bdt_entry)] 
+                    ipaddr
+                    for bdt_entry in bdt
+                    for ipaddr in [ipaddress.ip_address(bdt_entry)]
                     if isinstance(ipaddr, ipaddress.IPv4Address)
                 ]
                 return True
@@ -557,7 +562,9 @@ class bacpypes3_scanner:
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_iri = BACnetURI["//" + str(device_identifier[1])]
                 try:
-                    ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(device_address)
+                    ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(
+                        device_address
+                    )
                     device: Union[BBMDNode, DeviceNode]
                     if (
                         await self.check_if_device_is_bbmd(ase, device_address)
