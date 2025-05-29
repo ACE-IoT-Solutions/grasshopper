@@ -131,6 +131,9 @@ A sample configuration file is provided in the repository. The config file is a 
 - **`low_limit`**: Lower limit for a BACnet `who_is` scan.
 - **`high_limit`**: Upper limit for a BACnet `who_is` scan.
 - **`batch_broadcast_size`**: Batch size for a BACnet `who_is` scan.
+- **`ttl_post_to_cloud`**: Dictionary settings for ttl post request, which includes:
+  - **`enabled`**: Enables ttl upload to http endpoing.
+  - **`url`**: url to upload ttl file to.
 - **`bacpypes_settings`**: Dictionary settings for the simulated BACnet app, which includes:
   - **`name`**: Name of the BACnet app.
   - **`instance`**: BACnet app instance ID.
@@ -141,6 +144,7 @@ A sample configuration file is provided in the repository. The config file is a 
   - **`ttl`**: Foreign device subscription time-to-live.
   - **`bbmd`**: BBMD address if registering the app as a BBMD.
 - **`webapp_settings`**: Dictionary settings for the webapp, which includes:
+  - **`enabled`**: Enables web app.
   - **`host`**: IP host for the web app.
   - **`port`**: Port for web app.
   - **`certfile`**: Cert file route.
@@ -155,6 +159,10 @@ A sample configuration file is provided in the repository. The config file is a 
     "high_limit": 4194303,
     "batch_broadcast_size": 10000,
     "graph_store_limit": 30,
+    "ttl_post_to_cloud": {
+        "enabled": false,
+        "url": "localhost"
+    },
     "bacpypes_settings": {
         "name": "Excelsior",
         "instance": 999,
@@ -166,6 +174,7 @@ A sample configuration file is provided in the repository. The config file is a 
         "bbmd": null
     },
     "webapp_settings": {
+      "enabled": false,
       "host": "0.0.0.0",
       "port": 5000,
       "certfile": null,
