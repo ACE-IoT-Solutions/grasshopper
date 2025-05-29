@@ -583,8 +583,8 @@ class Grasshopper(Agent):
         )
         server = uvicorn.Server(config)
 
-        q: Queue[Any] = Queue()
-        processing_task_q: Queue[Any] = Queue()
+        q: Queue = Queue()
+        processing_task_q: Queue = Queue()
         app.state.task_queue = q
         app.state.processing_task_queue = processing_task_q
 

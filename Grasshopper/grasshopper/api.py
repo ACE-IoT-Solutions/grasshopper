@@ -30,9 +30,6 @@ from .serializers import (
     MessageResponse,
 )
 
-# Create a multiprocessing queue for compare_rdf operations
-compare_rdf_queue: Queue[Any] = Queue()
-
 DEVICE_STATE_CONFIG: str = "device_config.json"
 
 # Create FastAPI router
@@ -51,7 +48,7 @@ def get_agent_data_path(request: Request) -> str:
     return str(request.app.extra.get("agent_data_path", ""))
 
 
-def get_task_queue(request: Request) -> Queue[Any]:
+def get_task_queue(request: Request) -> Any:
     """Get agent task queue from app state.
 
     Args:
@@ -60,10 +57,10 @@ def get_task_queue(request: Request) -> Queue[Any]:
     Returns:
         Queue[Any]: The multiprocessing queue for tasks
     """
-    return cast(Queue[Any], request.app.state.task_queue)
+    return request.app.state.task_queue
 
 
-def get_processing_task(request: Request) -> Queue[Any]:
+def get_processing_task(request: Request) -> Any:
     """Get processing task queue from app state.
 
     Args:
@@ -72,7 +69,7 @@ def get_processing_task(request: Request) -> Queue[Any]:
     Returns:
         Queue[Any]: The multiprocessing queue for tasks currently being processed
     """
-    return cast(Queue[Any], request.app.state.processing_task_queue)
+    return request.app.state.processing_task_queue
 
 
 def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -> None:
