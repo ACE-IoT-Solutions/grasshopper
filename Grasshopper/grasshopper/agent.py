@@ -15,16 +15,16 @@ The agent also provides a web interface to view each scan of the network as foun
 __docformat__ = "reStructuredText"
 
 import asyncio
+import json
 import logging
 import os
 import re
 import signal
+import ssl
 import sys
 import traceback
-import json
-import ssl
-from multiprocessing import Process, Queue
 from datetime import datetime
+from multiprocessing import Process, Queue
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
 import gevent
@@ -39,10 +39,7 @@ from volttron.platform.agent import utils
 from volttron.platform.messaging.health import STATUS_BAD
 from volttron.platform.vip.agent import Agent, Core
 
-from .api import (
-    DEVICE_STATE_CONFIG,
-    process_compare_rdf_queue,
-)
+from .api import DEVICE_STATE_CONFIG, process_compare_rdf_queue
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
 from .web_app import create_app
