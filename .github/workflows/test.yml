@@ -20,10 +20,10 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip'
+        # cache: 'pip'
     
     - name: Setup uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v4
       with:
         version: 0.1.13
 
@@ -36,24 +36,18 @@ jobs:
       run: |
         cd Grasshopper
         uv pip install -e .
+        uv pip install -r requirements.txt
         uv pip install pytest pytest-cov httpx
-    
-    - name: Install BACpypes3 from GitHub
-      run: |
-        cd Grasshopper
-        uv pip install BACpypes3@git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
     
     - name: Run tests
       run: |
-        cd Grasshopper
-        source .venv/bin/activate
+        source Grasshopper/.venv/bin/activate
         pytest tests/api/ -v
     
     - name: Generate coverage report
       run: |
-        cd Grasshopper
-        source .venv/bin/activate
-        pytest tests/api/ --cov=grasshopper --cov-report=xml
+        source Grasshopper/.venv/bin/activate
+        pytest tests/api/ --cov=Grasshopper/grasshopper --cov-report=xml
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

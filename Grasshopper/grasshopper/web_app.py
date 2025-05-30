@@ -7,15 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import (
-    api_router,
-)
-
+from .api import api_router
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DIST_DIR     = os.path.join(BASE_DIR, "dist")
-ASSETS_DIR   = os.path.join(DIST_DIR, "assets")
-INDEX_PATH   = os.path.join(DIST_DIR, "index.html")
+DIST_DIR = os.path.join(BASE_DIR, "dist")
+ASSETS_DIR = os.path.join(DIST_DIR, "assets")
+INDEX_PATH = os.path.join(DIST_DIR, "index.html")
+
 
 class Config:
     HOST = "127.0.0.1"
@@ -36,7 +34,7 @@ class DevelopmentConfig(Config):
 def create_app(config_class=None):
     """
     Create and configure a FastAPI application for the Grasshopper service.
-    
+
     This function sets up a FastAPI application with:
     - API router for backend operations
     - CORS middleware for cross-origin requests
@@ -44,12 +42,12 @@ def create_app(config_class=None):
     - Static file serving for frontend assets
     - Frontend routes for the single-page application
     - Security headers middleware
-    
+
     Args:
         config_class (str, optional): The name of the configuration class to use.
             Must be a class defined in this module. Defaults to None, which will
             use DevelopmentConfig.
-    
+
     Returns:
         FastAPI: The configured FastAPI application
     """
@@ -88,12 +86,12 @@ def create_app(config_class=None):
     async def index():
         """
         Serve the index HTML file.
-        
+
         This route handler returns the main HTML file for the single-page application.
-        
+
         Returns:
             HTMLResponse: The contents of the index.html file
-            
+
         Raises:
             HTTPException: If the index file cannot be found
         """
@@ -107,16 +105,16 @@ def create_app(config_class=None):
     async def catch_all(path: str):
         """
         Catch-all route for the frontend single-page application.
-        
+
         This route handler redirects all non-API requests to the root path,
         allowing the SPA to handle client-side routing.
-        
+
         Args:
             path (str): The requested path
-            
+
         Returns:
             RedirectResponse: A redirect to the root path
-            
+
         Raises:
             HTTPException: If the path starts with 'api' but doesn't match any API routes
         """
@@ -129,19 +127,19 @@ def create_app(config_class=None):
     async def add_security_headers(request: Request, call_next):
         """
         Middleware to add security headers to all responses.
-        
+
         This middleware adds various security headers to HTTP responses to improve
-        the security posture of the application, including:        
+        the security posture of the application, including:
         - CORS headers
         - Content Security Policy
         - X-Frame-Options
         - X-XSS-Protection
         - And other security-related headers
-        
+
         Args:
             request (Request): The incoming HTTP request
             call_next (Callable): The next middleware or route handler in the chain
-            
+
         Returns:
             Response: The HTTP response with added security headers
         """

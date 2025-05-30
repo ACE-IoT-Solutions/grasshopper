@@ -15,16 +15,16 @@ The agent also provides a web interface to view each scan of the network as foun
 __docformat__ = "reStructuredText"
 
 import asyncio
+import json
 import logging
 import os
 import re
 import signal
+import ssl
 import sys
 import traceback
-import json
-import ssl
-from multiprocessing import Process, Queue
 from datetime import datetime
+from multiprocessing import Process, Queue
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
 import gevent
@@ -39,10 +39,7 @@ from volttron.platform.agent import utils
 from volttron.platform.messaging.health import STATUS_BAD
 from volttron.platform.vip.agent import Agent, Core
 
-from .api import (
-    DEVICE_STATE_CONFIG,
-    process_compare_rdf_queue,
-)
+from .api import DEVICE_STATE_CONFIG, process_compare_rdf_queue
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
 from .web_app import create_app
@@ -56,14 +53,14 @@ seconds_in_day: int = 86400
 def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     """
     Parse the Agent configuration and create an instance of the Grasshopper agent.
-    
+
     This factory function loads the agent configuration from the specified path,
     sets up default values if needed, and instantiates the Grasshopper agent.
-    
+
     Args:
         config_path (str): Path to a configuration file
         **kwargs: Additional keyword arguments to pass to the Grasshopper constructor
-        
+
     Returns:
         Grasshopper: An instance of the Grasshopper agent configured with the settings from config_path
     """
@@ -169,7 +166,7 @@ class Grasshopper(Agent):
             "webapp_settings": webapp_settings,
         }
         self.http_server_process: Optional[Process] = None
-        self.agent_data_path: Optional[str] = None
+        self.agent_data_path: str
         self.app: Optional[FastAPI] = None
         self.vendor_info: Optional[VendorInfo] = None
 
@@ -187,19 +184,19 @@ class Grasshopper(Agent):
     ) -> None:  # pylint: disable=unused-argument
         """
         Configure the agent with new settings.
-        
+
         This method is called after the Agent has connected to the message bus.
         If a configuration exists at startup, this will be called before onstart.
         It is also called every time the configuration in the store changes.
-        
+
         The method updates agent settings, configures the web server, and sets up
         periodic BACnet network scanning based on the new configuration.
-        
+
         Args:
             config_name (str): The name of the configuration (used by VOLTTRON platform)
             action (str): The action that triggered this call (used by VOLTTRON platform)
             contents (Dict[str, Any]): The configuration dictionary with new settings
-            
+
         Returns:
             None
         """
@@ -233,7 +230,12 @@ class Grasshopper(Agent):
                 )
                 self.webapp_settings = contents.get(
                     "webapp_settings",
-                    {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
+                    {
+                        "host": "0.0.0.0",
+                        "port": 5000,
+                        "certfile": None,
+                        "keyfile": None,
+                    },
                 )
 
                 self.configure_server_and_start()
@@ -258,39 +260,37 @@ class Grasshopper(Agent):
     def _grequests_exception_handler(self, request: Any, exception: Exception) -> None:
         """
         Log exceptions from grequests.
-        
+
         This method is used as a callback to handle exceptions that occur during
         asynchronous HTTP requests made with the grequests library.
-        
+
         Args:
             request (Any): The request object that caused the exception
             exception (Exception): The exception that was raised
-            
+
         Returns:
             None
         """
         _log.error("grequests error: %s with %s", exception, request)
 
-    def _device_config_read_key(self, key: str) -> Optional[Dict[str, Any]]:
+    def _device_config_read_key(self, key: str) -> Optional[Any]:
         """
         Read a key from the device configuration file.
-        
+
         This method loads the device configuration file and extracts the specified key.
-        
+
         Args:
             key (str): The configuration key to read
-            
+
         Returns:
-            Optional[Dict[str, Any]]: The value associated with the key, or None if:
+            Optional[Any]: The value associated with the key, or None if:
                 - The configuration file doesn't exist
                 - The key doesn't exist in the configuration
                 - There was an error reading or parsing the configuration file
         """
         _log.debug("device_config_read_key")
         try:
-            config_path = os.path.join(
-                self.agent_data_path, DEVICE_STATE_CONFIG
-            )
+            config_path = os.path.join(self.agent_data_path, DEVICE_STATE_CONFIG)
             if not os.path.exists(config_path):
                 _log.error("Config file not found: %s", config_path)
                 return None
@@ -308,39 +308,44 @@ class Grasshopper(Agent):
             _log.error("Error decoding JSON from config file: %s", config_path)
             return None
 
-    def config_retrieve_bbmd_devices(self) -> List[Dict[str, Any]]:
+    def config_retrieve_bbmd_devices(self) -> List[str]:
         """
         Retrieve the list of BBMD (BACnet Broadcast Management Device) devices from configuration.
-        
+
         This method reads the 'bbmd_devices' key from the device configuration file.
-        
+
         Returns:
-            List[Dict[str, Any]]: A list of BBMD device configurations, or an empty list if
+            List[str, Any]: A list of BBMD device configurations, or an empty list if
                 the configuration doesn't exist or there was an error
         """
         _log.debug("config_retrieve_bbmd_devices")
         try:
-            bbmd_devices: Dict[str, Any] = self._device_config_read_key("bbmd_devices")
+            bbmd_devices_from_config = self._device_config_read_key("bbmd_devices")
+            bbmd_devices: List[str] = (
+                bbmd_devices_from_config if bbmd_devices_from_config is not None else []
+            )
             _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
             return bbmd_devices
         except KeyError as ke:
             _log.error("Error config_retrieve_subnets: %s", ke)
             return []
-            
 
-    def config_retrieve_subnets(self) -> List[Dict[str, Any]]:
+    def config_retrieve_subnets(self) -> List[str]:
         """
         Retrieve the list of BACnet subnets from configuration.
-        
+
         This method reads the 'subnets' key from the device configuration file.
-        
+
         Returns:
             List[Dict[str, Any]]: A list of subnet configurations, or an empty list if
                 the configuration doesn't exist or there was an error
         """
         _log.debug("config_retrieve_subnets")
         try:
-            bbmd_devices: Dict[str, Any] = self._device_config_read_key("subnets")
+            subnets_from_config = self._device_config_read_key("subnets")
+            bbmd_devices: List[str] = (
+                subnets_from_config if subnets_from_config is not None else []
+            )
             _log.debug("config_retrieve_bbmd_devices config: %s", bbmd_devices)
             return bbmd_devices
         except KeyError as ke:
@@ -352,14 +357,14 @@ class Grasshopper(Agent):
     ) -> None:
         """
         Run an asynchronous function in a new event loop.
-        
+
         This method creates a new asyncio event loop, runs the provided coroutine function
         with the given graph as an argument, and ensures the loop is properly closed afterward.
-        
+
         Args:
             func (Callable[[Graph], Coroutine[Any, Any, Any]]): An async function that takes a Graph argument
             graph (Graph): The RDF graph to pass to the async function
-            
+
         Returns:
             None
         """
@@ -373,14 +378,14 @@ class Grasshopper(Agent):
     def who_is_broadcast(self) -> None:
         """
         Broadcast a Who-Is message to the BACnet network and collect device information.
-        
+
         This method performs a BACnet network scan using a Who-Is broadcast message.
         It finds all responsive devices, constructs an RDF graph representation of the
         network topology, and saves the result as a timestamped TTL file.
-        
+
         The method uses helper functions defined within it to handle file operations and
         includes error handling to prevent crashes during the scanning process.
-        
+
         Returns:
             None
         """
@@ -466,18 +471,17 @@ class Grasshopper(Agent):
             _log.error("Error in who_is_broadcast: %s", e)
             _log.error(traceback.format_exc())
 
-
     def configure_server_and_start(self) -> None:
         """
         Configure and start the web server based on current settings.
-        
+
         This method sets up the FastAPI web server with the current configuration
         settings and starts it in a separate process. It handles:
         - Creating necessary directories
         - Setting up SSL/TLS if certificates are provided
         - Starting the server in a new process
         - Setting up error handling
-        
+
         Returns:
             None
         """
@@ -492,7 +496,6 @@ class Grasshopper(Agent):
                     print(f"Folder '{folder}' created.")
                 else:
                     print(f"Folder '{folder}' already exists.")
-
 
         # Create cert/key files
         certfile = self.webapp_settings.get("certfile")
@@ -511,41 +514,41 @@ class Grasshopper(Agent):
         host = self.webapp_settings.get("host")
         port = self.webapp_settings.get("port")
 
-
         try:
-            self.http_server_process = Process(target=self._start_server,args=(host, port, ssl_context), daemon=False)
+            self.http_server_process = Process(
+                target=self._start_server, args=(host, port, ssl_context), daemon=False
+            )
             self.http_server_process.start()
-            
+
             _log.info(f"[Agent] Starting Uvicorn PID {self.http_server_process.pid}")
         except Exception as e:  # pylint: disable=broad-except
             # We need to catch any server errors to properly set status
             _log.error("Error starting server: %s", e)
             self.vip.health.set_status(STATUS_BAD)
-            return -1
-        
+            return None
+
         if not self.http_server_process.is_alive():
             code = self.http_server_process.exitcode
             _log.error(f"Uvicorn process died immediately with exit code {code}")
         else:
             _log.info(f"Server is alive, running on {host}:{port}")
 
-
     def _start_server(
         self, host: str, port: int, ssl_context: Optional[Dict[str, str]] = None
     ) -> int:
         """
         Start the uvicorn server in a separate thread.
-        
+
         This method initializes the FastAPI application and starts the Uvicorn server
         to serve it. It also sets up the task queue and worker process for handling
         background tasks like RDF comparisons.
-        
+
         Args:
             host (str): The hostname or IP address to bind the server to
             port (int): The port number to bind the server to
             ssl_context (Optional[Dict[str, str]], optional): SSL certificate and key paths.
                 Defaults to None.
-                
+
         Returns:
             int: 0 on success, -1 on failure
         """
@@ -556,9 +559,13 @@ class Grasshopper(Agent):
         app.extra["agent_data_path"] = self.agent_data_path
         self.app = app
 
-        _ctx = ssl.SSLContext(ssl.PROTOCOL_TLS)           # PROTOCOL_TLS = “best default” (formerly SSLv23)
+        _ctx = ssl.SSLContext(
+            ssl.PROTOCOL_TLS
+        )  # PROTOCOL_TLS = “best default” (formerly SSLv23)
         _all = _ctx.get_ciphers()
-        tls12_ciphers = ":".join([c["name"] for c in _all if c["protocol"] == "TLSv1.2"])
+        tls12_ciphers = ":".join(
+            [c["name"] for c in _all if c["protocol"] == "TLSv1.2"]
+        )
 
         if self.app is None:
             _log.error("FastAPI app is not initialized")
@@ -576,12 +583,12 @@ class Grasshopper(Agent):
         )
         server = uvicorn.Server(config)
 
-        q = Queue()
-        processing_task_q = Queue()
+        q: Queue = Queue()
+        processing_task_q: Queue = Queue()
         app.state.task_queue = q
         app.state.processing_task_queue = processing_task_q
 
-        worker = Process(target=process_compare_rdf_queue, args=(q,processing_task_q))
+        worker = Process(target=process_compare_rdf_queue, args=(q, processing_task_q))
         worker.daemon = True
         worker.start()
         print(f"[serve_app] queue worker PID={worker.pid}")
@@ -590,15 +597,15 @@ class Grasshopper(Agent):
 
         _log.debug("Running _start_server complete")
         return 0
-    
+
     def _stop_server(self) -> None:
         """
         Stop the running uvicorn server.
-        
+
         This method gracefully shuts down the uvicorn server by sending a SIGINT signal
         to the server process. If the server doesn't exit within the timeout, it will
         forcefully terminate the process.
-        
+
         Returns:
             None
         """
@@ -606,7 +613,8 @@ class Grasshopper(Agent):
         if self.http_server_process and self.http_server_process.is_alive():
             print(f"[Agent] Terminating Uvicorn PID {self.http_server_process.pid}")
             # Send SIGINT for a clean shutdown, or SIGTERM if you prefer
-            os.kill(self.http_server_process.pid, signal.SIGINT)
+            if isinstance(self.http_server_process.pid, int):
+                os.kill(self.http_server_process.pid, signal.SIGINT)
             # Give it a moment to exit gracefully...
             self.http_server_process.join(timeout=5)
             if self.http_server_process.is_alive():
@@ -621,17 +629,17 @@ class Grasshopper(Agent):
     ) -> None:  # pylint: disable=unused-argument
         """
         Initialize the agent after connection to the platform.
-        
+
         This method is called once the Agent has successfully connected to the platform.
         It performs the following tasks:
         - Sets up the agent's data directory structure
         - Initializes the device configuration file if it doesn't exist
         - Prepares the agent for operation
-        
+
         Args:
             sender (Any): The sender of the onstart event
             **kwargs (Any): Additional arguments
-            
+
         Returns:
             None
         """
@@ -641,13 +649,14 @@ class Grasshopper(Agent):
 
         # Set up device config
         _log.info("Setting up Device Config")
+
         def get_agent_data_path(original_path: str) -> str:
             """
             Generate the agent data directory path.
-            
+
             Args:
                 original_path (str): The original path to the agent
-                
+
             Returns:
                 str: The path to the agent's data directory
             """
@@ -660,9 +669,7 @@ class Grasshopper(Agent):
         agent_data_path = get_agent_data_path(current_dir)
         self.agent_data_path = agent_data_path
 
-        device_config_path = os.path.join(
-            self.agent_data_path, DEVICE_STATE_CONFIG
-        )
+        device_config_path = os.path.join(self.agent_data_path, DEVICE_STATE_CONFIG)
         if not os.path.exists(device_config_path):
             _log.info("Creating device config file: %s", device_config_path)
             with open(device_config_path, "w", encoding="utf-8") as f:
@@ -685,14 +692,14 @@ class Grasshopper(Agent):
     ) -> None:  # pylint: disable=unused-argument
         """
         Clean up resources before the agent shuts down.
-        
+
         This method is called when the Agent is about to shutdown, but before it disconnects
         from the message bus. It stops the web server and performs any other necessary cleanup.
-        
+
         Args:
             sender (Any): The sender of the onstop event
             **kwargs (Any): Additional arguments
-            
+
         Returns:
             None
         """
@@ -705,11 +712,11 @@ class Grasshopper(Agent):
 def main() -> None:
     """
     Main method called to start the agent.
-    
+
     This function serves as the entry point for the agent when run as a script.
     It uses the VOLTTRON utility function vip_main to start the agent with the
     configured version.
-    
+
     Returns:
         None
     """
