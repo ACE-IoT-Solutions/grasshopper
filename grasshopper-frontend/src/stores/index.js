@@ -78,6 +78,8 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     currentTask: null,
     legendEnabled: false,
     showBdtEdges: false,
+    selectedNode: null,
+    showNoteCard: false,
   }),
   actions: {
     setControlMenu(type, title) {
@@ -153,6 +155,12 @@ export const useGrasshopperStore = defineStore("grasshopper", {
     },
     setBdtEdges(enabled) {
       this.showBdtEdges = enabled;
-    }
+    },
+    setSelectedNode(node) {
+      this.selectedNode = node;
+    },
+    setShowNoteCard(show) {
+      this.showNoteCard = show;
+    },
   },
 });
