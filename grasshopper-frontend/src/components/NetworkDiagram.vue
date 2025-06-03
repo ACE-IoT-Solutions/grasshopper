@@ -2,6 +2,7 @@
   <div class="network-page">
     <div class="network-wrapper">
       <!-- search -->
+      <v-progress-circular v-if="store.loading" indeterminate style="margin: 20px"></v-progress-circular>
       <div v-if="loaded" class="search-icon-container">
         <div class="zoom">
           <v-btn
@@ -656,8 +657,6 @@ export default {
         (a, b) => b.length - a.length,
       )
       const prefix = sortedPrefixes.find(prefix => label.startsWith(prefix))
-      const bbmdOn = '/assets/bbmd-on.svg'
-      const bbmdOff = '/assets/bbmd-off.svg'
 
       if (prefix) {
         let config = nodeMap[prefix]
@@ -671,18 +670,38 @@ export default {
 
             return {
               shape: 'image',
-              image:
-                data.type == 'BBMD'
-                  ? this.onBbmds.includes(data.label)
-                    ? bbmdOn
-                    : bbmdOff
-                  : config.image,
+              image: config.image,
               label: label.replace(prefix, ''),
               font: { align: 'left', color: 'white', background: 'none' },
               mass: config.mass,
             }
           }
         } else {
+          // obfuscated labels
+          // if (prefix === 'bacnet://router/') {
+          //   const { image, mass } = nodeMap[prefix];
+          //   // Generate a random IPv4 address
+          //   const randomIP = Array.from({ length: 4 }, () => Math.floor(Math.random() * 256)).join('.');
+          //   return {
+          //     shape: 'image',
+          //     image: image,
+          //     label: randomIP,  // Use the randomized IP address as the label
+          //     font: { align: 'left', color: "white", background: "none" },
+          //     mass: mass,
+          //   };
+          // }
+          // if (prefix === 'bacnet://subnet/') {
+          //   const { image, mass } = nodeMap[prefix];
+          //   // Generate a random IPv4 address
+          //   const randomIP = Array.from({ length: 4 }, () => Math.floor(Math.random() * 256)).join('.') + '/' + Math.floor(Math.random() * 100);
+          //   return {
+          //     shape: 'image',
+          //     image: image,
+          //     label: randomIP,  // Use the randomized IP address as the label
+          //     font: { align: 'left', color: "white", background: "none" },
+          //     mass: mass,
+          //   };
+          // }
           return {
             shape: 'image',
             image: config.image,
@@ -706,7 +725,7 @@ export default {
         'bacnet://network/': { image: '/assets/network.svg', mass: 2 },
         'bacnet://': {
           Device: { image: '/assets/device.svg', mass: 1 },
-          BBMD: { image: '/assets/bbmd-off.svg', mass: 2 },
+          BBMD: { image: this.onBbmds.includes(label) ? '/assets/bbmd-on.svg' : '/assets/bbmd-off.svg', mass: 2 },
         },
         'bacnet://Grasshopper': {
           image: '/assets/grasshopper icon.svg',
@@ -724,7 +743,7 @@ export default {
         'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2 },
         'bacnet://': {
           Device: { image: '/assets/device-sub.svg', mass: 1 },
-          BBMD: { image: '/assets/bbmd-sub.svg', mass: 4 },
+          BBMD: { image: this.onBbmds.includes(label) ? '/assets/bbmd-on-sub.svg' : '/assets/bbmd-off-sub.svg', mass: 4 },
         },
         'bacnet://Grasshopper': {
           image: '/assets/grasshopper icon.svg',
@@ -742,7 +761,7 @@ export default {
         'bacnet://network/': { image: '/assets/network-add.svg', mass: 2 },
         'bacnet://': {
           Device: { image: '/assets/device-add.svg', mass: 1 },
-          BBMD: { image: '/assets/bbmd-add.svg', mass: 4 },
+          BBMD: { image: this.onBbmds.includes(label) ? '/assets/bbmd-on-add.svg' : '/assets/bbmd-off-add.svg', mass: 4 },
         },
         'bacnet://Grasshopper': {
           image: '/assets/grasshopper icon.svg',
@@ -962,6 +981,7 @@ export default {
       return null
     },
     generate() {
+      this.store.setLoading(true)
       const container = this.$refs.networkContainer
       const configContainer = this.$refs.configMenu.$refs.config
 
@@ -987,7 +1007,7 @@ export default {
             null
         })
       }
-
+      
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
@@ -1062,12 +1082,13 @@ export default {
 
       this.network.on('stabilizationIterationsDone', () => {
         this.loaded = true
+        this.store.setLoading(false)
       })
 
       this.network.on('click', params => {
         if (!params.nodes.length) {
           this.unhighlightNode()
-
+          
           if (!this.store.showBdtEdges) {
             this.store.setBdtEdges(false)
             this.toggleBdtEdges(this.bdtEdges, false)
