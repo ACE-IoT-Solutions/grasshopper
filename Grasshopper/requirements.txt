@@ -4,6 +4,6 @@ pyvis == 0.3.2
 pydantic == 2.6.4
 fastapi == 0.112.0
 uvicorn == 0.27.1
-python-multipart == 0.0.9
+python-multipart == 0.0.18
 pytest == 8.3.5
 httpx == 0.28.1
