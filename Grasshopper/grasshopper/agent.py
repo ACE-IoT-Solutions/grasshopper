@@ -682,6 +682,16 @@ class Grasshopper(Agent):
         else:
             _log.info("Device config file already exists: %s", device_config_path)
 
+        # Create necessary folders in the agent data directory
+        required_folders = ["ttl", "network_config", "compare"]
+        for folder in required_folders:
+            folder_path = os.path.join(self.agent_data_path, folder)
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+                _log.info("Created folder: %s", folder_path)
+            else:
+                _log.info("Folder already exists: %s", folder_path)
+
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent.
         # WEB_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), 'webroot/'))
