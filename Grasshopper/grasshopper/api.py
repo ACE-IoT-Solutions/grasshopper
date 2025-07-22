@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union, cast
 import gevent
 from bacpypes3.rdf.core import BACnetNS
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pyvis.network import Network
 from rdflib import Graph, Literal, Namespace  # type: ignore
 from rdflib.compare import graph_diff, to_isomorphic
@@ -756,21 +756,27 @@ async def export_csv(ttl_filename: str, request: Request):
     g.parse(ttl_filepath, format="ttl")
     nx_graph, node_data, edge_data = build_networkx_graph(g)
 
+    BACnetEdgeType_subnets = [
+        BACnetEdgeType.BACNET_ROUTER_ON_SUBNET.value,
+        BACnetEdgeType.DEVICE_ON_SUBNET.value,
+        BACnetEdgeType.BBMD_BROADCAST_DOMAIN.value,
+    ]
+    BACnetEdgeType_networks = [
+        BACnetEdgeType.DEVICE_ON_NETWORK.value,
+    ]
+
     for u, v, attr in nx_graph.edges(data=True):
         edge_label = attr.get("triples", [])[0][1] if "triples" in attr else None
         if edge_label:
-            if "device-on-network" in edge_label:
-                if "router" in str(u):
-                    node_data[str(u)]["subnet"] = "/".join(str(v).split("/")[-2:])
-                else:
-                    node_data[str(u)]["network-id"] = [str(v).split("/")[-1]]
-            if "router-to-network" in edge_label:
+            if any(subnet in edge_label for subnet in BACnetEdgeType_subnets):
+                node_data[str(u)]["subnet"] = "/".join(str(v).split("/")[-2:])
+            elif any(network in edge_label for network in BACnetEdgeType_networks):
                 if "network-id" in node_data[str(u)]:
                     node_data[str(u)]["network-id"].append(str(v).split("/")[-1])
                 else:
                     node_data[str(u)]["network-id"] = [str(v).split("/")[-1]]
 
-    output_str = StringIO()
+    output_str = StringIO(newline="")
     writer = csv.writer(output_str)
 
     # Write header
@@ -793,7 +799,7 @@ async def export_csv(ttl_filename: str, request: Request):
             )
 
     # Return as a downloadable CSV file
-    response = JSONResponse(content=output_str.getvalue())
+    response = StreamingResponse(content=output_str.getvalue())
     response.headers["Content-Disposition"] = f"attachment; filename={ttl_filename}.csv"
     response.headers["Content-Type"] = "text/csv"
 
