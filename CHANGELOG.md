@@ -23,6 +23,10 @@ Types of changes:
 
 - Moved Changelog to its own file and followed format as stated in [Keep a Changelog]
 
+### Fixed
+
+- Fixed Fastapi csv route
+
 ## [0.1.1] - 2025-05-30
 
 ### Fixed
