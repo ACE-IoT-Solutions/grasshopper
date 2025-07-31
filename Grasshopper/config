@@ -5,7 +5,9 @@
     "batch_broadcast_size": 10000,
     "ttl_post_to_cloud": {
         "enabled": false,
-        "url": "localhost"
+        "url": "localhost",
+        "jwt": null,
+        "upload_interval_secs": 86400
     },
     "bacpypes_settings": {
         "name": "Excelsior",

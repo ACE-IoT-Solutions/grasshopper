@@ -18,7 +18,9 @@ import asyncio
 import json
 import logging
 import os
+import glob
 import re
+import grequests
 import signal
 import ssl
 import sys
@@ -36,14 +38,13 @@ from rdflib import Graph
 
 # from volttron.platform.web import Response
 from volttron.platform.agent import utils
-from volttron.platform.messaging.health import STATUS_BAD
+from volttron.platform.messaging.health import STATUS_BAD, STATUS_GOOD
 from volttron.platform.vip.agent import Agent, Core
 
 from .api import (
     DEVICE_STATE_CONFIG,
     process_compare_rdf_queue,
 )
-from .remote_web_host import post_request_with_ttl_file
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
 from .web_app import create_app
@@ -90,7 +91,9 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
         "ttl_post_to_cloud", 
         {
             "enabled": False,
-            "url": "localhost"
+            "url": "localhost",
+            "jwt": None,
+            "upload_interval_secs": 86400
         }
     )
     bacpypes_settings: Dict[str, Any] = config.get(
@@ -108,7 +111,13 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     )
     webapp_settings: Dict[str, Any] = config.get(
         "webapp_settings",
-        {"enabled": False, "host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
+        {
+            "enabled": False,
+            "host": "0.0.0.0",
+            "port": 5000,
+            "certfile": None,
+            "keyfile": None
+        },
     )
     return Grasshopper(
         scan_interval_secs,
@@ -149,6 +158,7 @@ class Grasshopper(Agent):
         self.high_limit: int = high_limit
         self.device_broadcast_full_step_size: int = device_broadcast_full_step_size
         self.device_broadcast_empty_step_size: int = device_broadcast_empty_step_size
+        self.upload_lock = gevent.lock.BoundedSemaphore()
         if bacpypes_settings is None:
             bacpypes_settings = {
                 "name": "Excelsior",
@@ -251,6 +261,7 @@ class Grasshopper(Agent):
                 self.webapp_settings = contents.get(
                     "webapp_settings",
                     {
+                        "enabled": False,
                         "host": "0.0.0.0",
                         "port": 5000,
                         "certfile": None,
@@ -259,11 +270,12 @@ class Grasshopper(Agent):
                 )
                 self.ttl_post_to_cloud = contents.get(
                     "ttl_post_to_cloud",
-                    {"enabled": False, "url": "localhost"}
-                )
-                self.ttl_post_to_cloud = contents.get(
-                    "ttl_post_to_cloud",
-                    {"enabled": False, "url": "localhost"}
+                    {
+                        "enabled": False,
+                        "url": "localhost",
+                        "jwt": None,
+                        "upload_interval_secs": 86400
+                    }
                 )
 
                 if self.webapp_settings.get("enabled", False):
@@ -283,8 +295,18 @@ class Grasshopper(Agent):
             if self.bacnet_analysis is not None:
                 self.bacnet_analysis.kill()  # pylint: disable=no-member
             self.bacnet_analysis = self.core.periodic(
-                self.scan_interval_secs, self.who_is_broadcast
+                self.scan_interval_secs, self.who_is_broadcast, wait=15
             )
+
+            if self.ttl_post_to_cloud.get("enabled"):
+                upload_interval_secs: int = self.ttl_post_to_cloud.get(
+                    "upload_interval_secs", 86400
+                )
+                if self.upload_scans is not None:
+                    self.upload_scans.kill()  # pylint: disable=no-member
+                self.upload_scans = self.core.periodic(
+                    upload_interval_secs, self.upload_to_api, wait=10
+                )
 
         _log.debug("Config completed")
 
@@ -496,17 +518,8 @@ class Grasshopper(Agent):
                 f"ttl/{now.replace(microsecond=0).isoformat().replace(':','_')}.ttl",
             )
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
-            serialized_graph = graph.serialize(destination=rdf_path, format="turtle")
+            graph.serialize(destination=rdf_path, format="turtle")
 
-            if self.ttl_post_to_cloud.get("enabled", False):
-                url = self.ttl_post_to_cloud.get("url")
-                if url:
-                    post_request_with_ttl_file(
-                        url,
-                        rdf_path,
-                        field_name="file",
-                        data={"filename": os.path.basename(rdf_path)},
-                    )
         except Exception as e:  # pylint: disable=broad-except
             # We need to catch any exception during broadcast to prevent crash
             _log.error("Error in who_is_broadcast: %s", e)
@@ -653,6 +666,67 @@ class Grasshopper(Agent):
                 self.http_server_process.terminate()
                 self.http_server_process.join(timeout=2)
         _log.debug("Running _stop_server complete")
+
+    def upload_to_api(self) -> None:
+        """
+        Upload captured packets to ace API
+        """
+        # _log.debug("Attemping to collect files for upload")
+        url = self.ttl_post_to_cloud.get("url")
+        jwt = self.ttl_post_to_cloud.get("jwt")
+        if not url or not jwt:
+            _log.error(
+                "URL or JWT not configured for TTL upload. Skipping upload."
+            )
+            self.vip.health.set_status(
+                STATUS_BAD, "URL or JWT not configured for TTL upload."
+            )
+            return
+        if self.upload_lock.locked():
+            _log.debug("Upload lock is currently held, skipping upload.")
+            return
+        with self.upload_lock:
+            ttl_files = os.path.join(self.agent_data_path, "ttl")
+            for file_path in glob.glob(f"{ttl_files}/*.ttl"):
+                file_name = os.path.basename(file_path)
+                _log.debug(f"uploading to API... {url} {file_name=}")
+                with open(file_path, "rb") as file:
+                    filedata = file.read()
+                try:
+                    request = grequests.post(
+                        url,
+                        files=(("file", (f"{file_name}", filedata)),),
+                        headers={"Authorization": f"Bearer {jwt}"},
+                    )
+                    response = grequests.map(
+                        [request], exception_handler=self._grequests_exception_handler
+                    )[0]
+                    if response is None:
+                        _log.error(
+                            "Failed to get a response from the API"
+                        )
+                        self.vip.health.set_status(
+                            STATUS_BAD, "Failed to get a response from the API"
+                        )
+                        return
+                    if response.status_code == 201:
+                        _log.info(f"Upload successful: {response.text}")
+                        os.remove(file_path)
+                    elif response.status_code == 401:
+                        _log.error(
+                            f"Unauthorized: Invalid API key or token. {response.text}"
+                        )
+                        self.vip.health.set_status(
+                            STATUS_BAD, "Invalid API key or token."
+                        )
+                        return
+                    else:
+                        _log.error(
+                            f"Upload failed: {response.status_code} {response.text}"
+                        )
+                except Exception as error:
+                    _log.debug(f"{error=}")
+                self.vip.health.set_status(STATUS_GOOD)
 
     @Core.receiver("onstart")
     def onstart(
