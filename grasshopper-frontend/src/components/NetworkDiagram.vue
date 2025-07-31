@@ -125,6 +125,26 @@ import EdgeCard from '../components/EdgeCard.vue'
 import ConfigMenu from '../components/ConfigMenu.vue'
 import NoteCard from '../components/NoteCard.vue'
 
+import routerSvg from '@/assets/router.svg'
+import networkSvg from '@/assets/network.svg'
+import deviceSvg from '@/assets/device.svg'
+import bbmdOnSvg from '@/assets/bbmd-on.svg'
+import bbmdOffSvg from '@/assets/bbmd-off.svg'
+import subnetSvg from '@/assets/lan.svg'
+import grasshopperSvg from '@/assets/grasshopper icon.svg'
+import routerAddSvg from '@/assets/router-add.svg'
+import routerSubSvg from '@/assets/router-sub.svg'
+import networkAddSvg from '@/assets/network-add.svg'
+import networkSubSvg from '@/assets/network-sub.svg'
+import deviceAddSvg from '@/assets/device-add.svg'
+import deviceSubSvg from '@/assets/device-sub.svg'
+import bbmdOnAddSvg from '@/assets/bbmd-on-add.svg'
+import bbmdOffAddSvg from '@/assets/bbmd-off-add.svg'
+import bbmdOnSubSvg from '@/assets/bbmd-on-sub.svg'
+import bbmdOffSubSvg from '@/assets/bbmd-off-sub.svg'
+import subnetAddSvg from '@/assets/lan-add.svg'
+import subnetSubSvg from '@/assets/lan-sub.svg'
+
 export default {
   props: ['store'],
   components: {
@@ -721,17 +741,17 @@ export default {
     getNodeConfig(label, data) {
       // define image and mass based on prefix
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router.svg', mass: 2 },
-        'bacnet://network/': { image: '/assets/network.svg', mass: 2 },
+        'bacnet://router/': { image: routerSvg, mass: 2 },
+        'bacnet://network/': { image: networkSvg, mass: 2 },
         'bacnet://': {
-          Device: { image: '/assets/device.svg', mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? '/assets/bbmd-on.svg' : '/assets/bbmd-off.svg', mass: 2 },
+          Device: { image: deviceSvg, mass: 1 },
+          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg, mass: 2 },
         },
         'bacnet://Grasshopper': {
-          image: '/assets/grasshopper icon.svg',
+          image: grasshopperSvg,
           mass: 5,
         },
-        'bacnet://subnet/': { image: '/assets/lan.svg', mass: 2 },
+        'bacnet://subnet/': { image: subnetSvg, mass: 2 },
       }
 
       return this.createNode(label, data, nodeMap)
@@ -739,17 +759,17 @@ export default {
     subtractConfig(label, data) {
       // #DF1219
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router-sub.svg', mass: 2 },
-        'bacnet://network/': { image: '/assets/network-sub.svg', mass: 2 },
+        'bacnet://router/': { image: routerSubSvg, mass: 2 },
+        'bacnet://network/': { image: networkSubSvg, mass: 2 },
         'bacnet://': {
-          Device: { image: '/assets/device-sub.svg', mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? '/assets/bbmd-on-sub.svg' : '/assets/bbmd-off-sub.svg', mass: 4 },
+          Device: { image: deviceSubSvg, mass: 1 },
+          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg, mass: 4 },
         },
         'bacnet://Grasshopper': {
-          image: '/assets/grasshopper icon.svg',
+          image: grasshopperSvg,
           mass: 5,
         },
-        'bacnet://subnet/': { image: '/assets/lan-sub.svg', mass: 2 },
+        'bacnet://subnet/': { image: subnetSubSvg, mass: 2 },
       }
 
       return this.createNode(label, data, nodeMap)
@@ -757,17 +777,17 @@ export default {
     addConfig(label, data) {
       // #14AE5C
       const nodeMap = {
-        'bacnet://router/': { image: '/assets/router-add.svg', mass: 2 },
-        'bacnet://network/': { image: '/assets/network-add.svg', mass: 2 },
+        'bacnet://router/': { image: routerAddSvg, mass: 2 },
+        'bacnet://network/': { image: networkAddSvg, mass: 2 },
         'bacnet://': {
-          Device: { image: '/assets/device-add.svg', mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? '/assets/bbmd-on-add.svg' : '/assets/bbmd-off-add.svg', mass: 4 },
+          Device: { image: deviceAddSvg, mass: 1 },
+          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg, mass: 4 },
         },
         'bacnet://Grasshopper': {
-          image: '/assets/grasshopper icon.svg',
+          image: grasshopperSvg,
           mass: 5,
         },
-        'bacnet://subnet/': { image: '/assets/lan-add.svg', mass: 2 },
+        'bacnet://subnet/': { image: subnetAddSvg, mass: 2 },
       }
 
       return this.createNode(label, data, nodeMap)
