@@ -153,6 +153,7 @@ class Grasshopper(Agent):
         _log.debug("vip_identity: %s", self.core.identity)
 
         self.bacnet_analysis: Optional[Any] = None
+        self.upload_scans: Optional[Any] = None
         self.scan_interval_secs: int = scan_interval_secs
         self.low_limit: int = low_limit
         self.high_limit: int = high_limit
