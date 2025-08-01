@@ -88,13 +88,13 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
         "device_broadcast_empty_step_size", 1000
     )
     ttl_post_to_cloud: Dict[str, Any] = config.get(
-        "ttl_post_to_cloud", 
+        "ttl_post_to_cloud",
         {
             "enabled": False,
             "url": "localhost",
             "jwt": None,
-            "upload_interval_secs": 86400
-        }
+            "upload_interval_secs": 86400,
+        },
     )
     bacpypes_settings: Dict[str, Any] = config.get(
         "bacpypes_settings",
@@ -116,7 +116,7 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
             "host": "0.0.0.0",
             "port": 5000,
             "certfile": None,
-            "keyfile": None
+            "keyfile": None,
         },
     )
     return Grasshopper(
@@ -181,10 +181,7 @@ class Grasshopper(Agent):
             }
         self.webapp_settings: Dict[str, Any] = webapp_settings
         if ttl_post_to_cloud is None:
-            ttl_post_to_cloud = {
-                "enabled": False,
-                "url": "localhost"
-            }
+            ttl_post_to_cloud = {"enabled": False, "url": "localhost"}
         self.ttl_post_to_cloud: Dict[str, Any] = ttl_post_to_cloud
         self.default_config: Dict[str, Any] = {
             "scan_interval_secs": scan_interval_secs,
@@ -275,8 +272,8 @@ class Grasshopper(Agent):
                         "enabled": False,
                         "url": "localhost",
                         "jwt": None,
-                        "upload_interval_secs": 86400
-                    }
+                        "upload_interval_secs": 86400,
+                    },
                 )
 
                 if self.webapp_settings.get("enabled", False):
@@ -672,35 +669,36 @@ class Grasshopper(Agent):
         """
         Upload captured packets to ace API
         """
+
         # _log.debug("Attemping to collect files for upload")
         def is_valid_date_filename(filename: str) -> bool:
             """Check if filename matches the expected date format YYYY-MM-DDTHH-MM-SS.ttl"""
             # Remove .ttl extension
-            if not filename.endswith('.ttl'):
+            if not filename.endswith(".ttl"):
                 return False
-            
+
             datetime_string = filename[:-4]  # Remove .ttl
-            
+
             # Check format: YYYY-MM-DDTHH-MM-SS
-            pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$'
+            pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$"
             if not re.match(pattern, datetime_string):
                 return False
-            
+
             # Validate the actual date by converting to standard ISO format
             try:
                 # Convert YYYY-MM-DDTHH-MM-SS to YYYY-MM-DDTHH:MM:SS for validation
-                iso_format = datetime_string[:11] + datetime_string[11:].replace('-', ':')
+                iso_format = datetime_string[:11] + datetime_string[11:].replace(
+                    "-", ":"
+                )
                 datetime.fromisoformat(iso_format)
                 return True
             except ValueError:
                 return False
-        
+
         url = self.ttl_post_to_cloud.get("url")
         jwt = self.ttl_post_to_cloud.get("jwt")
         if not url or not jwt:
-            _log.error(
-                "URL or JWT not configured for TTL upload. Skipping upload."
-            )
+            _log.error("URL or JWT not configured for TTL upload. Skipping upload.")
             self.vip.health.set_status(
                 STATUS_BAD, "URL or JWT not configured for TTL upload."
             )
@@ -712,8 +710,12 @@ class Grasshopper(Agent):
             ttl_files = os.path.join(self.agent_data_path, "ttl")
             for file_path in glob.glob(f"{ttl_files}/*.ttl"):
                 file_name = os.path.basename(file_path)
-                file_name = file_name.replace(":", "-")  # Replace colons with hyphens for URL safety
-                file_name = file_name.replace("_", "-")  # Replace underscores with hyphens for URL safety
+                file_name = file_name.replace(
+                    ":", "-"
+                )  # Replace colons with hyphens for URL safety
+                file_name = file_name.replace(
+                    "_", "-"
+                )  # Replace underscores with hyphens for URL safety
                 if not is_valid_date_filename(file_name):
                     _log.warning(f"Skipping file with invalid date format: {file_name}")
                     continue
@@ -730,9 +732,7 @@ class Grasshopper(Agent):
                         [request], exception_handler=self._grequests_exception_handler
                     )[0]
                     if response is None:
-                        _log.error(
-                            "Failed to get a response from the API"
-                        )
+                        _log.error("Failed to get a response from the API")
                         self.vip.health.set_status(
                             STATUS_BAD, "Failed to get a response from the API"
                         )
