@@ -15,6 +15,8 @@ Types of changes:
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-08-01
+
 ### Added
 
 - Required folder generation in agent-data upon agent statup
@@ -45,6 +47,7 @@ Types of changes:
 - Initial stable version for release
 
 
-[unreleased]: https://github.com/ACE-IoT-Solutions/grasshopper/compare/v0.1.1...develop
+[unreleased]: https://github.com/ACE-IoT-Solutions/grasshopper/compare/v0.2.0...develop
+[0.1.1]: https://github.com/ACE-IoT-Solutions/grasshopper/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/ACE-IoT-Solutions/grasshopper/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ACE-IoT-Solutions/grasshopper/releases/tag/v0.1.0
