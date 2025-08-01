@@ -17,14 +17,16 @@ Types of changes:
 
 ### Added
 
-- Required folder generation in agent-data upon agent statup
+- Required folder generation in agent-data upon agent startup
 
 ### Changed
 
 - Moved Changelog to its own file and followed format as stated in [Keep a Changelog]
+- Hid unused menu buttons
 
 ### Fixed
 
+- Removed absolute routes to assets
 - Fixed Fastapi csv route
 
 ## [0.1.1] - 2025-05-30
