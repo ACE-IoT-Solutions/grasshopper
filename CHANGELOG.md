@@ -27,6 +27,7 @@ Types of changes:
 ### Fixed
 
 - Fixed Fastapi csv route
+- Removed quotes in network id column for excel export
 
 ## [0.1.1] - 2025-05-30
 
