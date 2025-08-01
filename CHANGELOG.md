@@ -17,7 +17,8 @@ Types of changes:
 
 ### Added
 
-- Required folder generation in agent-data upon agent startup
+- Required folder generation in agent-data upon agent statup
+- Functionality to periodically upload ttl files to a remote server
 
 ### Changed
 
@@ -28,6 +29,7 @@ Types of changes:
 
 - Removed absolute routes to assets
 - Fixed Fastapi csv route
+- Removed quotes in network id column for excel export
 
 ## [0.1.1] - 2025-05-30
 
