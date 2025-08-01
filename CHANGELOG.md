@@ -23,9 +23,11 @@ Types of changes:
 ### Changed
 
 - Moved Changelog to its own file and followed format as stated in [Keep a Changelog]
+- Hid unused menu buttons
 
 ### Fixed
 
+- Removed absolute routes to assets
 - Fixed Fastapi csv route
 - Removed quotes in network id column for excel export
 
