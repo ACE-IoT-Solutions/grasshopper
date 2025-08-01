@@ -2,8 +2,8 @@
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock, patch
 
 import pytest
 

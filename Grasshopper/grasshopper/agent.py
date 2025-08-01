@@ -15,12 +15,11 @@ The agent also provides a web interface to view each scan of the network as foun
 __docformat__ = "reStructuredText"
 
 import asyncio
+import glob
 import json
 import logging
 import os
-import glob
 import re
-import grequests
 import signal
 import ssl
 import sys
@@ -30,6 +29,7 @@ from multiprocessing import Process, Queue
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
 import gevent
+import grequests
 import uvicorn
 from bacpypes3.local.networkport import NetworkPortObject
 from bacpypes3.vendor import VendorInfo

@@ -8,22 +8,21 @@ python discover_routers_and_devices.py 1000 10000 --output test.ttl --address 19
 adding bbmd ip address will allow the system to find devices connected in that bbmd network
 """
 
-import sys
 import asyncio
-
+import sys
 from typing import List, Optional
 
-from bacpypes3.debugging import bacpypes_debugging, ModuleLogger
-from bacpypes3.argparse import SimpleArgumentParser
-
-from bacpypes3.pdu import Address, IPv4Address
-from bacpypes3.primitivedata import ObjectIdentifier, ObjectType
-from bacpypes3.apdu import ErrorRejectAbortNack
-from bacpypes3.basetypes import PropertyIdentifier
-from bacpypes3.apdu import AbortReason, AbortPDU, ErrorRejectAbortNack
+from bacpypes3.apdu import AbortPDU, AbortReason, ErrorRejectAbortNack
 from bacpypes3.app import Application
+from bacpypes3.argparse import SimpleArgumentParser
+from bacpypes3.basetypes import (
+    BDTEntry,
+    HostNPort,
+    IPMode,
+    PropertyIdentifier,
+)
 from bacpypes3.comm import ApplicationServiceElement, bind
-from bacpypes3.vendor import get_vendor_info
+from bacpypes3.debugging import ModuleLogger, bacpypes_debugging
 from bacpypes3.ipv4.bvll import (
     LPDU,
     ReadBroadcastDistributionTable,
@@ -31,16 +30,12 @@ from bacpypes3.ipv4.bvll import (
     ReadForeignDeviceTable,
     ReadForeignDeviceTableAck,
 )
-from bacpypes3.basetypes import (
-    BDTEntry,
-    HostNPort,
-    IPMode,
-)
 from bacpypes3.ipv4.service import BVLLServiceAccessPoint
-
-from rdflib import Graph, Namespace  # type: ignore
+from bacpypes3.pdu import Address, IPv4Address
+from bacpypes3.primitivedata import ObjectIdentifier, ObjectType
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
-
+from bacpypes3.vendor import get_vendor_info
+from rdflib import Graph, Namespace  # type: ignore
 
 # some debugging
 _debug = 0

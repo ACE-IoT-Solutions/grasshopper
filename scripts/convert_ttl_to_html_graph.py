@@ -23,11 +23,11 @@ smooth: Defines whether and how the edge is drawn smoothly. Possible values incl
 hidden: Whether the edge is hidden (i.e., not displayed).
 """
 
+import networkx as nx
+from bacpypes3.rdf.core import BACnetNS
+from pyvis.network import Network
 from rdflib import Graph
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
-import networkx as nx
-from pyvis.network import Network
-from bacpypes3.rdf.core import BACnetNS
 from rdflib.namespace import RDFS
 
 

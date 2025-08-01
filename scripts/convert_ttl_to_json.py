@@ -1,11 +1,10 @@
-import json
 import argparse
+import json
 
+from pyvis.network import Network
 from rdflib import Graph
 from rdflib.extras.external_graph_libs import rdflib_to_networkx_digraph
 from rdflib.namespace import RDFS
-from pyvis.network import Network
-from pyvis.network import Network
 
 
 def build_networkx_graph(g):

@@ -1,7 +1,7 @@
-from rdflib import Graph
-from rdflib.compare import to_isomorphic, graph_diff
 from convert_ttl_to_html_graph import build_networkx_graph
 from pyvis.network import Network
+from rdflib import Graph
+from rdflib.compare import graph_diff, to_isomorphic
 
 
 def pass_networkx_to_pyvis(nx_graph, net: Network, data, color, image=None):
