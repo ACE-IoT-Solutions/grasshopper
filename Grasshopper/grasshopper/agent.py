@@ -516,7 +516,7 @@ class Grasshopper(Agent):
 
             rdf_path = os.path.join(
                 self.agent_data_path,
-                f"ttl/{now.replace(microsecond=0).isoformat().replace(':','_')}.ttl",
+                f"ttl/{now.replace(microsecond=0).isoformat().replace(':','-')}.ttl",
             )
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
@@ -673,6 +673,28 @@ class Grasshopper(Agent):
         Upload captured packets to ace API
         """
         # _log.debug("Attemping to collect files for upload")
+        def is_valid_date_filename(filename: str) -> bool:
+            """Check if filename matches the expected date format YYYY-MM-DDTHH-MM-SS.ttl"""
+            # Remove .ttl extension
+            if not filename.endswith('.ttl'):
+                return False
+            
+            datetime_string = filename[:-4]  # Remove .ttl
+            
+            # Check format: YYYY-MM-DDTHH-MM-SS
+            pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$'
+            if not re.match(pattern, datetime_string):
+                return False
+            
+            # Validate the actual date by converting to standard ISO format
+            try:
+                # Convert YYYY-MM-DDTHH-MM-SS to YYYY-MM-DDTHH:MM:SS for validation
+                iso_format = datetime_string[:11] + datetime_string[11:].replace('-', ':')
+                datetime.fromisoformat(iso_format)
+                return True
+            except ValueError:
+                return False
+        
         url = self.ttl_post_to_cloud.get("url")
         jwt = self.ttl_post_to_cloud.get("jwt")
         if not url or not jwt:
@@ -690,6 +712,11 @@ class Grasshopper(Agent):
             ttl_files = os.path.join(self.agent_data_path, "ttl")
             for file_path in glob.glob(f"{ttl_files}/*.ttl"):
                 file_name = os.path.basename(file_path)
+                file_name = file_name.replace(":", "-")  # Replace colons with hyphens for URL safety
+                file_name = file_name.replace("_", "-")  # Replace underscores with hyphens for URL safety
+                if not is_valid_date_filename(file_name):
+                    _log.warning(f"Skipping file with invalid date format: {file_name}")
+                    continue
                 _log.debug(f"uploading to API... {url} {file_name=}")
                 with open(file_path, "rb") as file:
                     filedata = file.read()
