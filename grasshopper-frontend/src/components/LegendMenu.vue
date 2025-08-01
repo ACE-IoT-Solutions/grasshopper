@@ -30,11 +30,20 @@
 <script>
 import { gsap } from 'gsap'
 import { Draggable } from 'gsap/Draggable'
+import grasshopperSvg from '@/assets/grasshopper icon.svg'
+import routerSvg from '@/assets/router.svg'
+import networkSvg from '@/assets/network.svg'
+import deviceSvg from '@/assets/device.svg'
+import bbmdOnSvg from '@/assets/bbmd-on.svg'
+import bbmdOffSvg from '@/assets/bbmd-off.svg'
+import subnetSvg from '@/assets/lan.svg'
+import removedSvg from '@/assets/removed.svg'
+import addedSvg from '@/assets/added.svg'
 export default {
   props: ['store'],
   mounted() {
     if (this.store.compareMode) {
-      this.items.push({ title: 'Removed', image: '/assets/removed.svg' }, { title: 'Added', image: '/assets/added.svg' })
+      this.items.push({ title: 'Removed', image: removedSvg }, { title: 'Added', image: addedSvg })
     }
     gsap.registerPlugin(Draggable)
 
@@ -55,13 +64,13 @@ export default {
   data() {
     return {
       items: [
-        { title: 'Grasshopper', image: '/assets/grasshopper icon.svg' },
-        { title: 'Device', image: '/assets/device.svg' },
-        { title: 'Network', image: '/assets/network.svg' },
-        { title: 'Subnet', image: '/assets/lan.svg' },
-        { title: 'Router', image: '/assets/router.svg' },
-        { title: 'BBMD (ON)', image: '/assets/bbmd-on.svg' },
-        { title: 'BBMD (OFF)', image: '/assets/bbmd-off.svg' },
+        { title: 'Grasshopper', image: grasshopperSvg },
+        { title: 'Device', image: deviceSvg },
+        { title: 'Network', image: networkSvg },
+        { title: 'Subnet', image: subnetSvg },
+        { title: 'Router', image: routerSvg },
+        { title: 'BBMD (ON)', image: bbmdOnSvg },
+        { title: 'BBMD (OFF)', image: bbmdOffSvg },
       ],
     }
   },

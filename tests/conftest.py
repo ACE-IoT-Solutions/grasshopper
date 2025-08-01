@@ -2,11 +2,12 @@
 
 import os
 import sys
-import pytest
-from fastapi.testclient import TestClient
-from tempfile import TemporaryDirectory
-from fastapi import FastAPI
 from multiprocessing import Queue
+from tempfile import TemporaryDirectory
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from Grasshopper.grasshopper.api import api_router
 

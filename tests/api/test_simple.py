@@ -8,9 +8,9 @@ from tempfile import TemporaryDirectory
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import inspect
-from Grasshopper.grasshopper.web_app import create_app
+
 from Grasshopper.grasshopper.api import api_router
+from Grasshopper.grasshopper.web_app import create_app
 
 
 @pytest.fixture

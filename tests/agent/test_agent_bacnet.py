@@ -2,8 +2,9 @@
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
 from datetime import datetime
+from unittest.mock import MagicMock, patch
+
 from rdflib import Graph
 
 # Import fixtures

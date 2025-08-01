@@ -2,9 +2,10 @@
 
 import os
 import sys
-import pytest
-from unittest.mock import MagicMock, patch
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Import Volttron testing utilities
 from volttrontesting.utils.utils import AgentMock

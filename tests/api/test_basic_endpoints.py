@@ -5,8 +5,6 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-import sys
-from unittest.mock import patch, MagicMock
 
 
 def test_hello_endpoint(api_client):

@@ -63,6 +63,7 @@ export default {
         this.goToGraph(this.$route.params.graphName);
       }
     }
+    this.store.setLoading(false);
   },
   beforeUnmount() {
     if (this.refreshInterval) {

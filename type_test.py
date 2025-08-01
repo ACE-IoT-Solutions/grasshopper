@@ -1,9 +1,9 @@
 """Test file to verify type checking with mypy."""
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 # Import from grasshopper
 from grasshopper import __version__
-from grasshopper.agent import Grasshopper, seconds_in_day, DEVICE_STATE_CONFIG
+from grasshopper.agent import DEVICE_STATE_CONFIG, Grasshopper, seconds_in_day
 from grasshopper.api import api_router
 
 

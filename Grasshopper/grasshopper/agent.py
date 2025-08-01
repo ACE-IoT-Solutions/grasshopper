@@ -15,6 +15,7 @@ The agent also provides a web interface to view each scan of the network as foun
 __docformat__ = "reStructuredText"
 
 import asyncio
+import glob
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ from multiprocessing import Process, Queue
 from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 
 import gevent
+import grequests
 import uvicorn
 from bacpypes3.local.networkport import NetworkPortObject
 from bacpypes3.vendor import VendorInfo
@@ -36,10 +38,13 @@ from rdflib import Graph
 
 # from volttron.platform.web import Response
 from volttron.platform.agent import utils
-from volttron.platform.messaging.health import STATUS_BAD
+from volttron.platform.messaging.health import STATUS_BAD, STATUS_GOOD
 from volttron.platform.vip.agent import Agent, Core
 
-from .api import DEVICE_STATE_CONFIG, process_compare_rdf_queue
+from .api import (
+    DEVICE_STATE_CONFIG,
+    process_compare_rdf_queue,
+)
 from .bacpypes3_scanner import bacpypes3_scanner
 from .version import __version__
 from .web_app import create_app
@@ -82,6 +87,15 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     device_broadcast_empty_step_size: int = config.get(
         "device_broadcast_empty_step_size", 1000
     )
+    ttl_post_to_cloud: Dict[str, Any] = config.get(
+        "ttl_post_to_cloud",
+        {
+            "enabled": False,
+            "url": "localhost",
+            "jwt": None,
+            "upload_interval_secs": 86400,
+        },
+    )
     bacpypes_settings: Dict[str, Any] = config.get(
         "bacpypes_settings",
         {
@@ -97,7 +111,13 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     )
     webapp_settings: Dict[str, Any] = config.get(
         "webapp_settings",
-        {"host": "0.0.0.0", "port": 5000, "certfile": None, "keyfile": None},
+        {
+            "enabled": False,
+            "host": "0.0.0.0",
+            "port": 5000,
+            "certfile": None,
+            "keyfile": None,
+        },
     )
     return Grasshopper(
         scan_interval_secs,
@@ -107,6 +127,7 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
         device_broadcast_empty_step_size,
         bacpypes_settings,
         webapp_settings,
+        ttl_post_to_cloud,
         **kwargs,
     )
 
@@ -125,17 +146,20 @@ class Grasshopper(Agent):
         device_broadcast_empty_step_size: int = 1000,
         bacpypes_settings: Optional[Dict[str, Any]] = None,
         webapp_settings: Optional[Dict[str, Any]] = None,
+        ttl_post_to_cloud: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(enable_web=True, **kwargs)
         _log.debug("vip_identity: %s", self.core.identity)
 
         self.bacnet_analysis: Optional[Any] = None
+        self.upload_scans: Optional[Any] = None
         self.scan_interval_secs: int = scan_interval_secs
         self.low_limit: int = low_limit
         self.high_limit: int = high_limit
         self.device_broadcast_full_step_size: int = device_broadcast_full_step_size
         self.device_broadcast_empty_step_size: int = device_broadcast_empty_step_size
+        self.upload_lock = gevent.lock.BoundedSemaphore()
         if bacpypes_settings is None:
             bacpypes_settings = {
                 "name": "Excelsior",
@@ -156,6 +180,9 @@ class Grasshopper(Agent):
                 "keyfile": None,
             }
         self.webapp_settings: Dict[str, Any] = webapp_settings
+        if ttl_post_to_cloud is None:
+            ttl_post_to_cloud = {"enabled": False, "url": "localhost"}
+        self.ttl_post_to_cloud: Dict[str, Any] = ttl_post_to_cloud
         self.default_config: Dict[str, Any] = {
             "scan_interval_secs": scan_interval_secs,
             "low_limit": low_limit,
@@ -164,6 +191,7 @@ class Grasshopper(Agent):
             "device_broadcast_empty_step_size": device_broadcast_empty_step_size,
             "bacpypes_settings": bacpypes_settings,
             "webapp_settings": webapp_settings,
+            "ttl_post_to_cloud": ttl_post_to_cloud,
         }
         self.http_server_process: Optional[Process] = None
         self.agent_data_path: str
@@ -231,14 +259,27 @@ class Grasshopper(Agent):
                 self.webapp_settings = contents.get(
                     "webapp_settings",
                     {
+                        "enabled": False,
                         "host": "0.0.0.0",
                         "port": 5000,
                         "certfile": None,
                         "keyfile": None,
                     },
                 )
+                self.ttl_post_to_cloud = contents.get(
+                    "ttl_post_to_cloud",
+                    {
+                        "enabled": False,
+                        "url": "localhost",
+                        "jwt": None,
+                        "upload_interval_secs": 86400,
+                    },
+                )
 
-                self.configure_server_and_start()
+                if self.webapp_settings.get("enabled", False):
+                    if self.http_server_process is not None:
+                        self._stop_server()
+                    self.configure_server_and_start()
 
                 vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
                 if vendorid != 999:
@@ -252,8 +293,18 @@ class Grasshopper(Agent):
             if self.bacnet_analysis is not None:
                 self.bacnet_analysis.kill()  # pylint: disable=no-member
             self.bacnet_analysis = self.core.periodic(
-                self.scan_interval_secs, self.who_is_broadcast
+                self.scan_interval_secs, self.who_is_broadcast, wait=15
             )
+
+            if self.ttl_post_to_cloud.get("enabled"):
+                upload_interval_secs: int = self.ttl_post_to_cloud.get(
+                    "upload_interval_secs", 86400
+                )
+                if self.upload_scans is not None:
+                    self.upload_scans.kill()  # pylint: disable=no-member
+                self.upload_scans = self.core.periodic(
+                    upload_interval_secs, self.upload_to_api, wait=10
+                )
 
         _log.debug("Config completed")
 
@@ -462,10 +513,11 @@ class Grasshopper(Agent):
 
             rdf_path = os.path.join(
                 self.agent_data_path,
-                f"ttl/{now.replace(microsecond=0).isoformat().replace(':','_')}.ttl",
+                f"ttl/{now.replace(microsecond=0).isoformat().replace(':','-')}.ttl",
             )
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
+
         except Exception as e:  # pylint: disable=broad-except
             # We need to catch any exception during broadcast to prevent crash
             _log.error("Error in who_is_broadcast: %s", e)
@@ -486,16 +538,6 @@ class Grasshopper(Agent):
             None
         """
         _log.debug("configure_server_setup")
-
-        def ensure_folders_exist(agent_data_path: str, folder_names: List[str]) -> None:
-            """Create necessary folders in the agent data directory if they don't exist."""
-            for folder in folder_names:
-                folder_path = os.path.join(agent_data_path, folder)
-                if not os.path.exists(folder_path):
-                    os.makedirs(folder_path)
-                    print(f"Folder '{folder}' created.")
-                else:
-                    print(f"Folder '{folder}' already exists.")
 
         # Create cert/key files
         certfile = self.webapp_settings.get("certfile")
@@ -623,6 +665,97 @@ class Grasshopper(Agent):
                 self.http_server_process.join(timeout=2)
         _log.debug("Running _stop_server complete")
 
+    def upload_to_api(self) -> None:
+        """
+        Upload captured packets to ace API
+        """
+
+        # _log.debug("Attemping to collect files for upload")
+        def is_valid_date_filename(filename: str) -> bool:
+            """Check if filename matches the expected date format YYYY-MM-DDTHH-MM-SS.ttl"""
+            # Remove .ttl extension
+            if not filename.endswith(".ttl"):
+                return False
+
+            datetime_string = filename[:-4]  # Remove .ttl
+
+            # Check format: YYYY-MM-DDTHH-MM-SS
+            pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$"
+            if not re.match(pattern, datetime_string):
+                return False
+
+            # Validate the actual date by converting to standard ISO format
+            try:
+                # Convert YYYY-MM-DDTHH-MM-SS to YYYY-MM-DDTHH:MM:SS for validation
+                iso_format = datetime_string[:11] + datetime_string[11:].replace(
+                    "-", ":"
+                )
+                datetime.fromisoformat(iso_format)
+                return True
+            except ValueError:
+                return False
+
+        url = self.ttl_post_to_cloud.get("url")
+        jwt = self.ttl_post_to_cloud.get("jwt")
+        if not url or not jwt:
+            _log.error("URL or JWT not configured for TTL upload. Skipping upload.")
+            self.vip.health.set_status(
+                STATUS_BAD, "URL or JWT not configured for TTL upload."
+            )
+            return
+        if self.upload_lock.locked():
+            _log.debug("Upload lock is currently held, skipping upload.")
+            return
+        with self.upload_lock:
+            ttl_files = os.path.join(self.agent_data_path, "ttl")
+            for file_path in glob.glob(f"{ttl_files}/*.ttl"):
+                file_name = os.path.basename(file_path)
+                file_name = file_name.replace(
+                    ":", "-"
+                )  # Replace colons with hyphens for URL safety
+                file_name = file_name.replace(
+                    "_", "-"
+                )  # Replace underscores with hyphens for URL safety
+                if not is_valid_date_filename(file_name):
+                    _log.warning(f"Skipping file with invalid date format: {file_name}")
+                    continue
+                _log.debug(f"uploading to API... {url} {file_name=}")
+                with open(file_path, "rb") as file:
+                    filedata = file.read()
+                try:
+                    request = grequests.post(
+                        url,
+                        files=(("file", (f"{file_name}", filedata)),),
+                        headers={"Authorization": f"Bearer {jwt}"},
+                    )
+                    response = grequests.map(
+                        [request], exception_handler=self._grequests_exception_handler
+                    )[0]
+                    if response is None:
+                        _log.error("Failed to get a response from the API")
+                        self.vip.health.set_status(
+                            STATUS_BAD, "Failed to get a response from the API"
+                        )
+                        return
+                    if response.status_code == 201:
+                        _log.info(f"Upload successful: {response.text}")
+                        os.remove(file_path)
+                    elif response.status_code == 401:
+                        _log.error(
+                            f"Unauthorized: Invalid API key or token. {response.text}"
+                        )
+                        self.vip.health.set_status(
+                            STATUS_BAD, "Invalid API key or token."
+                        )
+                        return
+                    else:
+                        _log.error(
+                            f"Upload failed: {response.status_code} {response.text}"
+                        )
+                except Exception as error:
+                    _log.debug(f"{error=}")
+                self.vip.health.set_status(STATUS_GOOD)
+
     @Core.receiver("onstart")
     def onstart(
         self, sender: Any, **kwargs: Any
@@ -681,6 +814,16 @@ class Grasshopper(Agent):
                 )
         else:
             _log.info("Device config file already exists: %s", device_config_path)
+
+        # Create necessary folders in the agent data directory
+        required_folders = ["ttl", "network_config", "compare"]
+        for folder in required_folders:
+            folder_path = os.path.join(self.agent_data_path, folder)
+            if not os.path.exists(folder_path):
+                os.makedirs(folder_path)
+                _log.info("Created folder: %s", folder_path)
+            else:
+                _log.info("Folder already exists: %s", folder_path)
 
         # Sets WEB_ROOT to be the path to the webroot directory
         # in the agent-data directory of the installed agent.
