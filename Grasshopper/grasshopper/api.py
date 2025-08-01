@@ -790,7 +790,8 @@ async def export_csv(ttl_filename: str, request: Request):
         if device_type in ["Device", "Router"]:
             device_id = str(node).split("/")[-1]
             device_address = node_data.get(str(node), {}).get("device-address", "")
-            network_id = node_data.get(str(node), {}).get("network-id", [])
+            network_id_list = node_data.get(str(node), {}).get("network-id", [])
+            network_id = ",".join(network_id_list) if network_id_list else ""
             subnets = node_data.get(str(node), {}).get("subnet", "")
             vendor_id = node_data.get(str(node), {}).get("vendor-id", "").split("/")[-1]
 
