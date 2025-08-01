@@ -19,6 +19,7 @@ Types of changes:
 
 - Required folder generation in agent-data upon agent statup
 - Functionality to periodically upload ttl files to a remote server
+- Docstrings for api routes
 
 ### Changed
 
