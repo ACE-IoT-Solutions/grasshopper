@@ -6,9 +6,7 @@
       store.menuType === 'bbmd' ||
       (store.configSelect && store.menuType == 'setup')
         ? 'alt-menu'
-        : store.menuType == 'delete'
-          ? 'delete-menu'
-          : 'menu'
+        : store.menuType == 'delete' ? 'delete-menu' : 'menu'
     "
     style="z-index: 1000"
   >
@@ -375,7 +373,9 @@
       class="container"
       style="align-content: space-evenly"
     >
-      <div :class="store.configSelect ? 'setup-config' : 'setup-default'">
+      <div
+        :class="store.configSelect ? 'setup-config' : 'setup-default'"
+      >
         <v-autocomplete
           v-model="setupGraph"
           label="Select a Graph"
@@ -406,17 +406,9 @@
           :disabled="!setupGraph"
           >Load</v-btn
         >
-        <div
-          v-if="store.configSelect"
-          style="display: flex; justify-content: center"
-        >
+        <div v-if="store.configSelect" style="display: flex; justify-content: center;">
           <v-btn
-            @click="
-              config == null
-                ? (goToGraph(),
-                  store.setPhysicsConfig(this.store.defaultConfig))
-                : graphWithConfig()
-            "
+            @click="config == null ? (goToGraph(), store.setPhysicsConfig(this.store.defaultConfig)) : graphWithConfig()"
             :loading="setupLoad"
             variant="tonal"
             size="small"
@@ -498,7 +490,7 @@
         :items="store.configList"
         clearable
       ></v-autocomplete>
-      <div style="display: flex; justify-content: center">
+      <div style="display: flex; justify-content: center;">
         <v-btn
           v-if="store.menuTitle == 'Save Config'"
           @click="saveConfig()"
@@ -618,7 +610,7 @@ export default {
   watch: {
     // eslint-disable-next-line no-unused-vars
     'store.reloadKey'(newVal, oldVal) {
-      this.refresh()
+      this.refresh();
     },
   },
   mounted() {
@@ -630,8 +622,8 @@ export default {
     (this.store.configSelect && this.store.menuType == 'setup')
       ? (animateClass = '.alt-menu')
       : this.store.menuType === 'delete'
-        ? (animateClass = '.delete-menu')
-        : (animateClass = '.menu')
+      ? (animateClass = '.delete-menu')
+      : (animateClass = '.menu')
 
     gsap.from(animateClass, {
       duration: 0.25,
@@ -640,8 +632,8 @@ export default {
       ease: 'power2.out',
     })
 
-    this.decodeCookie()
-    this.refresh()
+    this.decodeCookie();
+    this.refresh();
   },
   methods: {
     checkFileName() {
@@ -652,59 +644,62 @@ export default {
       }
     },
     async saveConfig() {
-      this.configLoad = true
+      this.configLoad = true;
 
       const jsonBlob = new Blob(
         [JSON.stringify(this.store.configToSave, null, 2)],
-        { type: 'application/json' },
-      )
+        { type: 'application/json' }
+      );
 
-      const fileName = `${this.configTitle}.json`
+      const fileName = `${this.configTitle}.json`;
 
-      const formData = new FormData()
-      formData.append('file', jsonBlob, fileName)
+      const formData = new FormData();
+      formData.append('file', jsonBlob, fileName);
 
       await axios
-        .post(`${this.host}/api/operations/network_config`, formData, {
+      .post(`${this.host}/api/operations/network_config`,
+        formData,
+        {
           headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-        })
-        .then(() => {
-          this.store.triggerReload()
-          this.store.setCurrentConfig(fileName)
-          this.store.setPhysicsConfig(this.store.configToSave)
-          this.storeConfig(fileName)
-          this.configSuccess = true
-          this.configTitle = null
-          this.configLoad = false
-        })
-        .catch(error => {
-          console.log(error)
-        })
+            'Content-Type': 'multipart/form-data'
+          }
+        }
+      )
+      .then(() => {
+        this.store.triggerReload();
+        this.store.setCurrentConfig(fileName);
+        this.store.setPhysicsConfig(this.store.configToSave);
+        this.storeConfig(fileName);
+        this.configSuccess = true;
+        this.configTitle = null;
+        this.configLoad = false;
+      })
+      .catch(error => {
+        console.log(error);
+      });
     },
     async loadConfig() {
-      this.configLoad = true
+      this.configLoad = true;
 
       await axios
         .get(`${this.host}/api/operations/network_config/${this.config}`, {
           responseType: 'json',
         })
         .then(response => {
-          this.store.setCurrentConfig(this.config)
-          this.store.setPhysicsConfig(response.data)
-          this.store.setControlMenu(null, null)
-          this.storeConfig(this.config)
-          this.store.setReload()
-          this.configLoad = false
+          this.store.setCurrentConfig(this.config);
+          this.store.setPhysicsConfig(response.data);
+          this.store.setControlMenu(null, null);
+          this.storeConfig(this.config);
+          this.store.setReload();
+          this.configLoad = false;
         })
         .catch(error => {
-          console.log(error)
-          this.configLoad = false
-        })
+          console.log(error);
+          this.configLoad = false;
+        });
     },
     async deleteConfig() {
-      this.configLoad = true
+      this.configLoad = true;
       await axios
         .delete(`${this.host}/api/operations/network_config/${this.config}`)
         // eslint-disable-next-line no-unused-vars
@@ -728,13 +723,13 @@ export default {
           responseType: 'json',
         })
         .then(response => {
-          this.store.setPhysicsConfig(response.data)
-          this.store.setCurrentConfig(this.config)
-          this.storeConfig(this.config)
-          this.goToGraph()
+          this.store.setPhysicsConfig(response.data);
+          this.store.setCurrentConfig(this.config);
+          this.storeConfig(this.config);
+          this.goToGraph();
         })
         .catch(error => {
-          console.log(error)
+          console.log(error);
         })
     },
     async goToGraph() {
@@ -750,6 +745,7 @@ export default {
           this.store.setControlMenu(null, null)
           this.setupLoad = false
           this.$router.push({ params: { graphName: this.setupGraph } })
+
         })
         .catch(error => {
           console.log(error)
@@ -936,98 +932,115 @@ export default {
         })
     },
     storeConfig(config) {
-      const date = new Date()
-      date.setTime(date.getTime() + 30 * 24 * 60 * 60 * 1000)
-
-      document.cookie = `volttron_config=${config}; expires=${date.toUTCString()} path=/`
+      const date = new Date();
+      date.setTime(date.getTime() + (30 * 24 * 60 * 60 * 1000));
+      
+      document.cookie = `volttron_config=${config}; expires=${date.toUTCString()} path=/`;
     },
     decodeCookie() {
-      const cookie = decodeURIComponent(document.cookie)
+      const cookie = decodeURIComponent(document.cookie);
       // console.log(cookie);
 
       for (const c of cookie.split(';')) {
-        const [key, value] = c.trim().split('=')
+        const [key, value] = c.trim().split('=');
         if (key === 'volttron_config') {
-          this.config = value
+          this.config = value;
         }
       }
     },
     async fetchGraphs() {
       await axios
-        .get(`${this.host}/api/operations/ttl`, {
-          responseType: 'json',
+        .get(
+          `${this.host}/api/operations/ttl`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setSetupGraphs(response.data.data);
+          this.store.setDeleteGraphs(response.data.data);
         })
-        .then(response => {
-          this.store.setSetupGraphs(response.data.data)
-          this.store.setDeleteGraphs(response.data.data)
-        })
-        .catch(error => {
-          console.log(error)
-        })
+        .catch((error) => {
+          console.log(error);
+        });
     },
     async fetchIps() {
       await axios
-        .get(`${this.host}/api/operations/subnets`, {
-          responseType: 'json',
+        .get(
+          `${this.host}/api/operations/subnets`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setIpList(response.data.ip_address_list);
         })
-        .then(response => {
-          this.store.setIpList(response.data.ip_address_list)
-        })
-        .catch(error => {
-          console.log(error)
-        })
+        .catch((error) => {
+          console.log(error);
+        });
     },
     async fetchCompareGraphs() {
       await axios
-        .get(`${this.host}/api/operations/ttl_compare`, {
-          responseType: 'json',
+        .get(
+          `${this.host}/api/operations/ttl_compare`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setCompareList(response.data.file_list);
+          this.store.setDeleteCompareGraphs(response.data.file_list);
         })
-        .then(response => {
-          this.store.setCompareList(response.data.file_list)
-          this.store.setDeleteCompareGraphs(response.data.file_list)
-        })
-        .catch(error => {
-          console.log(error)
-        })
+        .catch((error) => {
+          console.log(error);
+        });
     },
     async fetchBbmds() {
       await axios
-        .get(`${this.host}/api/operations/bbmds`, {
-          responseType: 'json',
+        .get(
+          `${this.host}/api/operations/bbmds`,
+          {
+            responseType: "json"
+          }
+        )
+        .then((response) => {
+          this.store.setBbmdList(response.data.ip_address_list);
         })
-        .then(response => {
-          this.store.setBbmdList(response.data.ip_address_list)
-        })
-        .catch(error => {
-          console.log(error)
-        })
+        .catch((error) => {
+          console.log(error);
+        });
     },
     async fetchConfig() {
       await axios
-        .get(`${this.host}/api/operations/network_config`, {
-          responseType: 'json',
-        })
-        .then(response => {
-          if (response.data.data.length === 0) {
-            this.store.setConfigSelect(false)
-            this.store.setPhysicsConfig(this.store.defaultConfig)
-          } else {
-            this.store.setConfigSelect(true)
-            this.store.setConfigList(response.data.data)
+        .get(
+          `${this.host}/api/operations/network_config`,
+          {
+            responseType: "json"
           }
+        )
+        .then((response) => {
+
+          if (response.data.data.length === 0) {
+            this.store.setConfigSelect(false);
+            this.store.setPhysicsConfig(this.store.defaultConfig);
+          } else {
+            this.store.setConfigSelect(true);
+            this.store.setConfigList(response.data.data);
+          }
+          
         })
-        .catch(error => {
-          console.log(error)
-        })
+        .catch((error) => {
+          console.log(error);
+        });
     },
     async refresh() {
-      await Promise.all([
-        this.fetchGraphs(),
-        this.fetchIps(),
-        this.fetchCompareGraphs(),
-        this.fetchBbmds(),
-        this.fetchConfig(),
-      ])
+        await Promise.all([
+            this.fetchGraphs(),
+            this.fetchIps(),
+            this.fetchCompareGraphs(),
+            this.fetchBbmds(),
+            this.fetchConfig()
+        ]);
     },
   },
 }

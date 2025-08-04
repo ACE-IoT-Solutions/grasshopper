@@ -2,12 +2,13 @@
   <v-app id="app">
     <RouterView :store="grasshopperStore" />
   </v-app>
+
 </template>
 
 <script setup>
-import { useGrasshopperStore } from './stores/index.js'
+import { useGrasshopperStore } from "./stores/index.js";
 
-const grasshopperStore = useGrasshopperStore()
+const grasshopperStore = useGrasshopperStore();
 </script>
 
 <style scoped>
@@ -42,7 +43,7 @@ header {
 .header-btn {
   margin: 0 1.5vw;
   border-radius: 25px;
-  color: #fffd94;
+  color: #FFFD94;
 }
 
 @media (min-width: 1024px) {

@@ -41,7 +41,7 @@ import { Draggable } from 'gsap/Draggable'
 export default {
   props: ['store'],
   mounted() {
-    gsap.registerPlugin(Draggable)
+    gsap.registerPlugin(Draggable);
 
     gsap.from('.note-card', {
       duration: 0.25,
@@ -58,11 +58,11 @@ export default {
   },
   methods: {
     closeCard() {
-      this.store.setShowNoteCard(false)
+        this.store.setShowNoteCard(false);
     },
     addNote() {
-      console.log('test note')
-    },
+      console.log('test note');
+    }
   },
 }
 </script>
@@ -81,7 +81,7 @@ export default {
   color: white;
   border-radius: 8px;
   z-index: 999;
-  box-shadow: 1px 0px 16px -5px rgba(0, 0, 0, 0.75);
+  box-shadow: 1px 0px 16px -5px rgba(0,0,0,0.75);
   text-align: left;
 }
 .card-close {
