@@ -14,8 +14,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Enter Frontend Directory
-        working-directory: grasshopper-frontend
-        run: cd grasshopper-frontend
+        working-directory: grasshopper/grasshopper-frontend
+        run: cd grasshopper/grasshopper-frontend
 
       - name: Use Node.js
         uses: actions/setup-node@v4
