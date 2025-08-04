@@ -1,7 +1,9 @@
 <template>
   <div class="legend-menu">
     <div class="header">
-      <v-icon size="small" color="#FDFD94" style="padding-left: 20px;">mdi-map-legend</v-icon>
+      <v-icon size="small" color="#FDFD94" style="padding-left: 20px"
+        >mdi-map-legend</v-icon
+      >
       <!-- <p class="title">LEGEND</p> -->
       <v-btn
         variant="plain"
@@ -43,7 +45,10 @@ export default {
   props: ['store'],
   mounted() {
     if (this.store.compareMode) {
-      this.items.push({ title: 'Removed', image: removedSvg }, { title: 'Added', image: addedSvg })
+      this.items.push(
+        { title: 'Removed', image: removedSvg },
+        { title: 'Added', image: addedSvg },
+      )
     }
     gsap.registerPlugin(Draggable)
 
@@ -84,7 +89,7 @@ export default {
   position: absolute;
   bottom: 3%;
   right: 2%;
-  box-shadow: 1px 0px 16px -5px rgba(0,0,0,0.75);
+  box-shadow: 1px 0px 16px -5px rgba(0, 0, 0, 0.75);
   cursor: move;
 }
 .header {
@@ -120,7 +125,7 @@ export default {
   object-fit: contain;
 }
 .title {
-  color: #CDCDCD;
+  color: #cdcdcd;
   font-size: 12px;
   font-weight: bold;
 }

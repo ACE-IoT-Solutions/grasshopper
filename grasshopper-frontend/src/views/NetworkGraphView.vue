@@ -13,8 +13,11 @@
     </v-alert>
     <NetworkHeader :store="store" />
     <NetworkDiagram :store="store" :key="store.diagramKey" />
-    <ControlMenus v-if="store.controlMenu" :store="store"/>
-    <CompareLoad v-if="store.compareLoad && store.currentTask != null" :store="store" />
+    <ControlMenus v-if="store.controlMenu" :store="store" />
+    <CompareLoad
+      v-if="store.compareLoad && store.currentTask != null"
+      :store="store"
+    />
     <div v-if="store.controlMenu" class="overlay"></div>
     <LegendMenu v-if="store.legendEnabled" :store="store" />
     <!-- <LegendMenu /> -->
@@ -22,14 +25,14 @@
 </template>
 
 <script>
-import NetworkHeader from '@/components/NetworkHeader.vue';
-import NetworkDiagram from '@/components/NetworkDiagram.vue';
-import ControlMenus from '../components/ControlMenus.vue';
-import axios from 'axios';
-import CompareLoad from '../components/CompareLoad.vue';
-import LegendMenu from '../components/LegendMenu.vue';
+import NetworkHeader from '@/components/NetworkHeader.vue'
+import NetworkDiagram from '@/components/NetworkDiagram.vue'
+import ControlMenus from '../components/ControlMenus.vue'
+import axios from 'axios'
+import CompareLoad from '../components/CompareLoad.vue'
+import LegendMenu from '../components/LegendMenu.vue'
 export default {
-  props: ["store"],
+  props: ['store'],
   components: {
     NetworkDiagram,
     NetworkHeader,
@@ -40,34 +43,33 @@ export default {
   watch: {
     // eslint-disable-next-line no-unused-vars
     'store.reloadKey'(newVal, oldVal) {
-      this.fetchAll();
+      this.fetchAll()
     },
   },
   computed: {
     graphName() {
-      return this.$route.params.graphName;
+      return this.$route.params.graphName
     },
   },
   setup() {
     return {}
   },
   created() {
-    this.runFetchCycle();
+    this.runFetchCycle()
   },
   mounted() {
     if (this.$route.params.graphName) {
       if (this.$route.params.graphName.includes('_vs_')) {
-        this.loadCompare(this.$route.params.graphName);
-      }
-      else {
-        this.goToGraph(this.$route.params.graphName);
+        this.loadCompare(this.$route.params.graphName)
+      } else {
+        this.goToGraph(this.$route.params.graphName)
       }
     }
-    this.store.setLoading(false);
+    this.store.setLoading(false)
   },
   beforeUnmount() {
     if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
+      clearInterval(this.refreshInterval)
     }
   },
   data() {
@@ -77,7 +79,7 @@ export default {
       defaultInterval: 300000,
       genInterval: 300000,
       loadError: false,
-    };
+    }
   },
   methods: {
     async goToGraph(graph) {
@@ -113,36 +115,38 @@ export default {
         })
     },
     async runFetchCycle() {
-      await this.fetchAll();
-      
-      const interval = (this.store.currentTask != "None") ? this.genInterval : this.defaultInterval;
-      
+      await this.fetchAll()
+
+      const interval =
+        this.store.currentTask != 'None'
+          ? this.genInterval
+          : this.defaultInterval
+
       this.refreshInterval = setTimeout(() => {
-        this.runFetchCycle();
-      }, interval);
+        this.runFetchCycle()
+      }, interval)
     },
     async fetchQueue() {
       await axios
-        .get(
-          `${this.host}/api/operations/ttl_compare_queue`,
-          {
-            responseType: "json"
-          }
-        )
-        .then((response) => {
-
-          this.store.setQueue(response.data.processing_task, response.data.queue);
-
-          response.data.processing_task != "None" ? this.store.setCompareLoad(true) : this.store.setCompareLoad(false);;
+        .get(`${this.host}/api/operations/ttl_compare_queue`, {
+          responseType: 'json',
         })
-        .catch((error) => {
-          console.log(error);
-        });
+        .then(response => {
+          this.store.setQueue(
+            response.data.processing_task,
+            response.data.queue,
+          )
+
+          response.data.processing_task != 'None'
+            ? this.store.setCompareLoad(true)
+            : this.store.setCompareLoad(false)
+        })
+        .catch(error => {
+          console.log(error)
+        })
     },
     async fetchAll() {
-      await Promise.all([
-        this.fetchQueue()
-      ]);
+      await Promise.all([this.fetchQueue()])
     },
   },
 }

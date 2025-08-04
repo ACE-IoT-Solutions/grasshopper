@@ -2,7 +2,11 @@
   <div class="network-page">
     <div class="network-wrapper">
       <!-- search -->
-      <v-progress-circular v-if="store.loading" indeterminate style="margin: 20px"></v-progress-circular>
+      <v-progress-circular
+        v-if="store.loading"
+        indeterminate
+        style="margin: 20px"
+      ></v-progress-circular>
       <div v-if="loaded" class="search-icon-container">
         <div class="zoom">
           <v-btn
@@ -31,8 +35,8 @@
         <div style="display: flex; gap: 20px">
           <v-btn
             @click="
-              showSearch = true;
-              showEdgeMenu = false;
+              showSearch = true
+              showEdgeMenu = false
             "
             variant="plain"
             id="no-background-hover"
@@ -104,8 +108,8 @@
         <v-btn
           v-if="showHiddenMenuButton"
           @click="
-            showHiddenMenu = true;
-            cardToggled = false;
+            showHiddenMenu = true
+            cardToggled = false
           "
           variant="plain"
           size="small"
@@ -745,7 +749,10 @@ export default {
         'bacnet://network/': { image: networkSvg, mass: 2 },
         'bacnet://': {
           Device: { image: deviceSvg, mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg, mass: 2 },
+          BBMD: {
+            image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg,
+            mass: 2,
+          },
         },
         'bacnet://Grasshopper': {
           image: grasshopperSvg,
@@ -763,7 +770,10 @@ export default {
         'bacnet://network/': { image: networkSubSvg, mass: 2 },
         'bacnet://': {
           Device: { image: deviceSubSvg, mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg, mass: 4 },
+          BBMD: {
+            image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg,
+            mass: 4,
+          },
         },
         'bacnet://Grasshopper': {
           image: grasshopperSvg,
@@ -781,7 +791,10 @@ export default {
         'bacnet://network/': { image: networkAddSvg, mass: 2 },
         'bacnet://': {
           Device: { image: deviceAddSvg, mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg, mass: 4 },
+          BBMD: {
+            image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg,
+            mass: 4,
+          },
         },
         'bacnet://Grasshopper': {
           image: grasshopperSvg,
@@ -1027,7 +1040,7 @@ export default {
             null
         })
       }
-      
+
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
@@ -1108,7 +1121,7 @@ export default {
       this.network.on('click', params => {
         if (!params.nodes.length) {
           this.unhighlightNode()
-          
+
           if (!this.store.showBdtEdges) {
             this.store.setBdtEdges(false)
             this.toggleBdtEdges(this.bdtEdges, false)
