@@ -307,6 +307,7 @@ class Grasshopper(Agent):
                 )
 
         _log.debug("Config completed")
+        self.post_configure()
 
     def _grequests_exception_handler(self, request: Any, exception: Exception) -> None:
         """
@@ -780,6 +781,7 @@ class Grasshopper(Agent):
         # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
         _log.debug("in onstart")
 
+    def post_configure(self) -> None:
         # Set up device config
         _log.info("Setting up Device Config")
 
