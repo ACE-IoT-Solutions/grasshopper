@@ -41,6 +41,8 @@ from volttron.platform.agent import utils
 from volttron.platform.messaging.health import STATUS_BAD, STATUS_GOOD
 from volttron.platform.vip.agent import Agent, Core
 
+from volttron.platform.jsonrpc import RemoteError
+
 from .api import (
     DEVICE_STATE_CONFIG,
     process_compare_rdf_queue,
@@ -286,8 +288,18 @@ class Grasshopper(Agent):
                     self.vendor_info = VendorInfo(vendorid)
                     self.vendor_info.register_object_class(56, NetworkPortObject)
 
-            except ValueError as e:
-                _log.error("ERROR PROCESSING CONFIGURATION: %s", e)
+            except ValueError as exc:
+                _log.error("ValueError: ERROR PROCESSING CONFIGURATION: %s", exc)
+                return
+            except RemoteError as exc:
+                _log.error("RemoteError: ERROR PROCESSING CONFIGURATION: %s", exc)
+                return
+            except RuntimeError as exc:
+                _log.error("RuntimeError: ERROR PROCESSING CONFIGURATION: %s", exc)
+                return
+            except Exception as exc:  # pylint: disable=broad-except
+                exception_type_name = type(exc).__name__
+                _log.error("UNEXPECTED ERROR PROCESSING CONFIGURATION: %s %s", exception_type_name, exc)
                 return
 
             if self.bacnet_analysis is not None:
