@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     proxy: {
       '^/api': {
-        target: '', // Set your backend API URL here
+        target: '', // set backend url here
         changeOrigin: true,
         secure: false,
       }
