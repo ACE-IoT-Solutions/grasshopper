@@ -794,6 +794,18 @@ class Grasshopper(Agent):
         _log.debug("in onstart")
 
     def post_configure(self) -> None:
+        """
+        Perform post-configuration setup after agent configuration is complete.
+
+        This method is called automatically at the end of configure() to initialize
+        the agent's data directory structure and device configuration file. It:
+        - Sets up the agent data directory path
+        - Creates the device configuration file if it doesn't exist
+        - Creates required subdirectories (ttl, network_config, compare)
+
+        Returns:
+            None
+        """
         # Set up device config
         _log.info("Setting up Device Config")
 
