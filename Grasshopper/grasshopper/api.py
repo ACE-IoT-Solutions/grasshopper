@@ -11,6 +11,7 @@ from multiprocessing import Queue
 from typing import Any, Dict, List, Optional, Union, cast
 
 import gevent
+from werkzeug.utils import secure_filename
 from bacpypes3.rdf.core import BACnetNS
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
@@ -314,7 +315,12 @@ def get_file_path(
 
     for root, dirs, files in os.walk(folder_path):
         if file_name in files:
-            return os.path.join(root, file_name)
+            full_path = os.path.join(root, file_name)
+            # Normalize and confirm within intended folder
+            normalized = os.path.normpath(full_path)
+            if os.path.commonpath([folder_path, normalized]) != folder_path:
+                continue
+            return normalized
 
     return None
 
@@ -1418,7 +1424,12 @@ async def download_ttl_compare_file(ttl_filename: str, request: Request):
     Content-Length: 12345
     ```
     """
-    ttl_filepath = get_file_path(ttl_filename, request, folder="compare")
+    safe_ttl_filename = secure_filename(ttl_filename)
+    if not safe_ttl_filename:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        )
+    ttl_filepath = get_file_path(safe_ttl_filename, request, folder="compare")
     if not ttl_filepath:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
