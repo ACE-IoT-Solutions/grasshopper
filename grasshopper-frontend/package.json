@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@mdi/font": "^7.4.47",
-    "axios": "^1.7.7",
+    "axios": "^1.12.0",
     "export-from-json": "^1.7.4",
     "gsap": "^3.12.5",
     "pinia": "^2.2.4",
@@ -26,12 +26,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.12.0",
-    "@vitejs/plugin-vue": "^5.1.4",
+    "@vitejs/plugin-vue": "^6.0.3",
     "@vue/eslint-config-prettier": "^10.0.0",
     "eslint": "^9.12.0",
     "eslint-plugin-vue": "^9.29.0",
     "prettier": "^3.3.3",
     "sass-embedded": "^1.79.5",
-    "vite": "^6.3.5"
+    "vite": "^6.4.1"
   }
 }
