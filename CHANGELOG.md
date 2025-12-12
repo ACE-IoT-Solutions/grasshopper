@@ -13,7 +13,15 @@ Types of changes:
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [Unreleased]
+## [0.3.0]
+
+### Added
+
+- Added error handling for when a vendor ID is already registered in config 
+
+### Changed
+
+- Don't run services until configuration is complete
 
 ## [0.2.0] - 2025-08-01
 

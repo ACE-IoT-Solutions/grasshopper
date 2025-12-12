@@ -41,6 +41,8 @@ from volttron.platform.agent import utils
 from volttron.platform.messaging.health import STATUS_BAD, STATUS_GOOD
 from volttron.platform.vip.agent import Agent, Core
 
+from volttron.platform.jsonrpc import RemoteError
+
 from .api import (
     DEVICE_STATE_CONFIG,
     process_compare_rdf_queue,
@@ -286,8 +288,18 @@ class Grasshopper(Agent):
                     self.vendor_info = VendorInfo(vendorid)
                     self.vendor_info.register_object_class(56, NetworkPortObject)
 
-            except ValueError as e:
-                _log.error("ERROR PROCESSING CONFIGURATION: %s", e)
+            except ValueError as exc:
+                _log.error("ValueError: ERROR PROCESSING CONFIGURATION: %s", exc)
+                return
+            except RemoteError as exc:
+                _log.error("RemoteError: ERROR PROCESSING CONFIGURATION: %s", exc)
+                return
+            except RuntimeError as exc:
+                _log.error("RuntimeError: ERROR PROCESSING CONFIGURATION: %s", exc)
+                return
+            except Exception as exc:  # pylint: disable=broad-except
+                exception_type_name = type(exc).__name__
+                _log.error("UNEXPECTED ERROR PROCESSING CONFIGURATION: %s %s", exception_type_name, exc)
                 return
 
             if self.bacnet_analysis is not None:
@@ -307,6 +319,7 @@ class Grasshopper(Agent):
                 )
 
         _log.debug("Config completed")
+        self.post_configure()
 
     def _grequests_exception_handler(self, request: Any, exception: Exception) -> None:
         """
@@ -780,6 +793,19 @@ class Grasshopper(Agent):
         # self.vip.pubsub.publish('pubsub', "devices/camera/topic", message="HI!")
         _log.debug("in onstart")
 
+    def post_configure(self) -> None:
+        """
+        Perform post-configuration setup after agent configuration is complete.
+
+        This method is called automatically at the end of configure() to initialize
+        the agent's data directory structure and device configuration file. It:
+        - Sets up the agent data directory path
+        - Creates the device configuration file if it doesn't exist
+        - Creates required subdirectories (ttl, network_config, compare)
+
+        Returns:
+            None
+        """
         # Set up device config
         _log.info("Setting up Device Config")
 
