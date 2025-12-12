@@ -2,8 +2,8 @@
   <div class="network-page">
     <div class="network-wrapper">
       <!-- search -->
-      <v-progress-circular v-if="store.loading" indeterminate style="margin: 20px"></v-progress-circular>
-      <div v-if="loaded" class="search-icon-container">
+      <v-progress-circular v-if="store.loading" indeterminate class="load-indicator"></v-progress-circular>
+      <div v-if="loaded && !emptyGraph" class="search-icon-container">
         <div class="zoom">
           <v-btn
             @click="zoom('out')"
@@ -28,11 +28,11 @@
             <v-icon>mdi-plus</v-icon>
           </v-btn>
         </div>
-        <div style="display: flex; gap: 20px">
+        <div class="search-icon">
           <v-btn
             @click="
-              showSearch = true;
-              showEdgeMenu = false;
+              store.setSearchMenu(true);
+              store.setEdgeMenu(false);
             "
             variant="plain"
             id="no-background-hover"
@@ -45,10 +45,11 @@
         </div>
       </div>
       <EdgeCard
-        v-if="showEdgeMenu"
+        v-if="store.edgeMenu"
         :edgeInfo="edgeInfo"
         :edgeOptions="edgeOptions"
-        @close="showEdgeMenu = false"
+        :store="store"
+        ref="edgeCard"
       />
       <!-- physics menu -->
       <ConfigMenu
@@ -61,51 +62,56 @@
       <!-- graph -->
       <div ref="networkContainer" class="network-graph"></div>
       <!-- add note card -->
-      <NoteCard v-if="store.showNoteCard" :store="store" />
+      <!-- <NoteCard v-if="store.showNoteCard" :store="store" /> -->
       <!-- node info -->
       <NodeCard
-        v-if="cardToggled"
+        v-if="store.nodeCard"
         :altCard="altCard"
         :selectedNodeType="selectedNodeType"
         :cardInfo="cardInfo"
         :altInfo="altInfo"
         :showHideText="showHideText"
         :store="store"
-        @closeCard="cardToggled = false"
         @toggleHideSelectedNode="toggleHideSelectedNode()"
+        ref="nodeCard"
       />
       <!-- search card -->
       <SearchCard
-        v-if="showSearch"
+        v-if="store.searchMenu"
         :nodes="nodes"
-        @closeSearch="showSearch = false"
+        :store="store"
         @selectNode="selectNode($event)"
+        ref="searchCard"
       />
       <!-- hidden items menu -->
       <HiddenItemsMenu
-        v-if="showHiddenMenu"
+        v-if="store.hiddenMenu"
         :hiddenSubnetIds="hiddenSubnetIds"
         :hiddenDeviceIds="hiddenDeviceIds"
         :hiddenNetworkIds="hiddenNetworkIds"
         :hiddenRouterIds="hiddenRouterIds"
         :hiddenBbmdIds="hiddenBbmdIds"
-        @close="showHiddenMenu = false"
+        :store="store"
         @showSet="setToShow"
+        ref="hiddenItemsMenu"
       />
       <!-- control buttons -->
       <div v-if="loaded" class="config-btn">
-        <v-btn
+        <!-- <v-btn
           @click="showConfig = true"
           variant="plain"
           size="small"
           id="settings"
           >Config
-        </v-btn>
+        </v-btn> -->
+        <!-- <v-btn
+          variant="plain"
+          size="small">Issues Found</v-btn> -->
         <v-btn
           v-if="showHiddenMenuButton"
           @click="
-            showHiddenMenu = true;
-            cardToggled = false;
+            store.setHiddenMenu(true);
+            store.setNodeCard(false);
           "
           variant="plain"
           size="small"
@@ -118,12 +124,13 @@
 
 <script>
 import { Network } from 'vis-network'
-import NodeCard from '../components/NodeCard.vue'
-import SearchCard from '../components/SearchCard.vue'
-import HiddenItemsMenu from '../components/HiddenItemsMenu.vue'
-import EdgeCard from '../components/EdgeCard.vue'
-import ConfigMenu from '../components/ConfigMenu.vue'
-import NoteCard from '../components/NoteCard.vue'
+// import { defineAsyncComponent } from 'vue';
+import NodeCard from '@/components/NodeCard.vue'
+import SearchCard from '@/components/SearchCard.vue'
+import HiddenItemsMenu from '@/components/HiddenItemsMenu.vue'
+import EdgeCard from '@/components/EdgeCard.vue'
+import ConfigMenu from '@/components/ConfigMenu.vue'
+// import NoteCard from '@/components/NoteCard.vue'
 
 import routerSvg from '@/assets/router.svg'
 import networkSvg from '@/assets/network.svg'
@@ -131,7 +138,7 @@ import deviceSvg from '@/assets/device.svg'
 import bbmdOnSvg from '@/assets/bbmd-on.svg'
 import bbmdOffSvg from '@/assets/bbmd-off.svg'
 import subnetSvg from '@/assets/lan.svg'
-import grasshopperSvg from '@/assets/grasshopper icon.svg'
+import sentinelSvg from '@/assets/sentinel-logomark.svg'
 import routerAddSvg from '@/assets/router-add.svg'
 import routerSubSvg from '@/assets/router-sub.svg'
 import networkAddSvg from '@/assets/network-add.svg'
@@ -153,7 +160,7 @@ export default {
     HiddenItemsMenu,
     EdgeCard,
     ConfigMenu,
-    NoteCard,
+    // NoteCard,
   },
   mounted() {
     this.generate()
@@ -212,6 +219,9 @@ export default {
         })) || []
       )
     },
+    emptyGraph() {
+      return this.nodes.length === 0 && this.edges.length === 0
+    }
   },
   data() {
     return {
@@ -233,8 +243,7 @@ export default {
       altInfo: null,
       altCard: false,
       showCard: false,
-      showSearch: false,
-      cardToggled: false,
+      // cardToggled: false,
       nodeSearch: '',
       searchResults: [],
       networkHidden: false,
@@ -252,8 +261,6 @@ export default {
       filterEdgeLengths: {},
       hiddenTabs: null,
       loading: false,
-      showHiddenMenu: false,
-      showEdgeMenu: false,
 
       loaded: false,
 
@@ -375,6 +382,7 @@ export default {
         this.hiddenNetworkIds,
         'network',
       )
+      this.$refs.edgeCard?.closeMenu()
     },
     hideEverythingConnectedToRouter(edge) {
       if (!this.selectedEdge) return
@@ -387,6 +395,7 @@ export default {
         this.hiddenRouterIds,
         'router',
       )
+      this.$refs.edgeCard?.closeMenu()
     },
     hideEdgeAndDevice() {
       if (!this.selectedEdge) return
@@ -397,6 +406,7 @@ export default {
       this.selectedNode = edgeData.from
 
       this.hideDevice()
+      this.$refs.edgeCard?.closeMenu()
     },
     hideNetworkAndEdgeToRouter(edge) {
       if (!this.selectedEdge) return
@@ -409,6 +419,7 @@ export default {
         this.hiddenNetworkIds,
         'network',
       )
+      this.$refs.edgeCard?.closeMenu()
     },
     hideEdgeAndSubnet(edge) {
       if (!this.selectedEdge) return
@@ -421,6 +432,7 @@ export default {
         this.hiddenSubnetIds,
         'subnet',
       )
+      this.$refs.edgeCard?.closeMenu()
     },
     hideEdgeAndBbmd(edge) {
       if (!this.selectedEdge) return
@@ -433,6 +445,7 @@ export default {
         this.hiddenBbmdIds,
         null,
       )
+      this.$refs.edgeCard?.closeMenu()
     },
     hideSet(setVisibility, nodeId, hiddenIds, setType) {
       if (!nodeId) return
@@ -728,6 +741,7 @@ export default {
             label: label.replace(prefix, ''),
             font: { align: 'left', color: 'white', background: 'none' },
             mass: config.mass,
+            size: config.size || 25,
           }
         }
       }
@@ -748,8 +762,9 @@ export default {
           BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg, mass: 2 },
         },
         'bacnet://Grasshopper': {
-          image: grasshopperSvg,
+          image: sentinelSvg,
           mass: 5,
+          size: 50,
         },
         'bacnet://subnet/': { image: subnetSvg, mass: 2 },
       }
@@ -766,7 +781,7 @@ export default {
           BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg, mass: 4 },
         },
         'bacnet://Grasshopper': {
-          image: grasshopperSvg,
+          image: sentinelSvg,
           mass: 5,
         },
         'bacnet://subnet/': { image: subnetSubSvg, mass: 2 },
@@ -784,7 +799,7 @@ export default {
           BBMD: { image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg, mass: 4 },
         },
         'bacnet://Grasshopper': {
-          image: grasshopperSvg,
+          image: sentinelSvg,
           mass: 5,
         },
         'bacnet://subnet/': { image: subnetAddSvg, mass: 2 },
@@ -1001,7 +1016,17 @@ export default {
       return null
     },
     generate() {
-      this.store.setLoading(true)
+      if (this.store.currentGraph) {
+        this.store.setLoading(true)
+      }
+
+      if (this.store.fileName && this.emptyGraph) {
+        this.store.setLoading(false)
+        this.loaded = true
+        this.store.setGlobalError(true, `Graph <strong>${this.store.fileName}</strong> is empty.`, 'warning', 'Warning')
+        return
+      }
+
       const container = this.$refs.networkContainer
       const configContainer = this.$refs.configMenu.$refs.config
 
@@ -1089,6 +1114,7 @@ export default {
           dragNodes: true,
           hideEdgesOnDrag: false,
           hideNodesOnDrag: false,
+          hover: true,
         },
         physics: this.store.physicsConfig,
         layout: {
@@ -1104,6 +1130,19 @@ export default {
         this.loaded = true
         this.store.setLoading(false)
       })
+
+      // eslint-disable-next-line no-unused-vars
+      this.network.on('hoverNode', ({ node }) => {
+        this.$refs.networkContainer.style.cursor = 'pointer';
+
+        // if (node && !node.includes('bacnet://subnet/') && !node.includes('bacnet://router/') && !node.includes('bacnet://Grasshopper') && !node.includes('bacnet://network/')) {
+        //   this.store.runRouteWithCheck(() => this.store.getDeviceInfo(node.split('bacnet://')[1]));
+        // }
+      });
+
+      this.network.on('blurNode', () => {
+        this.$refs.networkContainer.style.cursor = 'default';
+      });
 
       this.network.on('click', params => {
         if (!params.nodes.length) {
@@ -1122,8 +1161,7 @@ export default {
           this.store.setShowNoteCard(false)
 
           if (clickedNode) {
-            // console.log(clickedNode)
-
+            // console.log(clickedNode.data)
             // const cleanedTitle = clickedNode.id;
             const nodeType = clickedNode.data.type
             const nodeLabel = clickedNode.data.label
@@ -1133,12 +1171,13 @@ export default {
             )
 
             this.selectedNodeType = null
-
+            this.store.incDeviceKey()
+            
             if (nodeType == 'BBMD') {
               this.cardInfo = this.formatData(clickedNode.data)
               this.tableLabel = nodeType
               this.altCard = false
-              this.selectedBbmd = clickedNode.id
+              this.selectedNode = clickedNode.id
               this.selectedNodeType = 'BBMD'
               // show connecting bdt edges
               const matchingEdges = this.bdtEdges.filter(
@@ -1153,11 +1192,18 @@ export default {
               this.selectedNodeType = nodeType
 
               this.selectedNode = clickedNode.id
-            }
 
-            this.showHiddenMenu = false
-            this.cardToggled = true
-            this.showEdgeMenu = false
+              // if (nodeType == 'Device' || nodeType == 'BBMD') {
+              //   // fetch device info
+              //   this.store.setDeviceTimeline(true)
+              //   this.store.setDeviceInfo()
+              // } else {
+              //   this.store.setDeviceTimeline(false)
+              // }
+            }
+            this.$refs.hiddenItemsMenu?.closeMenu()
+            this.store.setNodeCard(true)
+            this.$refs.edgeCard?.closeMenu()
           }
         }
 
@@ -1254,7 +1300,42 @@ export default {
                     this.hideEverythingConnectedToRouter(clickedEdge.from),
                 },
               ]
-            } else if (this.edgeInfo.type === 'device-on-network') {
+            } 
+            // else if (this.edgeInfo.type === 'device-on-network') {
+            //   // populate this.edgeOptions based on edge to and from node names
+            //   const toKey = Object.keys(deviceTo).find(prefix =>
+            //     this.edgeInfo.to.startsWith(prefix),
+            //   )
+            //   const fromKey = Object.keys(deviceFrom).find(prefix =>
+            //     this.edgeInfo.from.startsWith(prefix),
+            //   )
+
+            //   this.edgeOptions = []
+
+            //   // match prefix in deviceTo
+            //   if (toKey) {
+            //     if (deviceTo[toKey].title) {
+            //       this.edgeOptions.push({
+            //         title: deviceTo[toKey].title,
+            //         action: deviceTo[toKey].action,
+            //       })
+            //     }
+            //   }
+            //   // match prefix in deviceFrom
+            //   if (fromKey) {
+            //     if (deviceFrom[fromKey].title) {
+            //       this.edgeOptions.push({
+            //         title: deviceFrom[fromKey].title,
+            //         action: deviceFrom[fromKey].action,
+            //       })
+            //     }
+            //   }
+            // } 
+            else {
+              // Default options
+              // this.edgeOptions = [
+              //   { title: 'Hide Edge', action: () => this.hideEdge() },
+              // ]
               // populate this.edgeOptions based on edge to and from node names
               const toKey = Object.keys(deviceTo).find(prefix =>
                 this.edgeInfo.to.startsWith(prefix),
@@ -1283,15 +1364,10 @@ export default {
                   })
                 }
               }
-            } else {
-              // Default options
-              this.edgeOptions = [
-                { title: 'Hide Edge', action: () => this.hideEdge() },
-              ]
             }
-            this.showEdgeMenu = true
-            this.cardToggled = false
-            this.showSearch = false
+            this.store.setEdgeMenu(true)
+            this.$refs.nodeCard?.closeCard()
+            this.$refs.searchCard?.closeSearch()
           }
         }
       })
@@ -1413,6 +1489,10 @@ export default {
   z-index: 998;
   justify-content: space-between;
 }
+.search-icon {
+  display: flex;
+  gap: 20px;
+}
 .zoom {
   display: flex;
   gap: 10px;
@@ -1465,5 +1545,9 @@ export default {
   color: #cdcdcd;
   opacity: 30%;
   margin: 8px 0px;
+}
+.load-indicator {
+  position: absolute;
+  margin: 20px;
 }
 </style>

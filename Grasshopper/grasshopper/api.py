@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Union, cast
 import gevent
 from bacpypes3.rdf.core import BACnetNS
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from pyvis.network import Network
 from rdflib import Graph, Literal, Namespace  # type: ignore
 from rdflib.compare import graph_diff, to_isomorphic
@@ -72,7 +72,19 @@ def get_processing_task(request: Request) -> Any:
     return request.app.state.processing_task_queue
 
 
-def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -> None:
+def get_finished_task_queue(request: Request) -> Any:
+    """Get finished task queue from app state.
+
+    Args:
+        request (Request): The FastAPI request object
+
+    Returns:
+        Queue[Any]: The multiprocessing queue for finished tasks
+    """
+    return request.app.state.finished_task_queue
+
+
+def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue, finished_task_queue: Queue) -> None:
     """Process the compare RDF queue in background.
 
     This function runs as a separate process and continually processes tasks from the queue.
@@ -82,10 +94,12 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -
     3. Computes the difference between the graphs
     4. Creates a combined graph with difference markers
     5. Serializes the combined graph to a new TTL file
+    6. Moves completed task to finished queue
 
     Args:
         task_queue (Queue): Queue containing tasks to be processed
         processing_task_queue (Queue): Queue for tracking tasks currently being processed
+        finished_task_queue (Queue): Queue for tracking completed tasks
 
     Returns:
         None: This function runs indefinitely until the process is terminated
@@ -155,8 +169,10 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue) -
             combined_filepath = os.path.join(compare_folder_path, combined_filename)
             combined_graph.serialize(destination=combined_filepath, format="ttl")
 
-            # Mark task as complete
-            processing_task_queue.get()
+            # Mark task as complete and move to finished queue
+            completed_task = processing_task_queue.get()
+            completed_task["file_name"] = combined_filename
+            finished_task_queue.put(completed_task)
         except Exception as e:
             print(f"Error processing task: {e}")
 
@@ -502,6 +518,107 @@ async def upload_ttl_file(request: Request, file: UploadFile = File(...)):
         )
 
 
+@api_router.post(
+    "/ttl_compare",
+    status_code=status.HTTP_201_CREATED,
+    response_model=Union[FileUploadResponse, ErrorResponse],
+)
+async def upload_ttl_compare_file(request: Request, file: UploadFile = File(...)):
+    """
+    Upload a TTL comparison file to the agent data directory for processing.
+
+    This endpoint accepts TTL comparison files via multipart/form-data upload and stores them
+    in the agent's compare directory for subsequent visualization and analysis.
+    Only files with `.ttl` extension are accepted.
+
+    **HTTP Method:** POST
+    **URL Path:** `/operations/ttl_compare`
+
+    **Request Headers:**
+    - `Content-Type: multipart/form-data` (required for file upload)
+    - `Accept: application/json` (default) - Returns JSON response
+
+    **Request Body:**
+    - Form data with a file field containing the TTL comparison file
+    - File must have `.ttl` extension
+    - Maximum file size depends on server configuration
+
+    **Response:**
+    - **201 Created**: File uploaded successfully
+      - Content-Type: `application/json`
+      - Body: `{"message": "File {filename} uploaded successfully", "file_path": "/path/to/file"}`
+    - **400 Bad Request**: Invalid file or missing file
+      - Content-Type: `application/json`
+      - Body: `{"error": "Error description"}`
+
+    **Example Request:**
+    ```
+    POST /operations/ttl_compare
+    Content-Type: multipart/form-data
+    Accept: application/json
+
+    [File data in form field 'file']
+    ```
+
+    **Example Response (Success):**
+    ```json
+    {
+        "message": "File baseline_vs_current.ttl uploaded successfully",
+        "file_path": "/agent/data/compare/baseline_vs_current.ttl"
+    }
+    ```
+
+    **Example Response (Error):**
+    ```json
+    {
+        "error": "File type not allowed"
+    }
+    ```
+    """
+    ALLOWED_EXTENSIONS = {"ttl"}
+
+    def allowed_file(filename):
+        return (
+            "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+        )
+
+    agent_data_path = get_agent_data_path(request)
+    compare_dir = os.path.join(agent_data_path, "compare")
+
+    # Ensure compare directory exists
+    os.makedirs(compare_dir, exist_ok=True)
+
+    if not file:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "No file part in the request"},
+        )
+
+    if file.filename == "" or not file.filename:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "No selected file"},
+        )
+
+    if file and allowed_file(file.filename):
+        file_path = os.path.join(compare_dir, file.filename)
+
+        # Save the file
+        contents = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        return {
+            "message": f"File {file.filename} uploaded successfully",
+            "file_path": file_path,
+        }
+    else:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"error": "File type not allowed"},
+        )
+
+
 @api_router.get("/ttl_file/{ttl_filename}")
 async def download_ttl_file(ttl_filename: str, request: Request):
     """
@@ -797,15 +914,16 @@ async def add_ttl_compare_queue(
             "id": "123e4567-e89b-12d3-a456-426614174000",
             "ttl_1": "network_scan_v1.ttl",
             "ttl_2": "network_scan_v2.ttl",
+            "file_name": "network_scan_v1_vs_network_scan_v2.ttl",
             "agent_data_path": "/agent/data"
         }
     }
     ```
     """
-    ttl_filename_1 = compare_files.ttl_1
-    ttl_filename_2 = compare_files.ttl_2
-    ttl_filepath_1 = get_file_path(ttl_filename_1, request=request)
-    ttl_filepath_2 = get_file_path(ttl_filename_2, request=request)
+    ttl_1 = compare_files.ttl_1
+    ttl_2 = compare_files.ttl_2
+    ttl_filepath_1 = get_file_path(ttl_1, request=request)
+    ttl_filepath_2 = get_file_path(ttl_2, request=request)
 
     if not ttl_filepath_1 or not ttl_filepath_2:
         raise HTTPException(
@@ -820,9 +938,9 @@ async def add_ttl_compare_queue(
 
     for task in queue_contents:
         if (
-            task.get("ttl_1") == ttl_filename_1 and task.get("ttl_2") == ttl_filename_2
+            task.get("ttl_1") == ttl_1 and task.get("ttl_2") == ttl_2
         ) or (
-            task.get("ttl_1") == ttl_filename_2 and task.get("ttl_2") == ttl_filename_1
+            task.get("ttl_1") == ttl_2 and task.get("ttl_2") == ttl_1
         ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -830,10 +948,12 @@ async def add_ttl_compare_queue(
             )
 
     # enqueue a new task
+    file_name = f"{ttl_1.replace('.ttl', '')}_vs_{ttl_2.replace('.ttl', '')}.ttl"
     task = {
         "id": str(uuid.uuid4()),
-        "ttl_1": ttl_filename_1,
-        "ttl_2": ttl_filename_2,
+        "ttl_1": ttl_1,
+        "ttl_2": ttl_2,
+        "file_name": file_name,
         "agent_data_path": get_agent_data_path(request),
     }
     queue.put(task)
@@ -842,14 +962,16 @@ async def add_ttl_compare_queue(
 
 @api_router.get("/ttl_compare_queue")
 async def get_ttl_compare_queue(
+    request: Request,
     queue=Depends(get_task_queue),
     processing=Depends(get_processing_task),
+    finished=Depends(get_finished_task_queue),
 ):
     """
     Get the current status of the TTL comparison queue.
 
     This endpoint returns information about the current comparison task being
-    processed and all queued tasks waiting for processing.
+    processed, all queued tasks waiting for processing, and completed tasks.
 
     **HTTP Method:** GET
     **URL Path:** `/operations/ttl_compare_queue`
@@ -860,7 +982,7 @@ async def get_ttl_compare_queue(
     **Response:**
     - **200 OK**: Queue status retrieved successfully
       - Content-Type: `application/json`
-      - Body: Object containing current processing task and queued tasks
+      - Body: Object containing current processing task, queued tasks, and finished tasks
 
     **Response Schema:**
     ```json
@@ -869,6 +991,7 @@ async def get_ttl_compare_queue(
             "id": "task_uuid",
             "ttl_1": "file1.ttl",
             "ttl_2": "file2.ttl",
+            "file_name": "file1_vs_file2.ttl",
             "agent_data_path": "/path/to/data"
         } | null,
         "queue": [
@@ -876,6 +999,16 @@ async def get_ttl_compare_queue(
                 "id": "task_uuid",
                 "ttl_1": "file3.ttl",
                 "ttl_2": "file4.ttl",
+                "file_name": "file3_vs_file4.ttl",
+                "agent_data_path": "/path/to/data"
+            }
+        ],
+        "finished": [
+            {
+                "id": "task_uuid",
+                "ttl_1": "file5.ttl",
+                "ttl_2": "file6.ttl",
+                "file_name": "file5_vs_file6.ttl",
                 "agent_data_path": "/path/to/data"
             }
         ]
@@ -895,6 +1028,7 @@ async def get_ttl_compare_queue(
             "id": "123e4567-e89b-12d3-a456-426614174000",
             "ttl_1": "network_v1.ttl",
             "ttl_2": "network_v2.ttl",
+            "file_name": "network_v1_vs_network_v2.ttl",
             "agent_data_path": "/agent/data"
         },
         "queue": [
@@ -902,6 +1036,16 @@ async def get_ttl_compare_queue(
                 "id": "987fcdeb-51a2-43d7-b123-987654321000",
                 "ttl_1": "scan_a.ttl",
                 "ttl_2": "scan_b.ttl",
+                "file_name": "scan_a_vs_scan_b.ttl",
+                "agent_data_path": "/agent/data"
+            }
+        ],
+        "finished": [
+            {
+                "id": "456e7890-e12b-34c5-d678-901234567890",
+                "ttl_1": "baseline.ttl",
+                "ttl_2": "current.ttl",
+                "file_name": "baseline_vs_current.ttl",
                 "agent_data_path": "/agent/data"
             }
         ]
@@ -914,9 +1058,11 @@ async def get_ttl_compare_queue(
     else:
         current_task = None
     queued_tasks = get_list_from_queue(queue)
+    finished_tasks = get_list_from_queue(finished)
     return {
         "processing_task": current_task,
         "queue": queued_tasks,
+        "finished": finished_tasks,
     }
 
 
@@ -926,11 +1072,12 @@ async def delete_ttl_compare_queue_task(
     request: Request,
     queue=Depends(get_task_queue),
     processing=Depends(get_processing_task),
+    finished=Depends(get_finished_task_queue),
 ):
     """
-    Remove a queued TTL comparison task by its ID.
+    Remove a queued or finished TTL comparison task by its ID.
 
-    This endpoint allows cancellation of a queued comparison task. Tasks that are
+    This endpoint allows deletion of a queued comparison task or a finished task. Tasks that are
     currently being processed cannot be cancelled and will return an error.
 
     **HTTP Method:** DELETE
@@ -1000,11 +1147,22 @@ async def delete_ttl_compare_queue_task(
     while not queue.empty():
         all_tasks.append(queue.get())
 
-    # filter out the one to delete
-    new_tasks = [t for t in all_tasks if t.get("id") != task_id]
+    # drain the finished queue into a temp list
+    all_finished_tasks = []
+    while not finished.empty():
+        all_finished_tasks.append(finished.get())
 
-    if len(new_tasks) == len(all_tasks):
-        # nothing was removed
+    # filter out the one to delete from both queues
+    new_tasks = [t for t in all_tasks if t.get("id") != task_id]
+    new_finished_tasks = [t for t in all_finished_tasks if t.get("id") != task_id]
+
+    if len(new_tasks) == len(all_tasks) and len(new_finished_tasks) == len(all_finished_tasks):
+        # nothing was removed from either queue
+        # re-enqueue all tasks
+        for t in all_tasks:
+            queue.put(t)
+        for t in all_finished_tasks:
+            finished.put(t)
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"status": "error", "message": f"Task {task_id} not found"},
@@ -1013,6 +1171,8 @@ async def delete_ttl_compare_queue_task(
     # re-enqueue the survivors
     for t in new_tasks:
         queue.put(t)
+    for t in new_finished_tasks:
+        finished.put(t)
 
     return {"status": "success", "message": f"Task {task_id} removed from the queue"}
 
@@ -1139,11 +1299,17 @@ async def get_ttl_compare(ttl_filename: str, request: Request):
 
 
 @api_router.delete("/ttl_compare/{ttl_filename}", response_model=MessageResponse)
-async def delete_ttl_compare(ttl_filename: str, request: Request):
+async def delete_ttl_compare(
+    ttl_filename: str, 
+    request: Request,
+    finished_task_queue=Depends(get_finished_task_queue)
+):
     """
-    Delete a TTL comparison result file.
+    Delete a TTL comparison result file and remove associated task from finished queue.
 
-    This endpoint permanently removes a comparison TTL file from the server's storage.
+    This endpoint permanently removes a comparison TTL file from the server's storage
+    and also removes the corresponding task from the finished task queue to maintain
+    consistency between the file system and task state.
     Use with caution as this operation cannot be undone.
 
     **HTTP Method:** DELETE
@@ -1183,11 +1349,86 @@ async def delete_ttl_compare(ttl_filename: str, request: Request):
         )
 
     if os.path.exists(ttl_filepath):
+        # Delete the physical file
         os.remove(ttl_filepath)
+        
+        # Remove the associated task from the finished task queue
+        # Get all finished tasks
+        all_finished_tasks = []
+        while not finished_task_queue.empty():
+            all_finished_tasks.append(finished_task_queue.get())
+        
+        # Filter out the task with the matching file_name
+        filtered_tasks = [
+            task for task in all_finished_tasks 
+            if task.get("file_name") != ttl_filename
+        ]
+        
+        # Put the remaining tasks back in the queue
+        for task in filtered_tasks:
+            finished_task_queue.put(task)
+            
         return {"message": f"File {ttl_filename} deleted successfully"}
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        )
+
+
+@api_router.get("/ttl_compare_file/{ttl_filename}")
+async def download_ttl_compare_file(ttl_filename: str, request: Request):
+    """
+    Download a specific TTL comparison result file.
+
+    This endpoint allows retrieval of TTL comparison result files in their raw format 
+    for external processing, backup, or sharing. The file is returned as a binary 
+    download with appropriate headers for file download.
+
+    **HTTP Method:** GET
+    **URL Path:** `/operations/ttl_compare_file/{ttl_filename}`
+
+    **Path Parameters:**
+    - `ttl_filename` (string): Name of the TTL comparison file to download (including .ttl extension)
+
+    **Request Headers:**
+    - `Accept: */*` or `Accept: application/octet-stream` (recommended for file download)
+    - `Accept: text/turtle` - Returns raw TTL content with proper MIME type
+
+    **Response:**
+    - **200 OK**: File download successful
+      - Content-Type: `application/octet-stream` (for download) or `text/turtle` (for raw content)
+      - Content-Disposition: `attachment; filename="{ttl_filename}"`
+      - Body: Raw TTL file content
+    - **404 Not Found**: File does not exist
+      - Content-Type: `application/json`
+      - Body: `{"detail": "File not found"}`
+    - **500 Internal Server Error**: Server error during file access
+
+    **Example Request:**
+    ```
+    GET /operations/ttl_compare_file/network_v1_vs_network_v2.ttl
+    Accept: application/octet-stream
+    ```
+
+    **Example Response Headers:**
+    ```
+    HTTP/1.1 200 OK
+    Content-Type: application/octet-stream
+    Content-Disposition: attachment; filename="network_v1_vs_network_v2.ttl"
+    Content-Length: 12345
+    ```
+    """
+    ttl_filepath = get_file_path(ttl_filename, request, folder="compare")
+    if not ttl_filepath:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        )
+
+    try:
+        return FileResponse(ttl_filepath, filename=ttl_filename)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
 
 
@@ -1557,9 +1798,14 @@ async def export_csv(ttl_filename: str, request: Request):
             )
 
     # Return as a downloadable CSV file
-    response = StreamingResponse(content=output_str.getvalue())
-    response.headers["Content-Disposition"] = f"attachment; filename={ttl_filename}.csv"
-    response.headers["Content-Type"] = "text/csv"
+    csv_content = output_str.getvalue()
+    response = Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={ttl_filename}.csv"
+        }
+    )
 
     return response
 
