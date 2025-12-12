@@ -1,0 +1,129 @@
+name: Build and Release
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '23'
+          cache: 'npm'
+          cache-dependency-path: 'grasshopper-frontend/package-lock.json'
+      
+      - name: Install frontend dependencies
+        working-directory: grasshopper-frontend
+        run: npm ci
+      
+      - name: Build frontend
+        working-directory: grasshopper-frontend
+        run: npm run build
+      
+      - name: Copy dist folder to agent
+        run: |
+          mkdir -p Grasshopper/grasshopper/dist
+          cp -r grasshopper-frontend/dist/* Grasshopper/grasshopper/dist/
+      
+      - name: Install Python dependencies
+        run: |
+          # Install directly from Grasshopper directory which has setup.py
+          cd Grasshopper
+          uv venv
+          uv sync
+      
+      - name: Build Python package
+        working-directory: Grasshopper
+        run: uv build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: .
+          if-no-files-found: error
+  
+  release:
+    needs: build
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      
+      - name: Get version
+        id: get_version
+        run: |
+          if [[ ${{ github.ref }} == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+            echo "PRERELEASE=false" >> $GITHUB_ENV
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          elif [[ ${{ github.ref }} == refs/heads/main ]]; then
+            PYTHON_VERSION=$(grep -o '__version__ = "[^"]*' Grasshopper/grasshopper/version.py | cut -d'"' -f2)
+            echo "VERSION=${PYTHON_VERSION}" >> $GITHUB_ENV
+            echo "PRERELEASE=false" >> $GITHUB_ENV
+            echo "TAG_NAME=v${PYTHON_VERSION}" >> $GITHUB_ENV
+          elif [[ ${{ github.ref }} == refs/heads/develop ]]; then
+            PYTHON_VERSION=$(grep -o '__version__ = "[^"]*' Grasshopper/grasshopper/version.py | cut -d'"' -f2)
+            BETA_VERSION="${PYTHON_VERSION}-beta.$(date +'%Y%m%d%H%M%S')"
+            echo "VERSION=${BETA_VERSION}" >> $GITHUB_ENV
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+            echo "TAG_NAME=v${BETA_VERSION}" >> $GITHUB_ENV
+          fi
+      
+      - name: Create tag if needed
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "GitHub Actions"
+          git tag -a ${{ env.TAG_NAME }} -m "Release ${{ env.VERSION }}"
+          git push origin ${{ env.TAG_NAME }}
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ${{ env.VERSION }}
+          body: |
+            ${{ github.ref == 'refs/heads/develop' && '## Beta Release' || '## Release' }}
+            
+            ${{ github.ref == 'refs/heads/develop' && 'This is an automated beta release from the develop branch.' || '' }}
+            ${{ github.ref == 'refs/heads/main' && 'This is an automated production release from the main branch.' || '' }}
+            
+            Changes since last release:
+            ${{ github.ref == 'refs/heads/develop' && github.event.before && format('https://github.com/{0}/compare/{1}...{2}', github.repository, github.event.before, github.sha) || '' }}
+            ${{ github.ref == 'refs/heads/main' && github.event.before && format('https://github.com/{0}/compare/{1}...{2}', github.repository, github.event.before, github.sha) || '' }}
+          files: dist/*
+          prerelease: ${{ env.PRERELEASE }}
+          draft: false
+          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}

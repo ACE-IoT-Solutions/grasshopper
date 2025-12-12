@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint . --fix",
     "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
     "postbuild": "cp -r dist ../Grasshopper/grasshopper"
   },
   "dependencies": {

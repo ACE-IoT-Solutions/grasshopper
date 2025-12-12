@@ -1,9 +1,6 @@
-from flask import Blueprint
-from flask_restx import Api
+"""
+This file is kept for backward compatibility.
+All functionality has been moved to FastAPI implementation.
+"""
 
-blueprint = Blueprint("api", __name__)
-api = Api(
-    app=blueprint,
-    title="Grasshopper API",
-    description="Manage the detection of devices in Bacnet"
-)
+# This file is retained only for compatibility with existing imports

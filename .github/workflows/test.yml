@@ -1,0 +1,57 @@
+name: Python Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.11, 3.12]
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        # cache: 'pip'
+    
+    - name: Setup uv
+      uses: astral-sh/setup-uv@v4
+      with:
+        version: 0.1.13
+
+    - name: Create virtual environment with uv
+      run: |
+        cd Grasshopper
+        uv venv
+    
+    - name: Install dependencies
+      run: |
+        cd Grasshopper
+        uv pip install -e .
+        uv pip install -r requirements.txt
+        uv pip install -r requirements-test.txt
+        uv pip install pytest pytest-cov httpx
+    
+    - name: Run tests
+      run: |
+        source Grasshopper/.venv/bin/activate
+        pytest tests/api/ -v
+    
+    - name: Generate coverage report
+      run: |
+        source Grasshopper/.venv/bin/activate
+        pytest tests/api/ --cov=Grasshopper/grasshopper --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false

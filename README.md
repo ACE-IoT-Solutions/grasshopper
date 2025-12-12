@@ -2,6 +2,9 @@
 
 ![Grasshopper Logo](https://github.com/ACE-IoT-Solutions/grasshopper/blob/main/grasshopper.svg?raw=true)
 
+[![Python Tests](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/test.yml/badge.svg)](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/test.yml)
+[![Python Linting](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/lint.yml/badge.svg)](https://github.com/ACE-IoT-Solutions/grasshopper/actions/workflows/lint.yml)
+
 ## Description
 
 Grasshopper is an open-source project designed to tackle the complex world of smart building networks. It provides a comprehensive view of building automation systems (BAS) network to help facility managers and integrators understand, manage, and optimize their networks.
@@ -83,6 +86,43 @@ Grasshopper is an open-source project designed to tackle the complex world of sm
 
 ---
 
+## Installation / Setup
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/your-username/grasshopper.git
+    cd grasshopper
+    ```
+
+2.  **Create and activate a virtual environment:**
+    You can use `uv` or Python's built-in `venv`.
+
+    *   Using `uv`:
+        ```bash
+        # Create a virtual environment named .venv
+        uv venv
+        # Activate it (example for bash/zsh)
+        source .venv/bin/activate
+        # On Windows cmd: .venv\Scripts\activate.bat
+        # On Windows PowerShell: .venv\Scripts\Activate.ps1
+        ```
+    *   Using `venv`:
+        ```bash
+        python -m venv .venv
+        # Activate it (example for bash/zsh)
+        source .venv/bin/activate
+        # On Windows cmd: .venv\Scripts\activate.bat
+        # On Windows PowerShell: .venv\Scripts\Activate.ps1
+        ```
+
+3.  **Install dependencies using uv:**
+    This command installs both main and development dependencies based on `pyproject.toml`.
+    ```bash
+    uv pip sync pyproject.toml --extras dev
+    ```
+
+---
+
 ## Configuration
 
 A sample configuration file is provided in the repository. The config file is a JSON file with the following fields:
@@ -91,7 +131,11 @@ A sample configuration file is provided in the repository. The config file is a 
 - **`low_limit`**: Lower limit for a BACnet `who_is` scan.
 - **`high_limit`**: Upper limit for a BACnet `who_is` scan.
 - **`batch_broadcast_size`**: Batch size for a BACnet `who_is` scan.
-- **`graph_store_limit`**: Limit on how many network graph files to store.
+- **`ttl_post_to_cloud`**: Dictionary settings for ttl post request, which includes:
+  - **`enabled`**: Enables ttl upload to http endpoing.
+  - **`url`**: url to upload ttl file to.
+  - **`jwt`**: jwt for bearer authentication
+  - **`upload_interval_secs`**: Upload interval
 - **`bacpypes_settings`**: Dictionary settings for the simulated BACnet app, which includes:
   - **`name`**: Name of the BACnet app.
   - **`instance`**: BACnet app instance ID.
@@ -102,6 +146,7 @@ A sample configuration file is provided in the repository. The config file is a 
   - **`ttl`**: Foreign device subscription time-to-live.
   - **`bbmd`**: BBMD address if registering the app as a BBMD.
 - **`webapp_settings`**: Dictionary settings for the webapp, which includes:
+  - **`enabled`**: Enables web app.
   - **`host`**: IP host for the web app.
   - **`port`**: Port for web app.
   - **`certfile`**: Cert file route.
@@ -116,6 +161,12 @@ A sample configuration file is provided in the repository. The config file is a 
     "high_limit": 4194303,
     "batch_broadcast_size": 10000,
     "graph_store_limit": 30,
+    "ttl_post_to_cloud": {
+        "enabled": false,
+        "url": "localhost",
+        "jwt": null,
+        "upload_interval_secs": 86400
+    },
     "bacpypes_settings": {
         "name": "Excelsior",
         "instance": 999,
@@ -127,9 +178,11 @@ A sample configuration file is provided in the repository. The config file is a 
         "bbmd": null
     },
     "webapp_settings": {
+      "enabled": false,
       "host": "0.0.0.0",
       "port": 5000,
       "certfile": null,
       "keyfile": null
     }
 }
+```
