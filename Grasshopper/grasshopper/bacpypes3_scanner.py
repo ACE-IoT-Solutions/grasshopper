@@ -38,6 +38,7 @@ from .rdf_components import (
     BBMDNode,
     BBMDTypeHandler,
     DeviceNode,
+    DeviceRouterNode,
     DeviceTypeHandler,
     NetworkComponent,
     NetworkNode,
@@ -253,6 +254,9 @@ class bacpypes3_scanner:
             ipaddress.IPv4Address, list[ipaddress.IPv4Address]
         ] = {}
         self.scanned_bbmds_fdt: dict[Address, Any] = {}
+        self.scanned_device_ips: dict[
+            Union[ipaddress.IPv4Address, ipaddress.IPv6Address], BACnetNode
+        ] = {}
 
     async def set_application(self, graph: Graph) -> Application:
         """
@@ -383,20 +387,62 @@ class bacpypes3_scanner:
                     f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}"
                 )
                 router_pdu_source = i_am_router_to_network.pduSource
-                router_iri = BACnetURI["//router/" + str(router_pdu_source)]
-                router_node = RouterNode(graph, router_iri)
+                ip = ipaddress.ip_address(router_pdu_source)
+                
+                # Check if we already have a device at this IP address
+                existing_device = self.scanned_device_ips.get(ip)
+                
+                if existing_device and isinstance(existing_device, DeviceNode):
+                    # Convert existing device to a device+router by creating a new DeviceRouterNode
+                    _log.debug(f"Merging device at {ip} into router")
+                    
+                    # Use the existing device's IRI (which is based on device instance, not IP)
+                    device_iri = existing_device.node_iri
+                    
+                    # Extract device instance before removing triples from graph
+                    device_instance = graph.value(subject=device_iri, predicate=BACnetNS["device-instance"])
+                    
+                    # Store all existing properties from the old device node
+                    stored_properties = []
+                    for predicate, obj in graph.predicate_objects(device_iri):
+                        # Skip the type predicates since the new node will set the correct types
+                        if predicate != RDF.type:
+                            stored_properties.append((predicate, obj))
+                    
+                    # Remove the old device triples from the graph
+                    graph.remove((device_iri, None, None))
+                    
+                    # Create a DeviceRouterNode to replace the DeviceNode
+                    router_device_iri = BACnetURI["//router/" + str(device_instance)]
+                    router_node = DeviceRouterNode(graph, router_device_iri)
+                    
+                    # Restore all the stored properties to the new node
+                    for predicate, obj in stored_properties:
+                        router_node.device.add_connection(predicate, obj)
+                    
+                    # Update our tracking
+                    self.scanned_device_ips[ip] = router_node
+                
+                elif existing_device and isinstance(existing_device, (RouterNode, DeviceRouterNode)):
+                    # Already a router or device+router, just use it
+                    router_node = existing_device
+                else:
+                    # Create a standalone router node
+                    router_iri = BACnetURI["//router/" + str(router_pdu_source)]
+                    router_node = RouterNode(graph, router_iri)
+                    self.scanned_device_ips[ip] = router_node
+                
                 for net in i_am_router_to_network.iartnNetworkList:
                     router_node.add_properties(network_id=net)
 
-                ip = ipaddress.ip_address(router_pdu_source)
                 not_in_network = True
                 for subnet in self.subnets:
                     if ip in subnet:
                         not_in_network = False
                         router_node.add_properties(subnet=subnet)
                 if not_in_network:
-                    self.scanner_node.add_properties(device_iri=router_iri)
-
+                    self.scanner_node.add_properties(device_iri=router_node.node_iri)
+                
         _log.debug("get_router_networks Completed")
 
     async def check_if_device_is_bbmd(
@@ -584,6 +630,9 @@ class bacpypes3_scanner:
                     device_subnet = await self.add_subnet_to_device(
                         device, device_address
                     )
+                    
+                    # Track device by IP address for router merging
+                    self.scanned_device_ips[ip] = device
 
                     if isinstance(device, BBMDNode):
                         self.bbmd_in_subnet[device_subnet] = device_iri
