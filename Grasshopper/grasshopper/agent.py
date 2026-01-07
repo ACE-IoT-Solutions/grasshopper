@@ -627,10 +627,12 @@ class Grasshopper(Agent):
 
         q: Queue = Queue()
         processing_task_q: Queue = Queue()
+        finished_task_q: Queue = Queue()
         app.state.task_queue = q
         app.state.processing_task_queue = processing_task_q
+        app.state.finished_task_queue = finished_task_q
 
-        worker = Process(target=process_compare_rdf_queue, args=(q, processing_task_q))
+        worker = Process(target=process_compare_rdf_queue, args=(q, processing_task_q, finished_task_q))
         worker.daemon = True
         worker.start()
         print(f"[serve_app] queue worker PID={worker.pid}")
