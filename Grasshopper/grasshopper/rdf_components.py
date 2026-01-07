@@ -105,6 +105,18 @@ class RouterTypeHandler(BaseTypeHandler):
         device.add_connection(RDF.type, BACnetNS.Router)
 
 
+class DeviceRouterTypeHandler(BaseTypeHandler):
+    """
+    Handles assigning RDF.type for a BACnet device that also functions as a router.
+
+    This type handler assigns both the BACnet Device and Router types to nodes in the RDF graph.
+    This is used when a single physical device serves both functions.
+    """
+
+    def set_type(self, device):
+        device.add_connection(RDF.type, BACnetNS.Router)
+
+
 class SubnetTypeHandler(BaseTypeHandler):
     """
     Handles assigning RDF.type for a Subnet entity.
@@ -326,3 +338,14 @@ class RouterNode(BACnetNode):
             SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
         ]
         super().__init__(graph, device_iri, RouterTypeHandler(), components)
+
+
+class DeviceRouterNode(BACnetNode):
+    """A BACnet device that also functions as a router, combining both device and router properties."""
+
+    def __init__(self, graph, device_iri):
+        components = [
+            NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
+        ]
+        super().__init__(graph, device_iri, DeviceRouterTypeHandler(), components)
