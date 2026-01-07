@@ -156,26 +156,17 @@ export default {
         {
           title: 'Download TTL',
           action: () =>
-            this.store.runRouteWithCheck(() =>
-              this.store.exportTtl(this.store.compareMode, this.store.fileName),
-            ),
+            this.store.exportTtl(this.store.compareMode, this.store.fileName),
         },
         {
           title: 'Download JSON',
           action: () =>
-            this.store.runRouteWithCheck(() =>
-              this.store.exportJson(
-                this.store.compareMode,
-                this.store.fileName,
-              ),
-            ),
+            this.store.exportJson(this.store.compareMode, this.store.fileName),
         },
         {
           title: 'Download CSV',
           action: () =>
-            this.store.runRouteWithCheck(() =>
-              this.store.exportCsv(this.store.compareMode, this.store.fileName),
-            ),
+            this.store.exportCsv(this.store.compareMode, this.store.fileName),
         },
       ]
     },
