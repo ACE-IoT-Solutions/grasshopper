@@ -85,6 +85,8 @@ export default {
         } else {
           this.grasshopperStore.goToGraph(false, this.$route.params.graphName);
         }
+      } else {
+        this.grasshopperStore.setStartMenu(true);
       }
       this.grasshopperStore.setLoading(false);
     }
