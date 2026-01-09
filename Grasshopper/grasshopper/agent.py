@@ -78,7 +78,7 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
     if not config:
         _log.info("Using Agent defaults for starting configuration.")
 
-    scan_interval_secs: int = config.get("scan_interval_secs", 120)
+    scan_interval_secs: int = config.get("scan_interval_secs", 86400)
     low_limit: int = config.get("low_limit", 0)
     high_limit: int = config.get("high_limit", 4194303)
     device_broadcast_full_step_size: int = config.get(
@@ -93,8 +93,7 @@ def grasshopper(config_path: str, **kwargs: Any) -> "Grasshopper":
             "enabled": False,
             "url": "localhost",
             "jwt": None,
-            # "upload_interval_secs": 86400,
-            "upload_interval_secs": 120,
+            "upload_interval_secs": 86400,
         },
     )
     bacpypes_settings: Dict[str, Any] = config.get(
@@ -235,7 +234,7 @@ class Grasshopper(Agent):
 
         if config_name == "config":
             try:
-                self.scan_interval_secs = contents.get("scan_interval_secs", 120)
+                self.scan_interval_secs = contents.get("scan_interval_secs", 86400)
                 self.low_limit = contents.get("low_limit", 0)
                 self.high_limit = contents.get("high_limit", 4194303)
                 self.device_broadcast_full_step_size = contents.get(
