@@ -1,5 +1,5 @@
 {
-    "scan_interval_secs": 86400,
+    "scan_interval_secs": 120,
     "low_limit": 0,
     "high_limit": 4194303,
     "batch_broadcast_size": 10000,
@@ -25,5 +25,10 @@
         "port": 5000,
         "certfile": null,
         "keyfile": null
-    }
+    },
+    "scavenge_enabled": true,
+    "scavenge_margin": 10,
+    "scavenge_max_range": 25,
+    "scavenge_gap_threshold": 5,
+    "scavenge_gap_max_range": null
 }

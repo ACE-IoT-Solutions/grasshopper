@@ -213,6 +213,11 @@ class bacpypes3_scanner:
         device_broadcast_full_step_size: int = 100,
         scan_low_limit: int = 0,
         scan_high_limit: int = 4194303,
+        scavenge_enabled: bool = True,
+        scavenge_margin: int = 10,
+        scavenge_max_range: int = 25,
+        scavenge_gap_threshold: int = 5,
+        scavenge_gap_max_range: int = None,
     ) -> None:
         """
         Initialize the BACpypes3 scanner with the given settings.
@@ -230,6 +235,16 @@ class bacpypes3_scanner:
                 Defaults to 0.
             scan_high_limit (int, optional): Upper limit of device instance numbers to scan.
                 Defaults to 4194303.
+            scavenge_enabled (bool, optional): Enable scavenge scanning for optimization.
+                Defaults to True.
+            scavenge_margin (int, optional): Device IDs before/after each block to scan.
+                Defaults to 10.
+            scavenge_max_range (int, optional): Max device IDs per WhoIs for margin scans.
+                Defaults to 25.
+            scavenge_gap_threshold (int, optional): Gap size to merge contiguous blocks.
+                Defaults to 5.
+            scavenge_gap_max_range (int, optional): Max range for gap scans (None = entire gap).
+                Defaults to None.
         """
         _log.debug("bacpypes3_scanner: init")
         self.bacpypes_settings = bacpypes_settings
@@ -257,6 +272,13 @@ class bacpypes3_scanner:
         self.scanned_device_ips: dict[
             Union[ipaddress.IPv4Address, ipaddress.IPv6Address], BACnetNode
         ] = {}
+        
+        # Scavenge scan configuration
+        self.scavenge_enabled = scavenge_enabled
+        self.scavenge_margin = scavenge_margin
+        self.scavenge_max_range = scavenge_max_range
+        self.scavenge_gap_threshold = scavenge_gap_threshold
+        self.scavenge_gap_max_range = scavenge_gap_max_range
 
     async def set_application(self, graph: Graph) -> Application:
         """
@@ -307,6 +329,43 @@ class bacpypes3_scanner:
                 except:
                     pass
         return device_ips
+
+    def _find_contiguous_blocks(self, device_ids: List[int]) -> List[tuple[int, int]]:
+        """
+        Find contiguous blocks of device IDs, merging small gaps.
+
+        Args:
+            device_ids: List of device IDs to analyze
+
+        Returns:
+            List of (start, end) tuples representing contiguous blocks
+        """
+        if not device_ids:
+            return []
+
+        # Sort device IDs
+        sorted_ids = sorted(device_ids)
+        blocks = []
+        block_start = sorted_ids[0]
+        block_end = sorted_ids[0]
+
+        for device_id in sorted_ids[1:]:
+            # Check if this ID extends the current block or starts a new one
+            gap = device_id - block_end
+
+            if gap <= self.scavenge_gap_threshold:
+                # Small gap or continuous - extend current block
+                block_end = device_id
+            else:
+                # Large gap - save current block and start new one
+                blocks.append((block_start, block_end))
+                block_start = device_id
+                block_end = device_id
+
+        # Add final block
+        blocks.append((block_start, block_end))
+
+        return blocks
 
     async def set_scanner_node(self, graph: Graph):
         """
@@ -688,3 +747,221 @@ class bacpypes3_scanner:
         _log.debug(f"scanned_bbmds_bdt: {self.scanned_bbmds_bdt}")
         _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
         _log.debug("set_subnet_network Completed")
+
+    async def scavenge_scan(self, graph: Graph) -> None:
+        """
+        Perform scavenge scan around previously discovered devices from prev_graph.
+
+        This method uses the previous day's graph to identify device blocks and performs
+        targeted scans around those blocks instead of scanning the entire device ID range.
+
+        Args:
+            graph (Graph): The current RDF graph to populate with discovered devices
+
+        Returns:
+            None
+        """
+        if not self.scavenge_enabled:
+            _log.info("Scavenge scan disabled, skipping")
+            return
+
+        _log.info("Starting scavenge scan using previous graph data")
+        
+        # Extract known device IDs from previous graph
+        prev_device_ids = []
+        for triple in self.prev_graph.triples((None, BACnetNS["device-instance"], None)):
+            try:
+                device_id = int(triple[2])
+                prev_device_ids.append(device_id)
+            except (ValueError, TypeError):
+                continue
+
+        if not prev_device_ids:
+            _log.warning("No previous devices found in graph, falling back to full scan")
+            await self.get_device_and_router(graph)
+            return
+
+        _log.info(f"Found {len(prev_device_ids)} devices in previous graph")
+
+        # Find contiguous blocks of devices
+        blocks = self._find_contiguous_blocks(prev_device_ids)
+        _log.info(f"Identified {len(blocks)} device blocks from previous scan")
+
+        # Set up the application for scanning
+        app = await self.set_application(graph)
+        local_adapter = app.nsap.local_adapter
+        sap = local_adapter.clientPeer
+        assert isinstance(sap, BVLLServiceAccessPoint)
+        ase = BVLLServiceElement()
+        bind(ase, sap)
+        await self.set_scanner_node(graph)
+
+        try:
+            # Generate scavenge ranges
+            scavenge_ranges = []
+
+            # Determine scan boundaries
+            absolute_low = self.low_limit
+            absolute_high = self.high_limit
+
+            # Check for gap BEFORE first block
+            if blocks:
+                first_block_start = blocks[0][0]
+                pre_gap_end = first_block_start - self.scavenge_margin - 1
+                pre_gap_size = pre_gap_end - absolute_low + 1
+
+                if pre_gap_size > self.scavenge_gap_threshold:
+                    _log.debug(f"Adding pre-scan gap: device IDs {absolute_low}-{pre_gap_end} ({pre_gap_size} IDs)")
+
+                    # Use gap-specific max range
+                    if self.scavenge_gap_max_range is None:
+                        scavenge_ranges.append((absolute_low, pre_gap_end))
+                    else:
+                        current = absolute_low
+                        while current <= pre_gap_end:
+                            chunk_end = min(current + self.scavenge_gap_max_range - 1, pre_gap_end)
+                            scavenge_ranges.append((current, chunk_end))
+                            current = chunk_end + 1
+
+                # Scan around each discovered block (±margin) and fill large gaps
+                for i, (block_start, block_end) in enumerate(blocks):
+                    # Add margin scan around this block
+                    range_start = max(absolute_low, block_start - self.scavenge_margin)
+                    range_end = min(absolute_high, block_end + self.scavenge_margin)
+
+                    # Split into chunks if range is too large
+                    current = range_start
+                    while current <= range_end:
+                        chunk_end = min(current + self.scavenge_max_range - 1, range_end)
+                        scavenge_ranges.append((current, chunk_end))
+                        current = chunk_end + 1
+
+                    # Check for large gap to next block
+                    if i < len(blocks) - 1:
+                        gap_start = block_end + self.scavenge_margin + 1
+                        gap_end = blocks[i + 1][0] - self.scavenge_margin - 1
+                        gap_size = gap_end - gap_start + 1
+
+                        # Only scan gaps larger than threshold
+                        if gap_size > self.scavenge_gap_threshold:
+                            _log.debug(f"Adding gap scan: device IDs {gap_start}-{gap_end} ({gap_size} IDs)")
+
+                            # Use gap-specific max range
+                            if self.scavenge_gap_max_range is None:
+                                scavenge_ranges.append((gap_start, gap_end))
+                            else:
+                                current = gap_start
+                                while current <= gap_end:
+                                    chunk_end = min(current + self.scavenge_gap_max_range - 1, gap_end)
+                                    scavenge_ranges.append((current, chunk_end))
+                                    current = chunk_end + 1
+
+                # Check for gap AFTER last block
+                last_block_end = blocks[-1][1]
+                post_gap_start = last_block_end + self.scavenge_margin + 1
+                post_gap_size = absolute_high - post_gap_start + 1
+
+                if post_gap_size > self.scavenge_gap_threshold:
+                    _log.debug(f"Adding post-scan gap: device IDs {post_gap_start}-{absolute_high} ({post_gap_size} IDs)")
+
+                    # Use gap-specific max range
+                    if self.scavenge_gap_max_range is None:
+                        scavenge_ranges.append((post_gap_start, absolute_high))
+                    else:
+                        current = post_gap_start
+                        while current <= absolute_high:
+                            chunk_end = min(current + self.scavenge_gap_max_range - 1, absolute_high)
+                            scavenge_ranges.append((current, chunk_end))
+                            current = chunk_end + 1
+
+            _log.info(f"Performing {len(scavenge_ranges)} targeted scavenge scan(s)...")
+
+            # Perform scavenge scans using existing device scanning logic
+            for i, (low, high) in enumerate(scavenge_ranges, 1):
+                _log.debug(f"Scavenge scan {i}/{len(scavenge_ranges)}: scanning device IDs {low}-{high}")
+                
+                try:
+                    i_ams = await app.who_is(low, high)
+                    
+                    for i_am in i_ams:
+                        device_address: Address = i_am.pduSource
+                        device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
+                        device_iri = BACnetURI["//" + str(device_identifier[1])]
+                        
+                        try:
+                            ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(device_address)
+                            
+                            # Skip if device already processed
+                            if ip in self.scanned_device_ips:
+                                continue
+                            
+                            device: Union[BBMDNode, DeviceNode]
+                            if (
+                                await self.check_if_device_is_bbmd(ase, device_address)
+                                or ip in self.bbmds
+                            ):
+                                device = BBMDNode(graph, device_iri)
+                            else:
+                                device = DeviceNode(graph, device_iri)
+
+                            device.add_properties(
+                                label=device_iri,
+                                device_identifier=device_identifier[1],
+                                device_address=device_address,
+                                vendor_id=i_am.vendorID,
+                            )
+
+                            device_subnet = await self.add_subnet_to_device(device, device_address)
+                            
+                            # Track device by IP address for router merging
+                            self.scanned_device_ips[ip] = device
+
+                            if isinstance(device, BBMDNode):
+                                self.bbmd_in_subnet[device_subnet] = device_iri
+                                self.scanned_bbmds.append(device)
+                                self.scanned_ipaddress_bbmd[ip] = device
+                                
+                        except ValueError:
+                            device = DeviceNode(graph, device_iri)
+                            device.add_properties(
+                                label=device_iri,
+                                device_identifier=device_identifier[1],
+                                device_address=device_address,
+                                vendor_id=i_am.vendorID,
+                                network_id=device_address.addrNet,
+                            )
+                            self.scanned_networks.add(device_address.addrNet)
+
+                except Exception as e:
+                    _log.error(f"Error during scavenge scan {i}: {e}")
+
+            # Discover routers and complete the scan
+            await self.get_router_networks(app, graph)
+            for bbmd in self.bbmds:
+                await self.read_bbmd_fdt(ase, bbmd)
+            await self.set_subnet_network(graph)
+
+            _log.info("Scavenge scan completed successfully")
+
+        finally:
+            app.close()
+
+    async def get_device_and_router_with_scavenge(self, graph: Graph) -> None:
+        """
+        Main scanning method that optionally uses scavenge scan for optimization.
+
+        This method chooses between full scanning and scavenge scanning based on
+        configuration and availability of previous graph data.
+
+        Args:
+            graph (Graph): The RDF graph to populate with discovered devices and topology
+
+        Returns:
+            None
+        """
+        if self.scavenge_enabled and self.prev_graph and len(self.prev_graph) > 0:
+            _log.info("Using scavenge scan mode for optimized scanning")
+            await self.scavenge_scan(graph)
+        else:
+            _log.info("Using full scan mode")
+            await self.get_device_and_router(graph)
