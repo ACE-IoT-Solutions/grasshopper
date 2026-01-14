@@ -6,7 +6,9 @@ import argparse
 import asyncio
 import ipaddress
 import logging
-from typing import Any, List, Set, Union
+import re
+import subprocess
+from typing import Any, Dict, List, Optional, Set, Union
 
 import gevent
 import rdflib
@@ -254,13 +256,29 @@ class bacpypes3_scanner:
         self.subnets = [
             ipaddress.ip_network(subnet, strict=False) for subnet in subnets
         ]
-        # Parse local subnet from scanner's address (e.g., "192.168.1.12/24:47808")
+        # Detect local subnet from system interfaces (or fall back to address config)
         self.local_subnet = self._parse_local_subnet_from_address(
             bacpypes_settings.get("address", "")
         )
-        # If we have a local subnet and it's not in subnets list, add it
-        if self.local_subnet and self.local_subnet not in self.subnets:
-            self.subnets.insert(0, self.local_subnet)
+        # If we detected a local subnet, ensure it's properly in our subnets list
+        if self.local_subnet:
+            # Remove any conflicting subnets (same network address but different prefix)
+            # This handles cases where /24 was configured but actual network is larger
+            conflicting = [
+                s for s in self.subnets
+                if s.network_address == self.local_subnet.network_address
+                and s.prefixlen != self.local_subnet.prefixlen
+            ]
+            for conflict in conflicting:
+                _log.info(
+                    f"Removing conflicting subnet {conflict} in favor of "
+                    f"detected local subnet {self.local_subnet}"
+                )
+                self.subnets.remove(conflict)
+
+            # Add local subnet at the front if not already present
+            if self.local_subnet not in self.subnets:
+                self.subnets.insert(0, self.local_subnet)
         self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
         self.device_broadcast_full_step_size = device_broadcast_full_step_size
         self.scanner_node: DeviceNode
@@ -287,40 +305,189 @@ class bacpypes3_scanner:
         self.scavenge_gap_threshold = scavenge_gap_threshold
         self.scavenge_gap_max_range = scavenge_gap_max_range
 
+    def _get_system_interfaces(self) -> List[Dict[str, Any]]:
+        """
+        Detect network interfaces from the operating system.
+
+        Returns:
+            List of dicts with 'ip', 'prefix', and 'network' keys for each interface.
+        """
+        interfaces = []
+        try:
+            # Try ifconfig first (works on macOS and most Unix systems)
+            result = subprocess.run(
+                ["ifconfig"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                current_iface = None
+                for line in result.stdout.split("\n"):
+                    # Interface line starts with no whitespace
+                    if line and not line[0].isspace() and ":" in line:
+                        current_iface = line.split(":")[0]
+                    # inet line contains IP and netmask (skip loopback)
+                    elif "inet " in line and "127.0.0.1" not in line:
+                        parts = line.split()
+                        try:
+                            ip_idx = parts.index("inet") + 1
+                            ip = parts[ip_idx]
+                            # Find netmask
+                            if "netmask" in parts:
+                                mask_idx = parts.index("netmask") + 1
+                                netmask_hex = parts[mask_idx]
+                                # Convert hex netmask (0xfffffc00) to prefix length
+                                if netmask_hex.startswith("0x"):
+                                    mask_int = int(netmask_hex, 16)
+                                    # Count the number of 1 bits
+                                    prefix = bin(mask_int).count("1")
+                                else:
+                                    # Dotted decimal netmask
+                                    prefix = ipaddress.IPv4Network(
+                                        f"0.0.0.0/{netmask_hex}"
+                                    ).prefixlen
+                                network = ipaddress.ip_network(
+                                    f"{ip}/{prefix}", strict=False
+                                )
+                                interfaces.append(
+                                    {
+                                        "interface": current_iface,
+                                        "ip": ip,
+                                        "prefix": prefix,
+                                        "network": network,
+                                    }
+                                )
+                        except (ValueError, IndexError) as e:
+                            _log.debug(f"Failed to parse interface line: {line}: {e}")
+                            continue
+                return interfaces
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        try:
+            # Try 'ip addr' (Linux)
+            result = subprocess.run(
+                ["ip", "addr"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                current_iface = None
+                for line in result.stdout.split("\n"):
+                    # Interface line format: "2: eth0: <FLAGS>"
+                    iface_match = re.match(r"\d+: (\S+):", line)
+                    if iface_match:
+                        current_iface = iface_match.group(1)
+                    # inet line format: "inet 192.168.1.5/24 brd ..."
+                    elif "inet " in line and "127.0.0.1" not in line:
+                        ip_match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/(\d+)", line)
+                        if ip_match:
+                            ip = ip_match.group(1)
+                            prefix = int(ip_match.group(2))
+                            network = ipaddress.ip_network(
+                                f"{ip}/{prefix}", strict=False
+                            )
+                            interfaces.append(
+                                {
+                                    "interface": current_iface,
+                                    "ip": ip,
+                                    "prefix": prefix,
+                                    "network": network,
+                                }
+                            )
+                return interfaces
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        _log.debug("Could not detect system network interfaces")
+        return interfaces
+
+    def _detect_local_subnet(
+        self, scanner_ip: str
+    ) -> Optional[ipaddress.IPv4Network]:
+        """
+        Detect the local subnet by finding the system interface matching the scanner IP.
+
+        This queries the operating system's network interfaces to find the actual
+        subnet mask for the interface that matches the scanner's IP address.
+
+        Args:
+            scanner_ip: The IP address of the scanner (without CIDR or port)
+
+        Returns:
+            The detected subnet, or None if detection fails.
+        """
+        try:
+            target_ip = ipaddress.ip_address(scanner_ip)
+        except ValueError:
+            _log.debug(f"Invalid scanner IP: {scanner_ip}")
+            return None
+
+        interfaces = self._get_system_interfaces()
+
+        # First, try exact IP match
+        for iface in interfaces:
+            if iface["ip"] == scanner_ip:
+                _log.info(
+                    f"Detected local subnet from interface {iface['interface']}: "
+                    f"{iface['network']} (prefix /{iface['prefix']})"
+                )
+                return iface["network"]
+
+        # Second, try to find an interface whose network contains the scanner IP
+        for iface in interfaces:
+            if target_ip in iface["network"]:
+                _log.info(
+                    f"Detected local subnet from interface {iface['interface']}: "
+                    f"{iface['network']} (prefix /{iface['prefix']}) "
+                    f"(scanner IP {scanner_ip} is in this network)"
+                )
+                return iface["network"]
+
+        _log.debug(f"No matching interface found for scanner IP {scanner_ip}")
+        return None
+
     def _parse_local_subnet_from_address(
         self, address: str
     ) -> Union[ipaddress.IPv4Network, ipaddress.IPv6Network, None]:
         """
-        Parse the local subnet from the scanner's address configuration.
+        Determine the local subnet, preferring OS interface detection over config parsing.
 
-        The address format is typically "IP/CIDR:PORT" (e.g., "192.168.1.12/24:47808").
-        This extracts the network with its actual prefix length instead of assuming /24.
+        This method first tries to detect the actual network interface configuration
+        from the operating system. If that fails, it falls back to parsing the CIDR
+        from the scanner's address configuration.
 
         Args:
             address: The BACnet address string (e.g., "192.168.1.12/24:47808")
 
         Returns:
-            The local subnet as an IPv4Network/IPv6Network, or None if parsing fails.
+            The local subnet as an IPv4Network/IPv6Network, or None if detection fails.
         """
         if not address:
             return None
 
         try:
-            # Remove port if present (format: "IP/CIDR:PORT")
+            # Extract IP from address (format: "IP/CIDR:PORT" or "IP:PORT")
             addr_part = address.split(":")[0] if ":" in address else address
+            scanner_ip = addr_part.split("/")[0] if "/" in addr_part else addr_part
 
-            # Check if CIDR notation is present
+            # First, try to detect from system interfaces (most accurate)
+            detected_subnet = self._detect_local_subnet(scanner_ip)
+            if detected_subnet:
+                return detected_subnet
+
+            # Fall back to parsing CIDR from address config
             if "/" in addr_part:
-                # Parse as network with strict=False to allow host bits
                 local_subnet = ipaddress.ip_network(addr_part, strict=False)
-                _log.debug(f"Parsed local subnet from address: {local_subnet}")
+                _log.info(
+                    f"Using subnet from address config: {local_subnet} "
+                    "(could not detect from system interfaces)"
+                )
                 return local_subnet
             else:
-                # No CIDR specified, can't determine local subnet accurately
-                _log.debug(f"No CIDR in address '{address}', cannot determine local subnet")
+                _log.warning(
+                    f"Could not detect local subnet for {scanner_ip} "
+                    "and no CIDR in address config"
+                )
                 return None
         except (ValueError, TypeError) as e:
-            _log.warning(f"Failed to parse local subnet from address '{address}': {e}")
+            _log.warning(f"Failed to determine local subnet from '{address}': {e}")
             return None
 
     async def set_application(self, graph: Graph) -> Application:
