@@ -254,6 +254,13 @@ class bacpypes3_scanner:
         self.subnets = [
             ipaddress.ip_network(subnet, strict=False) for subnet in subnets
         ]
+        # Parse local subnet from scanner's address (e.g., "192.168.1.12/24:47808")
+        self.local_subnet = self._parse_local_subnet_from_address(
+            bacpypes_settings.get("address", "")
+        )
+        # If we have a local subnet and it's not in subnets list, add it
+        if self.local_subnet and self.local_subnet not in self.subnets:
+            self.subnets.insert(0, self.local_subnet)
         self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
         self.device_broadcast_full_step_size = device_broadcast_full_step_size
         self.scanner_node: DeviceNode
@@ -279,6 +286,42 @@ class bacpypes3_scanner:
         self.scavenge_max_range = scavenge_max_range
         self.scavenge_gap_threshold = scavenge_gap_threshold
         self.scavenge_gap_max_range = scavenge_gap_max_range
+
+    def _parse_local_subnet_from_address(
+        self, address: str
+    ) -> Union[ipaddress.IPv4Network, ipaddress.IPv6Network, None]:
+        """
+        Parse the local subnet from the scanner's address configuration.
+
+        The address format is typically "IP/CIDR:PORT" (e.g., "192.168.1.12/24:47808").
+        This extracts the network with its actual prefix length instead of assuming /24.
+
+        Args:
+            address: The BACnet address string (e.g., "192.168.1.12/24:47808")
+
+        Returns:
+            The local subnet as an IPv4Network/IPv6Network, or None if parsing fails.
+        """
+        if not address:
+            return None
+
+        try:
+            # Remove port if present (format: "IP/CIDR:PORT")
+            addr_part = address.split(":")[0] if ":" in address else address
+
+            # Check if CIDR notation is present
+            if "/" in addr_part:
+                # Parse as network with strict=False to allow host bits
+                local_subnet = ipaddress.ip_network(addr_part, strict=False)
+                _log.debug(f"Parsed local subnet from address: {local_subnet}")
+                return local_subnet
+            else:
+                # No CIDR specified, can't determine local subnet accurately
+                _log.debug(f"No CIDR in address '{address}', cannot determine local subnet")
+                return None
+        except (ValueError, TypeError) as e:
+            _log.warning(f"Failed to parse local subnet from address '{address}': {e}")
+            return None
 
     async def set_application(self, graph: Graph) -> Application:
         """
@@ -569,8 +612,10 @@ class bacpypes3_scanner:
         Associate a device with its subnet based on its IP address.
 
         This method finds which subnet the device belongs to based on its IP address.
-        If the device doesn't match any known subnet, a new /24 subnet is created
-        and added to the list of known subnets.
+        If the device doesn't match any known subnet:
+        - If we have a local subnet and the device is on the same network, use the
+          local subnet's prefix length for accuracy
+        - Otherwise, fall back to /24 for remote/unknown subnets
 
         Args:
             device (BACnetNode): The device node to associate with a subnet
@@ -588,7 +633,22 @@ class bacpypes3_scanner:
                 break
 
         if not device_subnet:
-            device_subnet = ipaddress.ip_network(f"{ip}/24", strict=False)
+            # Determine the appropriate prefix length for this unknown subnet
+            if self.local_subnet:
+                # Use the local subnet's prefix length - this ensures devices
+                # discovered on our local network get the correct subnet mask
+                prefix_len = self.local_subnet.prefixlen
+                _log.debug(
+                    f"Using local subnet prefix /{prefix_len} for device {ip}"
+                )
+            else:
+                # No local subnet info available, fall back to /24
+                prefix_len = 24
+                _log.debug(
+                    f"No local subnet info, using default /24 for device {ip}"
+                )
+
+            device_subnet = ipaddress.ip_network(f"{ip}/{prefix_len}", strict=False)
             device.add_properties(subnet=device_subnet)
             self.subnets.append(device_subnet)
 
