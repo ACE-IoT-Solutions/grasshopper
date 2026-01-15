@@ -196,7 +196,11 @@ class Grasshopper(Agent):
             "ttl_post_to_cloud": ttl_post_to_cloud,
         }
         self.http_server_process: Optional[Process] = None
-        self.agent_data_path: str
+        # Initialize agent_data_path early - configure() may run before onstart()
+        # and the web server needs this path
+        current_dir = os.getcwd()
+        agent_name = os.path.basename(current_dir)
+        self.agent_data_path: str = os.path.join(current_dir, f"{agent_name}.agent-data")
         self.app: Optional[FastAPI] = None
         self.vendor_info: Optional[VendorInfo] = None
 
