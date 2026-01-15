@@ -1,15 +1,14 @@
 <template>
   <div class="legend-menu">
     <div class="header">
-      <v-icon size="small" color="#FDFD94" style="padding-left: 20px;">mdi-map-legend</v-icon>
-      <!-- <p class="title">LEGEND</p> -->
+      <v-icon size="small" color="#FDFD94" class="legend-icon">mdi-map-legend</v-icon>
       <v-btn
         variant="plain"
         :ripple="false"
         icon
         id="no-background-hover"
         size="small"
-        @click="store.setLegend(false)"
+        @click="closeMenu()"
       >
         <v-icon>mdi-close</v-icon>
       </v-btn>
@@ -30,13 +29,14 @@
 <script>
 import { gsap } from 'gsap'
 import { Draggable } from 'gsap/Draggable'
-import grasshopperSvg from '@/assets/grasshopper icon.svg'
+
 import routerSvg from '@/assets/router.svg'
 import networkSvg from '@/assets/network.svg'
 import deviceSvg from '@/assets/device.svg'
 import bbmdOnSvg from '@/assets/bbmd-on.svg'
 import bbmdOffSvg from '@/assets/bbmd-off.svg'
 import subnetSvg from '@/assets/lan.svg'
+import sentinelSvg from '@/assets/sentinel-logomark.svg'
 import removedSvg from '@/assets/removed.svg'
 import addedSvg from '@/assets/added.svg'
 export default {
@@ -64,7 +64,7 @@ export default {
   data() {
     return {
       items: [
-        { title: 'Grasshopper', image: grasshopperSvg },
+        { title: 'Sentinel', image: sentinelSvg },
         { title: 'Device', image: deviceSvg },
         { title: 'Network', image: networkSvg },
         { title: 'Subnet', image: subnetSvg },
@@ -73,6 +73,18 @@ export default {
         { title: 'BBMD (OFF)', image: bbmdOffSvg },
       ],
     }
+  },
+  methods: {
+    closeMenu() {
+      gsap.to('.legend-menu', {
+        duration: 0.15,
+        opacity: 0,
+        ease: 'power2.in',
+        onComplete: () => {
+          this.store.setLegend(false)
+        },
+      })
+    },
   },
 }
 </script>
@@ -123,5 +135,8 @@ export default {
   color: #CDCDCD;
   font-size: 12px;
   font-weight: bold;
+}
+.legend-icon {
+  padding-left: 20px;
 }
 </style>

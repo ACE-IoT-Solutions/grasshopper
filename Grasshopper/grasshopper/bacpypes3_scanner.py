@@ -6,7 +6,9 @@ import argparse
 import asyncio
 import ipaddress
 import logging
-from typing import Any, List, Set, Union
+import re
+import subprocess
+from typing import Any, Dict, List, Optional, Set, Union
 
 import gevent
 import rdflib
@@ -38,6 +40,7 @@ from .rdf_components import (
     BBMDNode,
     BBMDTypeHandler,
     DeviceNode,
+    DeviceRouterNode,
     DeviceTypeHandler,
     NetworkComponent,
     NetworkNode,
@@ -212,6 +215,11 @@ class bacpypes3_scanner:
         device_broadcast_full_step_size: int = 100,
         scan_low_limit: int = 0,
         scan_high_limit: int = 4194303,
+        scavenge_enabled: bool = True,
+        scavenge_margin: int = 10,
+        scavenge_max_range: int = 25,
+        scavenge_gap_threshold: int = 5,
+        scavenge_gap_max_range: int = None,
     ) -> None:
         """
         Initialize the BACpypes3 scanner with the given settings.
@@ -229,6 +237,16 @@ class bacpypes3_scanner:
                 Defaults to 0.
             scan_high_limit (int, optional): Upper limit of device instance numbers to scan.
                 Defaults to 4194303.
+            scavenge_enabled (bool, optional): Enable scavenge scanning for optimization.
+                Defaults to True.
+            scavenge_margin (int, optional): Device IDs before/after each block to scan.
+                Defaults to 10.
+            scavenge_max_range (int, optional): Max device IDs per WhoIs for margin scans.
+                Defaults to 25.
+            scavenge_gap_threshold (int, optional): Gap size to merge contiguous blocks.
+                Defaults to 5.
+            scavenge_gap_max_range (int, optional): Max range for gap scans (None = entire gap).
+                Defaults to None.
         """
         _log.debug("bacpypes3_scanner: init")
         self.bacpypes_settings = bacpypes_settings
@@ -238,6 +256,29 @@ class bacpypes3_scanner:
         self.subnets = [
             ipaddress.ip_network(subnet, strict=False) for subnet in subnets
         ]
+        # Detect local subnet from system interfaces (or fall back to address config)
+        self.local_subnet = self._parse_local_subnet_from_address(
+            bacpypes_settings.get("address", "")
+        )
+        # If we detected a local subnet, ensure it's properly in our subnets list
+        if self.local_subnet:
+            # Remove any conflicting subnets (same network address but different prefix)
+            # This handles cases where /24 was configured but actual network is larger
+            conflicting = [
+                s for s in self.subnets
+                if s.network_address == self.local_subnet.network_address
+                and s.prefixlen != self.local_subnet.prefixlen
+            ]
+            for conflict in conflicting:
+                _log.info(
+                    f"Removing conflicting subnet {conflict} in favor of "
+                    f"detected local subnet {self.local_subnet}"
+                )
+                self.subnets.remove(conflict)
+
+            # Add local subnet at the front if not already present
+            if self.local_subnet not in self.subnets:
+                self.subnets.insert(0, self.local_subnet)
         self.device_broadcast_empty_step_size = device_broadcast_empty_step_size
         self.device_broadcast_full_step_size = device_broadcast_full_step_size
         self.scanner_node: DeviceNode
@@ -253,6 +294,201 @@ class bacpypes3_scanner:
             ipaddress.IPv4Address, list[ipaddress.IPv4Address]
         ] = {}
         self.scanned_bbmds_fdt: dict[Address, Any] = {}
+        self.scanned_device_ips: dict[
+            Union[ipaddress.IPv4Address, ipaddress.IPv6Address], BACnetNode
+        ] = {}
+        
+        # Scavenge scan configuration
+        self.scavenge_enabled = scavenge_enabled
+        self.scavenge_margin = scavenge_margin
+        self.scavenge_max_range = scavenge_max_range
+        self.scavenge_gap_threshold = scavenge_gap_threshold
+        self.scavenge_gap_max_range = scavenge_gap_max_range
+
+    def _get_system_interfaces(self) -> List[Dict[str, Any]]:
+        """
+        Detect network interfaces from the operating system.
+
+        Returns:
+            List of dicts with 'ip', 'prefix', and 'network' keys for each interface.
+        """
+        interfaces = []
+        try:
+            # Try ifconfig first (works on macOS and most Unix systems)
+            result = subprocess.run(
+                ["ifconfig"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                current_iface = None
+                for line in result.stdout.split("\n"):
+                    # Interface line starts with no whitespace
+                    if line and not line[0].isspace() and ":" in line:
+                        current_iface = line.split(":")[0]
+                    # inet line contains IP and netmask (skip loopback)
+                    elif "inet " in line and "127.0.0.1" not in line:
+                        parts = line.split()
+                        try:
+                            ip_idx = parts.index("inet") + 1
+                            ip = parts[ip_idx]
+                            # Find netmask
+                            if "netmask" in parts:
+                                mask_idx = parts.index("netmask") + 1
+                                netmask_hex = parts[mask_idx]
+                                # Convert hex netmask (0xfffffc00) to prefix length
+                                if netmask_hex.startswith("0x"):
+                                    mask_int = int(netmask_hex, 16)
+                                    # Count the number of 1 bits
+                                    prefix = bin(mask_int).count("1")
+                                else:
+                                    # Dotted decimal netmask
+                                    prefix = ipaddress.IPv4Network(
+                                        f"0.0.0.0/{netmask_hex}"
+                                    ).prefixlen
+                                network = ipaddress.ip_network(
+                                    f"{ip}/{prefix}", strict=False
+                                )
+                                interfaces.append(
+                                    {
+                                        "interface": current_iface,
+                                        "ip": ip,
+                                        "prefix": prefix,
+                                        "network": network,
+                                    }
+                                )
+                        except (ValueError, IndexError) as e:
+                            _log.debug(f"Failed to parse interface line: {line}: {e}")
+                            continue
+                return interfaces
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        try:
+            # Try 'ip addr' (Linux)
+            result = subprocess.run(
+                ["ip", "addr"], capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                current_iface = None
+                for line in result.stdout.split("\n"):
+                    # Interface line format: "2: eth0: <FLAGS>"
+                    iface_match = re.match(r"\d+: (\S+):", line)
+                    if iface_match:
+                        current_iface = iface_match.group(1)
+                    # inet line format: "inet 192.168.1.5/24 brd ..."
+                    elif "inet " in line and "127.0.0.1" not in line:
+                        ip_match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/(\d+)", line)
+                        if ip_match:
+                            ip = ip_match.group(1)
+                            prefix = int(ip_match.group(2))
+                            network = ipaddress.ip_network(
+                                f"{ip}/{prefix}", strict=False
+                            )
+                            interfaces.append(
+                                {
+                                    "interface": current_iface,
+                                    "ip": ip,
+                                    "prefix": prefix,
+                                    "network": network,
+                                }
+                            )
+                return interfaces
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        _log.debug("Could not detect system network interfaces")
+        return interfaces
+
+    def _detect_local_subnet(
+        self, scanner_ip: str
+    ) -> Optional[ipaddress.IPv4Network]:
+        """
+        Detect the local subnet by finding the system interface matching the scanner IP.
+
+        This queries the operating system's network interfaces to find the actual
+        subnet mask for the interface that matches the scanner's IP address.
+
+        Args:
+            scanner_ip: The IP address of the scanner (without CIDR or port)
+
+        Returns:
+            The detected subnet, or None if detection fails.
+        """
+        try:
+            target_ip = ipaddress.ip_address(scanner_ip)
+        except ValueError:
+            _log.debug(f"Invalid scanner IP: {scanner_ip}")
+            return None
+
+        interfaces = self._get_system_interfaces()
+
+        # First, try exact IP match
+        for iface in interfaces:
+            if iface["ip"] == scanner_ip:
+                _log.info(
+                    f"Detected local subnet from interface {iface['interface']}: "
+                    f"{iface['network']} (prefix /{iface['prefix']})"
+                )
+                return iface["network"]
+
+        # Second, try to find an interface whose network contains the scanner IP
+        for iface in interfaces:
+            if target_ip in iface["network"]:
+                _log.info(
+                    f"Detected local subnet from interface {iface['interface']}: "
+                    f"{iface['network']} (prefix /{iface['prefix']}) "
+                    f"(scanner IP {scanner_ip} is in this network)"
+                )
+                return iface["network"]
+
+        _log.debug(f"No matching interface found for scanner IP {scanner_ip}")
+        return None
+
+    def _parse_local_subnet_from_address(
+        self, address: str
+    ) -> Union[ipaddress.IPv4Network, ipaddress.IPv6Network, None]:
+        """
+        Determine the local subnet, preferring OS interface detection over config parsing.
+
+        This method first tries to detect the actual network interface configuration
+        from the operating system. If that fails, it falls back to parsing the CIDR
+        from the scanner's address configuration.
+
+        Args:
+            address: The BACnet address string (e.g., "192.168.1.12/24:47808")
+
+        Returns:
+            The local subnet as an IPv4Network/IPv6Network, or None if detection fails.
+        """
+        if not address:
+            return None
+
+        try:
+            # Extract IP from address (format: "IP/CIDR:PORT" or "IP:PORT")
+            addr_part = address.split(":")[0] if ":" in address else address
+            scanner_ip = addr_part.split("/")[0] if "/" in addr_part else addr_part
+
+            # First, try to detect from system interfaces (most accurate)
+            detected_subnet = self._detect_local_subnet(scanner_ip)
+            if detected_subnet:
+                return detected_subnet
+
+            # Fall back to parsing CIDR from address config
+            if "/" in addr_part:
+                local_subnet = ipaddress.ip_network(addr_part, strict=False)
+                _log.info(
+                    f"Using subnet from address config: {local_subnet} "
+                    "(could not detect from system interfaces)"
+                )
+                return local_subnet
+            else:
+                _log.warning(
+                    f"Could not detect local subnet for {scanner_ip} "
+                    "and no CIDR in address config"
+                )
+                return None
+        except (ValueError, TypeError) as e:
+            _log.warning(f"Failed to determine local subnet from '{address}': {e}")
+            return None
 
     async def set_application(self, graph: Graph) -> Application:
         """
@@ -303,6 +539,43 @@ class bacpypes3_scanner:
                 except:
                     pass
         return device_ips
+
+    def _find_contiguous_blocks(self, device_ids: List[int]) -> List[tuple[int, int]]:
+        """
+        Find contiguous blocks of device IDs, merging small gaps.
+
+        Args:
+            device_ids: List of device IDs to analyze
+
+        Returns:
+            List of (start, end) tuples representing contiguous blocks
+        """
+        if not device_ids:
+            return []
+
+        # Sort device IDs
+        sorted_ids = sorted(device_ids)
+        blocks = []
+        block_start = sorted_ids[0]
+        block_end = sorted_ids[0]
+
+        for device_id in sorted_ids[1:]:
+            # Check if this ID extends the current block or starts a new one
+            gap = device_id - block_end
+
+            if gap <= self.scavenge_gap_threshold:
+                # Small gap or continuous - extend current block
+                block_end = device_id
+            else:
+                # Large gap - save current block and start new one
+                blocks.append((block_start, block_end))
+                block_start = device_id
+                block_end = device_id
+
+        # Add final block
+        blocks.append((block_start, block_end))
+
+        return blocks
 
     async def set_scanner_node(self, graph: Graph):
         """
@@ -383,20 +656,62 @@ class bacpypes3_scanner:
                     f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}"
                 )
                 router_pdu_source = i_am_router_to_network.pduSource
-                router_iri = BACnetURI["//router/" + str(router_pdu_source)]
-                router_node = RouterNode(graph, router_iri)
+                ip = ipaddress.ip_address(router_pdu_source)
+                
+                # Check if we already have a device at this IP address
+                existing_device = self.scanned_device_ips.get(ip)
+                
+                if existing_device and isinstance(existing_device, DeviceNode):
+                    # Convert existing device to a device+router by creating a new DeviceRouterNode
+                    _log.debug(f"Merging device at {ip} into router")
+                    
+                    # Use the existing device's IRI (which is based on device instance, not IP)
+                    device_iri = existing_device.node_iri
+                    
+                    # Extract device instance before removing triples from graph
+                    device_instance = graph.value(subject=device_iri, predicate=BACnetNS["device-instance"])
+                    
+                    # Store all existing properties from the old device node
+                    stored_properties = []
+                    for predicate, obj in graph.predicate_objects(device_iri):
+                        # Skip the type predicates since the new node will set the correct types
+                        if predicate != RDF.type:
+                            stored_properties.append((predicate, obj))
+                    
+                    # Remove the old device triples from the graph
+                    graph.remove((device_iri, None, None))
+                    
+                    # Create a DeviceRouterNode to replace the DeviceNode
+                    router_device_iri = BACnetURI["//router/" + str(device_instance)]
+                    router_node = DeviceRouterNode(graph, router_device_iri)
+                    
+                    # Restore all the stored properties to the new node
+                    for predicate, obj in stored_properties:
+                        router_node.device.add_connection(predicate, obj)
+                    
+                    # Update our tracking
+                    self.scanned_device_ips[ip] = router_node
+                
+                elif existing_device and isinstance(existing_device, (RouterNode, DeviceRouterNode)):
+                    # Already a router or device+router, just use it
+                    router_node = existing_device
+                else:
+                    # Create a standalone router node
+                    router_iri = BACnetURI["//router/" + str(router_pdu_source)]
+                    router_node = RouterNode(graph, router_iri)
+                    self.scanned_device_ips[ip] = router_node
+                
                 for net in i_am_router_to_network.iartnNetworkList:
                     router_node.add_properties(network_id=net)
 
-                ip = ipaddress.ip_address(router_pdu_source)
                 not_in_network = True
                 for subnet in self.subnets:
                     if ip in subnet:
                         not_in_network = False
                         router_node.add_properties(subnet=subnet)
                 if not_in_network:
-                    self.scanner_node.add_properties(device_iri=router_iri)
-
+                    self.scanner_node.add_properties(device_iri=router_node.node_iri)
+                
         _log.debug("get_router_networks Completed")
 
     async def check_if_device_is_bbmd(
@@ -464,8 +779,10 @@ class bacpypes3_scanner:
         Associate a device with its subnet based on its IP address.
 
         This method finds which subnet the device belongs to based on its IP address.
-        If the device doesn't match any known subnet, a new /24 subnet is created
-        and added to the list of known subnets.
+        If the device doesn't match any known subnet:
+        - If we have a local subnet and the device is on the same network, use the
+          local subnet's prefix length for accuracy
+        - Otherwise, fall back to /24 for remote/unknown subnets
 
         Args:
             device (BACnetNode): The device node to associate with a subnet
@@ -483,7 +800,22 @@ class bacpypes3_scanner:
                 break
 
         if not device_subnet:
-            device_subnet = ipaddress.ip_network(f"{ip}/24", strict=False)
+            # Determine the appropriate prefix length for this unknown subnet
+            if self.local_subnet:
+                # Use the local subnet's prefix length - this ensures devices
+                # discovered on our local network get the correct subnet mask
+                prefix_len = self.local_subnet.prefixlen
+                _log.debug(
+                    f"Using local subnet prefix /{prefix_len} for device {ip}"
+                )
+            else:
+                # No local subnet info available, fall back to /24
+                prefix_len = 24
+                _log.debug(
+                    f"No local subnet info, using default /24 for device {ip}"
+                )
+
+            device_subnet = ipaddress.ip_network(f"{ip}/{prefix_len}", strict=False)
             device.add_properties(subnet=device_subnet)
             self.subnets.append(device_subnet)
 
@@ -584,6 +916,9 @@ class bacpypes3_scanner:
                     device_subnet = await self.add_subnet_to_device(
                         device, device_address
                     )
+                    
+                    # Track device by IP address for router merging
+                    self.scanned_device_ips[ip] = device
 
                     if isinstance(device, BBMDNode):
                         self.bbmd_in_subnet[device_subnet] = device_iri
@@ -639,3 +974,221 @@ class bacpypes3_scanner:
         _log.debug(f"scanned_bbmds_bdt: {self.scanned_bbmds_bdt}")
         _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
         _log.debug("set_subnet_network Completed")
+
+    async def scavenge_scan(self, graph: Graph) -> None:
+        """
+        Perform scavenge scan around previously discovered devices from prev_graph.
+
+        This method uses the previous day's graph to identify device blocks and performs
+        targeted scans around those blocks instead of scanning the entire device ID range.
+
+        Args:
+            graph (Graph): The current RDF graph to populate with discovered devices
+
+        Returns:
+            None
+        """
+        if not self.scavenge_enabled:
+            _log.info("Scavenge scan disabled, skipping")
+            return
+
+        _log.info("Starting scavenge scan using previous graph data")
+        
+        # Extract known device IDs from previous graph
+        prev_device_ids = []
+        for triple in self.prev_graph.triples((None, BACnetNS["device-instance"], None)):
+            try:
+                device_id = int(triple[2])
+                prev_device_ids.append(device_id)
+            except (ValueError, TypeError):
+                continue
+
+        if not prev_device_ids:
+            _log.warning("No previous devices found in graph, falling back to full scan")
+            await self.get_device_and_router(graph)
+            return
+
+        _log.info(f"Found {len(prev_device_ids)} devices in previous graph")
+
+        # Find contiguous blocks of devices
+        blocks = self._find_contiguous_blocks(prev_device_ids)
+        _log.info(f"Identified {len(blocks)} device blocks from previous scan")
+
+        # Set up the application for scanning
+        app = await self.set_application(graph)
+        local_adapter = app.nsap.local_adapter
+        sap = local_adapter.clientPeer
+        assert isinstance(sap, BVLLServiceAccessPoint)
+        ase = BVLLServiceElement()
+        bind(ase, sap)
+        await self.set_scanner_node(graph)
+
+        try:
+            # Generate scavenge ranges
+            scavenge_ranges = []
+
+            # Determine scan boundaries
+            absolute_low = self.low_limit
+            absolute_high = self.high_limit
+
+            # Check for gap BEFORE first block
+            if blocks:
+                first_block_start = blocks[0][0]
+                pre_gap_end = first_block_start - self.scavenge_margin - 1
+                pre_gap_size = pre_gap_end - absolute_low + 1
+
+                if pre_gap_size > self.scavenge_gap_threshold:
+                    _log.debug(f"Adding pre-scan gap: device IDs {absolute_low}-{pre_gap_end} ({pre_gap_size} IDs)")
+
+                    # Use gap-specific max range
+                    if self.scavenge_gap_max_range is None:
+                        scavenge_ranges.append((absolute_low, pre_gap_end))
+                    else:
+                        current = absolute_low
+                        while current <= pre_gap_end:
+                            chunk_end = min(current + self.scavenge_gap_max_range - 1, pre_gap_end)
+                            scavenge_ranges.append((current, chunk_end))
+                            current = chunk_end + 1
+
+                # Scan around each discovered block (±margin) and fill large gaps
+                for i, (block_start, block_end) in enumerate(blocks):
+                    # Add margin scan around this block
+                    range_start = max(absolute_low, block_start - self.scavenge_margin)
+                    range_end = min(absolute_high, block_end + self.scavenge_margin)
+
+                    # Split into chunks if range is too large
+                    current = range_start
+                    while current <= range_end:
+                        chunk_end = min(current + self.scavenge_max_range - 1, range_end)
+                        scavenge_ranges.append((current, chunk_end))
+                        current = chunk_end + 1
+
+                    # Check for large gap to next block
+                    if i < len(blocks) - 1:
+                        gap_start = block_end + self.scavenge_margin + 1
+                        gap_end = blocks[i + 1][0] - self.scavenge_margin - 1
+                        gap_size = gap_end - gap_start + 1
+
+                        # Only scan gaps larger than threshold
+                        if gap_size > self.scavenge_gap_threshold:
+                            _log.debug(f"Adding gap scan: device IDs {gap_start}-{gap_end} ({gap_size} IDs)")
+
+                            # Use gap-specific max range
+                            if self.scavenge_gap_max_range is None:
+                                scavenge_ranges.append((gap_start, gap_end))
+                            else:
+                                current = gap_start
+                                while current <= gap_end:
+                                    chunk_end = min(current + self.scavenge_gap_max_range - 1, gap_end)
+                                    scavenge_ranges.append((current, chunk_end))
+                                    current = chunk_end + 1
+
+                # Check for gap AFTER last block
+                last_block_end = blocks[-1][1]
+                post_gap_start = last_block_end + self.scavenge_margin + 1
+                post_gap_size = absolute_high - post_gap_start + 1
+
+                if post_gap_size > self.scavenge_gap_threshold:
+                    _log.debug(f"Adding post-scan gap: device IDs {post_gap_start}-{absolute_high} ({post_gap_size} IDs)")
+
+                    # Use gap-specific max range
+                    if self.scavenge_gap_max_range is None:
+                        scavenge_ranges.append((post_gap_start, absolute_high))
+                    else:
+                        current = post_gap_start
+                        while current <= absolute_high:
+                            chunk_end = min(current + self.scavenge_gap_max_range - 1, absolute_high)
+                            scavenge_ranges.append((current, chunk_end))
+                            current = chunk_end + 1
+
+            _log.info(f"Performing {len(scavenge_ranges)} targeted scavenge scan(s)...")
+
+            # Perform scavenge scans using existing device scanning logic
+            for i, (low, high) in enumerate(scavenge_ranges, 1):
+                _log.debug(f"Scavenge scan {i}/{len(scavenge_ranges)}: scanning device IDs {low}-{high}")
+                
+                try:
+                    i_ams = await app.who_is(low, high)
+                    
+                    for i_am in i_ams:
+                        device_address: Address = i_am.pduSource
+                        device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
+                        device_iri = BACnetURI["//" + str(device_identifier[1])]
+                        
+                        try:
+                            ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(device_address)
+                            
+                            # Skip if device already processed
+                            if ip in self.scanned_device_ips:
+                                continue
+                            
+                            device: Union[BBMDNode, DeviceNode]
+                            if (
+                                await self.check_if_device_is_bbmd(ase, device_address)
+                                or ip in self.bbmds
+                            ):
+                                device = BBMDNode(graph, device_iri)
+                            else:
+                                device = DeviceNode(graph, device_iri)
+
+                            device.add_properties(
+                                label=device_iri,
+                                device_identifier=device_identifier[1],
+                                device_address=device_address,
+                                vendor_id=i_am.vendorID,
+                            )
+
+                            device_subnet = await self.add_subnet_to_device(device, device_address)
+                            
+                            # Track device by IP address for router merging
+                            self.scanned_device_ips[ip] = device
+
+                            if isinstance(device, BBMDNode):
+                                self.bbmd_in_subnet[device_subnet] = device_iri
+                                self.scanned_bbmds.append(device)
+                                self.scanned_ipaddress_bbmd[ip] = device
+                                
+                        except ValueError:
+                            device = DeviceNode(graph, device_iri)
+                            device.add_properties(
+                                label=device_iri,
+                                device_identifier=device_identifier[1],
+                                device_address=device_address,
+                                vendor_id=i_am.vendorID,
+                                network_id=device_address.addrNet,
+                            )
+                            self.scanned_networks.add(device_address.addrNet)
+
+                except Exception as e:
+                    _log.error(f"Error during scavenge scan {i}: {e}")
+
+            # Discover routers and complete the scan
+            await self.get_router_networks(app, graph)
+            for bbmd in self.bbmds:
+                await self.read_bbmd_fdt(ase, bbmd)
+            await self.set_subnet_network(graph)
+
+            _log.info("Scavenge scan completed successfully")
+
+        finally:
+            app.close()
+
+    async def get_device_and_router_with_scavenge(self, graph: Graph) -> None:
+        """
+        Main scanning method that optionally uses scavenge scan for optimization.
+
+        This method chooses between full scanning and scavenge scanning based on
+        configuration and availability of previous graph data.
+
+        Args:
+            graph (Graph): The RDF graph to populate with discovered devices and topology
+
+        Returns:
+            None
+        """
+        if self.scavenge_enabled and self.prev_graph and len(self.prev_graph) > 0:
+            _log.info("Using scavenge scan mode for optimized scanning")
+            await self.scavenge_scan(graph)
+        else:
+            _log.info("Using full scan mode")
+            await self.get_device_and_router(graph)
