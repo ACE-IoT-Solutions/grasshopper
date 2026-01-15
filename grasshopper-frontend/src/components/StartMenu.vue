@@ -2,7 +2,7 @@
   <div class="startup-page">
     <div class="startup-menu">
       <div class="startup-header">
-        <img src="@/assets/ace-sentinel-drk-bg.svg" class="logo-image" />
+        <img src="@/assets/grasshopper-drk-bg.svg" class="logo-image" />
       </div>
       <v-row>
         <v-col cols="6" class="startup-col">
@@ -635,6 +635,7 @@ export default {
 }
 .logo-image {
   height: 5vh;
+  margin-left: 10px;
 }
 .flex-center-gapped-container {
   display: flex;

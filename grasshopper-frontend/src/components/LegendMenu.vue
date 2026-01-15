@@ -36,7 +36,7 @@ import deviceSvg from '@/assets/device.svg'
 import bbmdOnSvg from '@/assets/bbmd-on.svg'
 import bbmdOffSvg from '@/assets/bbmd-off.svg'
 import subnetSvg from '@/assets/lan.svg'
-import sentinelSvg from '@/assets/sentinel-logomark.svg'
+import grasshopperSvg from '@/assets/grasshopper-logomark.svg'
 import removedSvg from '@/assets/removed.svg'
 import addedSvg from '@/assets/added.svg'
 export default {
@@ -64,7 +64,7 @@ export default {
   data() {
     return {
       items: [
-        { title: 'Sentinel', image: sentinelSvg },
+        { title: 'Grasshopper', image: grasshopperSvg },
         { title: 'Device', image: deviceSvg },
         { title: 'Network', image: networkSvg },
         { title: 'Subnet', image: subnetSvg },

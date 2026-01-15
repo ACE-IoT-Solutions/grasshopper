@@ -10,8 +10,8 @@
       >
         <img
           class="logo"
-          src="@/assets/ace-sentinel-drk-bg.svg"
-          alt="Sentinel Logo"
+          src="@/assets/grasshopper-drk-bg.svg"
+          alt="Grasshopper Logo"
         />
       </RouterLink>
       <div class="buttons">
@@ -19,22 +19,14 @@
           variant="plain"
           size="small"
           @click="store.setControlMenu(true, 'setup', 'GRAPH SETUP')"
-          @mouseenter="
-            gateway &&
-            (store.runRouteWithCheck(() => store.fetchGateways()),
-            store.runRouteWithCheck(() => store.fetchGraphs()))
-          "
+          @mouseenter="() => store.fetchGraphs()"
           >Graph Setup</v-btn
         >
         <v-btn
           variant="plain"
           size="small"
           @click="store.setControlMenu(true, 'compare', 'COMPARE GRAPHS')"
-          @mouseenter="
-            gateway &&
-            (store.runRouteWithCheck(() => store.fetchGateways()),
-            store.runRouteWithCheck(() => store.fetchCompareGraphs()))
-          "
+          @mouseenter="() => store.fetchCompareGraphs()"
           >Compare Graphs</v-btn
         >
         <v-btn
@@ -42,10 +34,7 @@
           size="small"
           @click="store.setControlMenu(true, 'delete', 'DELETE')"
           @mouseenter="
-            gateway &&
-            (store.runRouteWithCheck(() => store.fetchGateways()),
-            store.runRouteWithCheck(() => store.fetchGraphs()),
-            store.runRouteWithCheck(() => store.fetchCompareGraphs()))
+            (() => store.fetchGraphs(),() => store.fetchCompareGraphs())
           "
           >Delete</v-btn
         >

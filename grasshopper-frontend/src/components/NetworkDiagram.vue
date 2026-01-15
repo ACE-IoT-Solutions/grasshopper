@@ -138,7 +138,7 @@ import deviceSvg from '@/assets/device.svg'
 import bbmdOnSvg from '@/assets/bbmd-on.svg'
 import bbmdOffSvg from '@/assets/bbmd-off.svg'
 import subnetSvg from '@/assets/lan.svg'
-import sentinelSvg from '@/assets/sentinel-logomark.svg'
+import grasshopperSvg from '@/assets/grasshopper-logomark.svg'
 import routerAddSvg from '@/assets/router-add.svg'
 import routerSubSvg from '@/assets/router-sub.svg'
 import networkAddSvg from '@/assets/network-add.svg'
@@ -762,9 +762,8 @@ export default {
           BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg, mass: 2 },
         },
         'bacnet://Grasshopper': {
-          image: sentinelSvg,
+          image: grasshopperSvg,
           mass: 5,
-          size: 50,
         },
         'bacnet://subnet/': { image: subnetSvg, mass: 2 },
       }
@@ -781,7 +780,7 @@ export default {
           BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg, mass: 4 },
         },
         'bacnet://Grasshopper': {
-          image: sentinelSvg,
+          image: grasshopperSvg,
           mass: 5,
         },
         'bacnet://subnet/': { image: subnetSubSvg, mass: 2 },
@@ -799,7 +798,7 @@ export default {
           BBMD: { image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg, mass: 4 },
         },
         'bacnet://Grasshopper': {
-          image: sentinelSvg,
+          image: grasshopperSvg,
           mass: 5,
         },
         'bacnet://subnet/': { image: subnetAddSvg, mass: 2 },
