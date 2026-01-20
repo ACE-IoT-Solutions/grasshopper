@@ -501,6 +501,7 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     },
     async fetchQueue() {
       // await this.fetchCompareGraphs()
+      this.fetchQueueLoad = true
 
       const processingItem =
         JSON.parse(sessionStorage.getItem('processingItem')) || null
@@ -515,6 +516,7 @@ export const useGrasshopperStore = defineStore('grasshopper', {
             response.data.queue,
             response.data.finished,
           )
+          this.fetchQueueLoad = false
 
           const taskCompleted =
             processingItem != null &&

@@ -487,10 +487,11 @@
                   v-if="store.processingQueue"
                   class="graph-item"
                 >
-                  <p class="list-text">
+                  <p v-if="!store.fetchQueueLoad" class="list-text">
                     {{ store.processingQueue.file_name }}
                   </p>
                   <v-progress-circular
+                    v-if="store.fetchQueueLoad"
                     indeterminate
                     size="20"
                     color="#94D8FF"
@@ -502,8 +503,8 @@
                 <hr class="line" />
                 <h4 class="title">In Queue</h4>
                 <p v-if="store.inQueue.length > 0" class="list-text">
-                    {{ store.inQueue.length }} item(s)
-                  </p>
+                  {{ store.inQueue.length }} item(s)
+                </p>
                 <p class="list-text" v-if="store.inQueue.length === 0 && !store.fetchQueueLoad">
                   No items
                 </p>
