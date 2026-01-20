@@ -2,7 +2,11 @@
   <div class="network-page">
     <div class="network-wrapper">
       <!-- search -->
-      <v-progress-circular v-if="store.loading" indeterminate class="load-indicator"></v-progress-circular>
+      <v-progress-circular
+        v-if="store.loading"
+        indeterminate
+        class="load-indicator"
+      ></v-progress-circular>
       <div v-if="loaded && !emptyGraph" class="search-icon-container">
         <div class="zoom">
           <v-btn
@@ -30,10 +34,7 @@
         </div>
         <div class="search-icon">
           <v-btn
-            @click="
-              store.setSearchMenu(true);
-              store.setEdgeMenu(false);
-            "
+            @click="(store.setSearchMenu(true), store.setEdgeMenu(false))"
             variant="plain"
             id="no-background-hover"
             :ripple="false"
@@ -109,10 +110,7 @@
           size="small">Issues Found</v-btn> -->
         <v-btn
           v-if="showHiddenMenuButton"
-          @click="
-            store.setHiddenMenu(true);
-            store.setNodeCard(false);
-          "
+          @click="(store.setHiddenMenu(true), store.setNodeCard(false))"
           variant="plain"
           size="small"
           >Hidden Items
@@ -221,7 +219,7 @@ export default {
     },
     emptyGraph() {
       return this.nodes.length === 0 && this.edges.length === 0
-    }
+    },
   },
   data() {
     return {
@@ -759,7 +757,10 @@ export default {
         'bacnet://network/': { image: networkSvg, mass: 2 },
         'bacnet://': {
           Device: { image: deviceSvg, mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg, mass: 2 },
+          BBMD: {
+            image: this.onBbmds.includes(label) ? bbmdOnSvg : bbmdOffSvg,
+            mass: 2,
+          },
         },
         'bacnet://Grasshopper': {
           image: grasshopperSvg,
@@ -777,7 +778,10 @@ export default {
         'bacnet://network/': { image: networkSubSvg, mass: 2 },
         'bacnet://': {
           Device: { image: deviceSubSvg, mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg, mass: 4 },
+          BBMD: {
+            image: this.onBbmds.includes(label) ? bbmdOnSubSvg : bbmdOffSubSvg,
+            mass: 4,
+          },
         },
         'bacnet://Grasshopper': {
           image: grasshopperSvg,
@@ -795,7 +799,10 @@ export default {
         'bacnet://network/': { image: networkAddSvg, mass: 2 },
         'bacnet://': {
           Device: { image: deviceAddSvg, mass: 1 },
-          BBMD: { image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg, mass: 4 },
+          BBMD: {
+            image: this.onBbmds.includes(label) ? bbmdOnAddSvg : bbmdOffAddSvg,
+            mass: 4,
+          },
         },
         'bacnet://Grasshopper': {
           image: grasshopperSvg,
@@ -1022,7 +1029,12 @@ export default {
       if (this.store.fileName && this.emptyGraph) {
         this.store.setLoading(false)
         this.loaded = true
-        this.store.setGlobalError(true, `Graph <strong>${this.store.fileName}</strong> is empty.`, 'warning', 'Warning')
+        this.store.setGlobalError(
+          true,
+          `Graph <strong>${this.store.fileName}</strong> is empty.`,
+          'warning',
+          'Warning',
+        )
         return
       }
 
@@ -1051,7 +1063,7 @@ export default {
             null
         })
       }
-      
+
       const data = {
         nodes: this.nodes.map(node => ({
           ...node,
@@ -1132,21 +1144,21 @@ export default {
 
       // eslint-disable-next-line no-unused-vars
       this.network.on('hoverNode', ({ node }) => {
-        this.$refs.networkContainer.style.cursor = 'pointer';
+        this.$refs.networkContainer.style.cursor = 'pointer'
 
         // if (node && !node.includes('bacnet://subnet/') && !node.includes('bacnet://router/') && !node.includes('bacnet://Grasshopper') && !node.includes('bacnet://network/')) {
         //   this.store.runRouteWithCheck(() => this.store.getDeviceInfo(node.split('bacnet://')[1]));
         // }
-      });
+      })
 
       this.network.on('blurNode', () => {
-        this.$refs.networkContainer.style.cursor = 'default';
-      });
+        this.$refs.networkContainer.style.cursor = 'default'
+      })
 
       this.network.on('click', params => {
         if (!params.nodes.length) {
           this.unhighlightNode()
-          
+
           if (!this.store.showBdtEdges) {
             this.store.setBdtEdges(false)
             this.toggleBdtEdges(this.bdtEdges, false)
@@ -1171,7 +1183,7 @@ export default {
 
             this.selectedNodeType = null
             this.store.incDeviceKey()
-            
+
             if (nodeType == 'BBMD') {
               this.cardInfo = this.formatData(clickedNode.data)
               this.tableLabel = nodeType
@@ -1184,7 +1196,14 @@ export default {
               )
               this.toggleBdtEdges(matchingEdges, true)
             } else {
-              this.cardInfo = this.formatData(clickedNode.data)
+              this.cardInfo = this.formatData(
+                Object.keys(clickedNode.data)
+                  .sort()
+                  .reduce((obj, key) => {
+                    obj[key] = clickedNode.data[key]
+                    return obj
+                  }, {}),
+              )
               this.tableLabel = nodeType
               this.altCard = false
               this.selectedDevice = clickedNode.id
@@ -1299,7 +1318,7 @@ export default {
                     this.hideEverythingConnectedToRouter(clickedEdge.from),
                 },
               ]
-            } 
+            }
             // else if (this.edgeInfo.type === 'device-on-network') {
             //   // populate this.edgeOptions based on edge to and from node names
             //   const toKey = Object.keys(deviceTo).find(prefix =>
@@ -1329,7 +1348,7 @@ export default {
             //       })
             //     }
             //   }
-            // } 
+            // }
             else {
               // Default options
               // this.edgeOptions = [
