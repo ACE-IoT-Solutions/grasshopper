@@ -821,6 +821,54 @@ class bacpypes3_scanner:
 
         return device_subnet
 
+    async def read_device_properties(
+        self,
+        app: Application,
+        device: Union["BBMDNode", "DeviceNode"],
+        device_address: Address,
+        device_identifier: ObjectIdentifier,
+    ) -> None:
+        """
+        Read additional device properties (model_name, firmware_revision, device_name).
+
+        This method reads optional device properties and adds them to the device node.
+        Errors are logged but do not prevent device discovery from continuing.
+
+        Args:
+            app: The BACnet application object
+            device: The device node to add properties to
+            device_address: The device's network address
+            device_identifier: The device's object identifier
+        """
+        device_obj_id = ObjectIdentifier(("device", device_identifier[1]))
+
+        # Properties to read: BACnet property name -> RDF property name
+        properties_to_read = {
+            "object-name": "device-name",
+            "model-name": "model-name",
+            "firmware-revision": "firmware-revision",
+        }
+
+        for bacnet_prop, rdf_prop in properties_to_read.items():
+            try:
+                value = await asyncio.wait_for(
+                    app.read_property(device_address, device_obj_id, bacnet_prop),
+                    timeout=10.0,
+                )
+                if value is not None:
+                    device.add_connection(BACnetNS[rdf_prop], Literal(str(value)))
+                    _log.debug(
+                        f"Read {bacnet_prop}={value} from device {device_identifier[1]}"
+                    )
+            except asyncio.TimeoutError:
+                _log.debug(
+                    f"Timeout reading {bacnet_prop} from device {device_identifier[1]}"
+                )
+            except Exception as e:
+                _log.debug(
+                    f"Could not read {bacnet_prop} from device {device_identifier[1]}: {e}"
+                )
+
     async def get_device_objects(
         self, app: Application, ase: BVLLServiceElement, graph: Graph
     ) -> None:
@@ -913,6 +961,11 @@ class bacpypes3_scanner:
                         vendor_id=i_am.vendorID,
                     )
 
+                    # Read additional device properties (model_name, firmware_revision, device_name)
+                    await self.read_device_properties(
+                        app, device, device_address, device_identifier
+                    )
+
                     device_subnet = await self.add_subnet_to_device(
                         device, device_address
                     )
@@ -932,6 +985,10 @@ class bacpypes3_scanner:
                         device_address=device_address,
                         vendor_id=i_am.vendorID,
                         network_id=device_address.addrNet,
+                    )
+                    # Read additional device properties (model_name, firmware_revision, device_name)
+                    await self.read_device_properties(
+                        app, device, device_address, device_identifier
                     )
                     self.scanned_networks.add(device_address.addrNet)
 
