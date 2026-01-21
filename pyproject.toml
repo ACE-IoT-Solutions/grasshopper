@@ -8,7 +8,7 @@ authors = [
     { name = "Andrew Rodgers", email = "andrew@aceiotsolutions.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<=3.13"
 dependencies = [
     "rdflib>=7.0.0",
     "bacpypes3>=0.0.86",
