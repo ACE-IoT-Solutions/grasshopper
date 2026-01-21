@@ -6,9 +6,9 @@ import argparse
 import asyncio
 import ipaddress
 import logging
-import re
-import subprocess
 from typing import Any, Dict, List, Optional, Set, Union
+
+import netifaces
 
 import gevent
 import rdflib
@@ -307,95 +307,52 @@ class bacpypes3_scanner:
 
     def _get_system_interfaces(self) -> List[Dict[str, Any]]:
         """
-        Detect network interfaces from the operating system.
+        Detect network interfaces from the operating system using netifaces.
+
+        This is cross-platform (Linux, macOS, Windows, BSD) and avoids
+        fragile subprocess/string parsing of ifconfig or ip addr output.
 
         Returns:
-            List of dicts with 'ip', 'prefix', and 'network' keys for each interface.
+            List of dicts with 'interface', 'ip', 'prefix', and 'network' keys
+            for each IPv4 interface (excluding loopback).
         """
         interfaces = []
         try:
-            # Try ifconfig first (works on macOS and most Unix systems)
-            result = subprocess.run(
-                ["ifconfig"], capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                current_iface = None
-                for line in result.stdout.split("\n"):
-                    # Interface line starts with no whitespace
-                    if line and not line[0].isspace() and ":" in line:
-                        current_iface = line.split(":")[0]
-                    # inet line contains IP and netmask (skip loopback)
-                    elif "inet " in line and "127.0.0.1" not in line:
-                        parts = line.split()
-                        try:
-                            ip_idx = parts.index("inet") + 1
-                            ip = parts[ip_idx]
-                            # Find netmask
-                            if "netmask" in parts:
-                                mask_idx = parts.index("netmask") + 1
-                                netmask_hex = parts[mask_idx]
-                                # Convert hex netmask (0xfffffc00) to prefix length
-                                if netmask_hex.startswith("0x"):
-                                    mask_int = int(netmask_hex, 16)
-                                    # Count the number of 1 bits
-                                    prefix = bin(mask_int).count("1")
-                                else:
-                                    # Dotted decimal netmask
-                                    prefix = ipaddress.IPv4Network(
-                                        f"0.0.0.0/{netmask_hex}"
-                                    ).prefixlen
-                                network = ipaddress.ip_network(
-                                    f"{ip}/{prefix}", strict=False
-                                )
-                                interfaces.append(
-                                    {
-                                        "interface": current_iface,
-                                        "ip": ip,
-                                        "prefix": prefix,
-                                        "network": network,
-                                    }
-                                )
-                        except (ValueError, IndexError) as e:
-                            _log.debug(f"Failed to parse interface line: {line}: {e}")
-                            continue
-                return interfaces
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+            for iface_name in netifaces.interfaces():
+                # Get IPv4 addresses for this interface
+                addrs = netifaces.ifaddresses(iface_name).get(netifaces.AF_INET, [])
+                for addr in addrs:
+                    ip = addr.get("addr")
+                    netmask = addr.get("netmask")
+                    # Skip loopback and entries without IP/netmask
+                    if not ip or not netmask or ip == "127.0.0.1":
+                        continue
+                    try:
+                        # Convert netmask to prefix length
+                        prefix = ipaddress.IPv4Network(
+                            f"0.0.0.0/{netmask}"
+                        ).prefixlen
+                        network = ipaddress.ip_network(f"{ip}/{prefix}", strict=False)
+                        interfaces.append(
+                            {
+                                "interface": iface_name,
+                                "ip": ip,
+                                "prefix": prefix,
+                                "network": network,
+                            }
+                        )
+                    except (ValueError, TypeError) as e:
+                        _log.debug(
+                            f"Failed to parse interface {iface_name}: "
+                            f"ip={ip}, netmask={netmask}: {e}"
+                        )
+                        continue
+        except Exception as e:
+            _log.debug(f"Error detecting system network interfaces: {e}")
 
-        try:
-            # Try 'ip addr' (Linux)
-            result = subprocess.run(
-                ["ip", "addr"], capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                current_iface = None
-                for line in result.stdout.split("\n"):
-                    # Interface line format: "2: eth0: <FLAGS>"
-                    iface_match = re.match(r"\d+: (\S+):", line)
-                    if iface_match:
-                        current_iface = iface_match.group(1)
-                    # inet line format: "inet 192.168.1.5/24 brd ..."
-                    elif "inet " in line and "127.0.0.1" not in line:
-                        ip_match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/(\d+)", line)
-                        if ip_match:
-                            ip = ip_match.group(1)
-                            prefix = int(ip_match.group(2))
-                            network = ipaddress.ip_network(
-                                f"{ip}/{prefix}", strict=False
-                            )
-                            interfaces.append(
-                                {
-                                    "interface": current_iface,
-                                    "ip": ip,
-                                    "prefix": prefix,
-                                    "network": network,
-                                }
-                            )
-                return interfaces
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+        if not interfaces:
+            _log.debug("No network interfaces detected")
 
-        _log.debug("Could not detect system network interfaces")
         return interfaces
 
     def _detect_local_subnet(
