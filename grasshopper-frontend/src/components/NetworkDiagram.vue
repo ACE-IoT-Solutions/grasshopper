@@ -1185,7 +1185,14 @@ export default {
             this.store.incDeviceKey()
 
             if (nodeType == 'BBMD') {
-              this.cardInfo = this.formatData(clickedNode.data)
+              this.cardInfo = this.formatData(
+                Object.keys(clickedNode.data)
+                  .sort()
+                  .reduce((obj, key) => {
+                    obj[key] = clickedNode.data[key]
+                    return obj
+                  }, {}),
+              )
               this.tableLabel = nodeType
               this.altCard = false
               this.selectedNode = clickedNode.id
