@@ -216,12 +216,38 @@ class SubnetNode(BaseNode):
     def __init__(self, graph, node_iri):
         super().__init__(graph, node_iri, SubnetTypeHandler())
 
+    def add_properties(
+        self,
+        subnet_cidr: Optional[str] = None,
+        bbmd_iri: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Add properties to the subnet node."""
+        super().add_properties(**kwargs)
+        if subnet_cidr:
+            self.add_connection(BACnetNS["subnet-cidr"], Literal(str(subnet_cidr)))
+        if bbmd_iri:
+            self.add_connection(BACnetNS["bbmd"], bbmd_iri)
+
 
 class NetworkNode(BaseNode):
     """A BACnet network node that can include subnet, or additional behavior via composition."""
 
     def __init__(self, graph, node_iri):
         super().__init__(graph, node_iri, NetworkTypeHandler())
+
+    def add_properties(
+        self,
+        network_number: Optional[int] = None,
+        router_iri: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Add properties to the network node."""
+        super().add_properties(**kwargs)
+        if network_number is not None:
+            self.add_connection(BACnetNS["network-number"], Literal(network_number))
+        if router_iri:
+            self.add_connection(BACnetNS["router"], router_iri)
 
 
 class BaseBACnetComponent(ABC):

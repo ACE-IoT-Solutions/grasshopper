@@ -300,7 +300,9 @@ class bacpypes3_scanner:
         self.scanned_device_ips: dict[
             Union[ipaddress.IPv4Address, ipaddress.IPv6Address], BACnetNode
         ] = {}
-        
+        # Track which routers serve which networks (for network node attributes)
+        self.network_to_routers: dict[int, list] = {}
+
         # Scavenge scan configuration
         self.scavenge_enabled = scavenge_enabled
         self.scavenge_margin = scavenge_margin
@@ -683,6 +685,11 @@ class bacpypes3_scanner:
                 
                 for net in i_am_router_to_network.iartnNetworkList:
                     router_node.add_properties(network_id=net)
+                    # Track network -> router mapping for network node attributes
+                    if net not in self.network_to_routers:
+                        self.network_to_routers[net] = []
+                    if router_node.node_iri not in self.network_to_routers[net]:
+                        self.network_to_routers[net].append(router_node.node_iri)
 
                 not_in_network = True
                 for subnet in self.subnets:
@@ -1078,10 +1085,18 @@ class bacpypes3_scanner:
         """
         _log.debug("bacpypes3_scanner: set_subnet_network")
         for subnet in self.subnets:
-            SubnetNode(graph, BACnetURI["//subnet/" + str(subnet)])
+            subnet_node = SubnetNode(graph, BACnetURI["//subnet/" + str(subnet)])
+            # Add subnet CIDR and BBMD if applicable
+            bbmd_iri = self.bbmd_in_subnet.get(subnet)
+            subnet_node.add_properties(subnet_cidr=str(subnet), bbmd_iri=bbmd_iri)
 
         for net in self.scanned_networks:
-            NetworkNode(graph, BACnetURI["//network/" + str(net)])
+            network_node = NetworkNode(graph, BACnetURI["//network/" + str(net)])
+            # Add network number and router(s) if known
+            routers = self.network_to_routers.get(net, [])
+            # Add the first router as the primary router attribute
+            router_iri = routers[0] if routers else None
+            network_node.add_properties(network_number=net, router_iri=router_iri)
 
         try:
             for bbmd_ipaddress, bdt in self.scanned_bbmds_bdt.items():
