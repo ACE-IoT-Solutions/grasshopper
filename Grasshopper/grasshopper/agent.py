@@ -31,7 +31,9 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional, cast
 import gevent
 import grequests
 import uvicorn
+from bacpypes3.local.device import DeviceObject
 from bacpypes3.local.networkport import NetworkPortObject
+from bacpypes3.primitivedata import ObjectType
 from bacpypes3.vendor import VendorInfo
 from fastapi import FastAPI
 from rdflib import Graph
@@ -296,7 +298,9 @@ class Grasshopper(Agent):
                 vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
                 if vendorid != 999:
                     self.vendor_info = VendorInfo(vendorid)
-                    self.vendor_info.register_object_class(56, NetworkPortObject)
+                    # Register standard object classes for this vendor
+                    self.vendor_info.register_object_class(ObjectType.device, DeviceObject)
+                    self.vendor_info.register_object_class(ObjectType.networkPort, NetworkPortObject)
 
             except ValueError as exc:
                 _log.error("ValueError: ERROR PROCESSING CONFIGURATION: %s", exc)

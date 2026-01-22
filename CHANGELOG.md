@@ -13,6 +13,17 @@ Types of changes:
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.3.2] - 2026-01-22
+
+### Fixed
+
+- Fixed compatibility with bacpypes3 main branch by using SimpleArgumentParser for proper defaults
+- Fixed custom vendor ID support (non-999) by registering DeviceObject class with VendorInfo
+
+### Changed
+
+- Use bacpypes3.argparse.SimpleArgumentParser instead of vanilla argparse for Application creation
+
 ## [0.3.0]
 
 ### Added

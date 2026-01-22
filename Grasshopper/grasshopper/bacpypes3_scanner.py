@@ -14,6 +14,9 @@ import rdflib
 from bacpypes3.app import Application
 from bacpypes3.argparse import SimpleArgumentParser
 from bacpypes3.comm import ApplicationServiceElement, bind
+from bacpypes3.local.device import DeviceObject
+from bacpypes3.primitivedata import ObjectType
+from bacpypes3.vendor import VendorInfo
 from bacpypes3.ipv4.bvll import (
     LPDU,
     ReadBroadcastDistributionTable,
@@ -455,6 +458,18 @@ class bacpypes3_scanner:
         settings = self.bacpypes_settings.copy()
         bbmd_ips = self.get_bbmd_ips(graph)
         settings["bbmd"] = self.bacpypes_settings.get("bbmd", None)
+
+        # Register VendorInfo before creating Application (required for non-999 vendor IDs)
+        vendorid = settings.get("vendoridentifier", 999)
+        if vendorid != 999:
+            try:
+                vendor_info = VendorInfo(vendorid)
+                # Register standard object classes so device has proper defaults
+                vendor_info.register_object_class(ObjectType.device, DeviceObject)
+                _log.debug(f"Registered VendorInfo for vendor ID {vendorid}")
+            except RuntimeError as e:
+                # Vendor ID may already be registered
+                _log.debug(f"VendorInfo for vendor ID {vendorid} already registered: {e}")
 
         # Use SimpleArgumentParser to get proper bacpypes3 defaults
         parser = SimpleArgumentParser()
