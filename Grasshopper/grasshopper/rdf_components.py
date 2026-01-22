@@ -227,7 +227,10 @@ class SubnetNode(BaseNode):
         if subnet_cidr:
             self.add_connection(BACnetNS["subnet-cidr"], Literal(str(subnet_cidr)))
         if bbmd_iri:
-            self.add_connection(BACnetNS["bbmd"], bbmd_iri)
+            # Store BBMD as a literal to avoid edge-to-node conversion in build_networkx_graph
+            # which would incorrectly remove the BBMD node from the visualization
+            bbmd_id = str(bbmd_iri).replace("bacnet://", "")
+            self.add_connection(BACnetNS["bbmd"], Literal(bbmd_id))
 
 
 class NetworkNode(BaseNode):
@@ -247,7 +250,10 @@ class NetworkNode(BaseNode):
         if network_number is not None:
             self.add_connection(BACnetNS["network-number"], Literal(network_number))
         if router_iri:
-            self.add_connection(BACnetNS["router"], router_iri)
+            # Store router as a literal to avoid edge-to-node conversion in build_networkx_graph
+            # which would incorrectly remove the router node from the visualization
+            router_id = str(router_iri).replace("bacnet://", "")
+            self.add_connection(BACnetNS["router"], Literal(router_id))
 
 
 class BaseBACnetComponent(ABC):
