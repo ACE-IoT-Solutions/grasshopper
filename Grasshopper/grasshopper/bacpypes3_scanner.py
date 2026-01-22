@@ -2,7 +2,6 @@
 File contains the bacpypes3_scanner class which is used to scan the network for devices and routers.
 """
 
-import argparse
 import asyncio
 import ipaddress
 import logging
@@ -13,6 +12,7 @@ import netifaces
 import gevent
 import rdflib
 from bacpypes3.app import Application
+from bacpypes3.argparse import SimpleArgumentParser
 from bacpypes3.comm import ApplicationServiceElement, bind
 from bacpypes3.ipv4.bvll import (
     LPDU,
@@ -455,9 +455,17 @@ class bacpypes3_scanner:
         settings = self.bacpypes_settings.copy()
         bbmd_ips = self.get_bbmd_ips(graph)
         settings["bbmd"] = self.bacpypes_settings.get("bbmd", None)
-        app_settings = argparse.Namespace(**self.bacpypes_settings)
-        _log.debug(f"Application config: {app_settings}")
-        return Application.from_args(app_settings)
+
+        # Use SimpleArgumentParser to get proper bacpypes3 defaults
+        parser = SimpleArgumentParser()
+        args = parser.parse_args([])  # Parse empty args to get all defaults
+
+        # Override defaults with our config values
+        for key, value in settings.items():
+            setattr(args, key, value)
+
+        _log.debug(f"Application config: {args}")
+        return Application.from_args(args)
 
     def get_networks_from_graph(self, g: rdflib.Graph) -> Set[int]:
         """Return a set of network numbers from the graph"""
