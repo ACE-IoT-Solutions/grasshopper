@@ -849,6 +849,84 @@ class bacpypes3_scanner:
                     f"Could not read {bacnet_prop} from device {device_identifier[1]}: {e}"
                 )
 
+    async def read_device_object_signature(
+        self,
+        app: Application,
+        device: Union["BBMDNode", "DeviceNode"],
+        device_address: Address,
+        device_identifier: ObjectIdentifier,
+    ) -> None:
+        """
+        Read the object-list from a device and count objects by type.
+
+        This method reads the object-list property from a BACnet device and
+        creates a "signature" by counting how many objects of each type exist.
+        These counts are added as RDF properties (e.g., "analog-input-count": 5).
+
+        Args:
+            app: The BACnet application object
+            device: The device node to add signature properties to
+            device_address: The device's network address
+            device_identifier: The device's object identifier
+        """
+        device_obj_id = ObjectIdentifier(("device", device_identifier[1]))
+
+        try:
+            # Read the object-list property
+            object_list = await asyncio.wait_for(
+                app.read_property(device_address, device_obj_id, "object-list"),
+                timeout=30.0,  # Longer timeout for potentially large lists
+            )
+
+            if object_list is None:
+                _log.debug(
+                    f"No object-list returned from device {device_identifier[1]}"
+                )
+                return
+
+            # Count objects by type
+            type_counts: Dict[str, int] = {}
+            for obj_id in object_list:
+                # obj_id is an ObjectIdentifier tuple (type, instance)
+                obj_type = obj_id[0]
+                # Convert to string representation (e.g., "analog-input")
+                if hasattr(obj_type, 'attr'):
+                    # It's an ObjectType enum, get the string name
+                    type_name = str(obj_type.attr)
+                elif isinstance(obj_type, str):
+                    type_name = obj_type
+                else:
+                    type_name = str(obj_type)
+
+                type_counts[type_name] = type_counts.get(type_name, 0) + 1
+
+            # Add total object count
+            total_count = len(object_list)
+            device.add_connection(
+                BACnetNS["object-count"], Literal(total_count)
+            )
+            _log.debug(
+                f"Device {device_identifier[1]} has {total_count} total objects"
+            )
+
+            # Add count for each object type
+            for type_name, count in type_counts.items():
+                # Create property name like "analog-input-count"
+                prop_name = f"{type_name}-count"
+                device.add_connection(BACnetNS[prop_name], Literal(count))
+                _log.debug(
+                    f"Device {device_identifier[1]}: {type_name}={count}"
+                )
+
+        except asyncio.TimeoutError:
+            _log.debug(
+                f"Timeout reading object-list from device {device_identifier[1]}"
+            )
+        except Exception as e:
+            _log.debug(
+                f"Could not read object-list from device {device_identifier[1]}: {e}"
+            )
+
     async def get_device_objects(
         self, app: Application, ase: BVLLServiceElement, graph: Graph
     ) -> None:
@@ -946,6 +1024,11 @@ class bacpypes3_scanner:
                         app, device, device_address, device_identifier
                     )
 
+                    # Read device object signature (object types and counts)
+                    await self.read_device_object_signature(
+                        app, device, device_address, device_identifier
+                    )
+
                     device_subnet = await self.add_subnet_to_device(
                         device, device_address
                     )
@@ -968,6 +1051,11 @@ class bacpypes3_scanner:
                     )
                     # Read additional device properties (model_name, firmware_revision, device_name)
                     await self.read_device_properties(
+                        app, device, device_address, device_identifier
+                    )
+
+                    # Read device object signature (object types and counts)
+                    await self.read_device_object_signature(
                         app, device, device_address, device_identifier
                     )
                     self.scanned_networks.add(device_address.addrNet)
