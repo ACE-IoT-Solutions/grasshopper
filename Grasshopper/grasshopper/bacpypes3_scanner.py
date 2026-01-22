@@ -565,9 +565,9 @@ class bacpypes3_scanner:
         scanner_node = DeviceNode(graph, BACnetURI["//Grasshopper"])
         scanner_node.add_properties(
             label=BACnetURI[self.bacpypes_settings["name"]],
-            device_identifier=BACnetURI[self.bacpypes_settings["instance"]],
-            device_address=BACnetURI[self.bacpypes_settings["address"]],
-            vendor_id=BACnetURI[self.bacpypes_settings["vendoridentifier"]],
+            device_identifier=self.bacpypes_settings["instance"],
+            device_address=self.bacpypes_settings["address"],
+            vendor_id=self.bacpypes_settings["vendoridentifier"],
         )
         scanner_ip = ipaddress.ip_address(
             self.bacpypes_settings["address"].split(":")[0].split("/")[0]
