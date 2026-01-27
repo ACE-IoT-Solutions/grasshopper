@@ -92,6 +92,16 @@ class BBMDTypeHandler(BaseTypeHandler):
     def set_type(self, device):
         device.add_connection(RDF.type, BACnetNS.BBMD)
 
+class GrasshopperTypeHandler(BaseTypeHandler):
+    """
+    Handles assigning RDF.type for a Grasshopper specific BACnet device.
+
+    This type handler assigns the BACnet Device type to nodes in the RDF graph.
+    Grasshopper devices may have additional properties or behaviors specific to the Grasshopper platform.
+    """
+
+    def set_type(self, device):
+        device.add_connection(RDF.type, BACnetNS.Grasshopper)
 
 class RouterTypeHandler(BaseTypeHandler):
     """
@@ -360,6 +370,15 @@ class DeviceNode(BACnetNode):
         ]
         super().__init__(graph, device_iri, DeviceTypeHandler(), components)
 
+class GrasshopperNode(BACnetNode):
+    """A Grasshopper specific BACnet device node that can include subnet, network, or additional behavior via composition."""
+
+    def __init__(self, graph, device_iri):
+        components = [
+            NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
+        ]
+        super().__init__(graph, device_iri, GrasshopperTypeHandler(), components)
 
 class RouterNode(BACnetNode):
     """A BACnet router node that can include subnet, network, or additional behavior via composition."""

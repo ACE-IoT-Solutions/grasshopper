@@ -1,7 +1,6 @@
 """
 File contains the bacpypes3_scanner class which is used to scan the network for devices and routers.
 """
-
 import asyncio
 import ipaddress
 import logging
@@ -45,6 +44,8 @@ from .rdf_components import (
     DeviceNode,
     DeviceRouterNode,
     DeviceTypeHandler,
+    GrasshopperNode,
+    GrasshopperTypeHandler,
     NetworkComponent,
     NetworkNode,
     NetworkTypeHandler,
@@ -564,7 +565,7 @@ class bacpypes3_scanner:
         Set the scanner node in the graph
         """
         _log.debug("bacpypes3_scanner: set_scanner_node")
-        scanner_node = DeviceNode(graph, BACnetURI["//Grasshopper"])
+        scanner_node = GrasshopperNode(graph, BACnetURI["//Grasshopper"])
         scanner_node.add_properties(
             label=BACnetURI[self.bacpypes_settings["name"]],
             device_identifier=self.bacpypes_settings["instance"],
@@ -916,14 +917,17 @@ class bacpypes3_scanner:
                 f"Device {device_identifier[1]} has {total_count} total objects"
             )
 
+            object_dict = {}
             # Add count for each object type
             for type_name, count in type_counts.items():
                 # Create property name like "analog-input-count"
                 prop_name = f"{type_name}-count"
-                device.add_connection(BACnetNS[prop_name], Literal(count))
+                # device.add_connection(BACnetNS[prop_name], Literal(count))
+                object_dict[prop_name] = count
                 _log.debug(
                     f"Device {device_identifier[1]}: {type_name}={count}"
                 )
+            device.add_connection(BACnetNS["total-objects"], Literal(str(object_dict)))
 
         except asyncio.TimeoutError:
             _log.debug(
@@ -1096,7 +1100,9 @@ class bacpypes3_scanner:
             routers = self.network_to_routers.get(net, [])
             # Add the first router as the primary router attribute
             router_iri = routers[0] if routers else None
-            network_node.add_properties(network_number=net, router_iri=router_iri)
+            router_num = router_iri.split("bacnet://router/")[-1] if router_iri else None
+            _log.debug(f"adding router_iri: {router_iri} to network: {net}")
+            network_node.add_properties(network=net, router_iri=router_num)
 
         try:
             for bbmd_ipaddress, bdt in self.scanned_bbmds_bdt.items():
