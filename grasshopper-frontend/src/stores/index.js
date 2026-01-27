@@ -141,6 +141,9 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     deviceKey: 0,
     deviceTimeline: false,
     graphIssues: reactive({ graph_analysis: {} }),
+    objectCard: false,
+    objectCardData: null,
+    nodeLabel: null,
   }),
   getters: {
     isTimeRangeValid: state =>
@@ -339,6 +342,15 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     },
     setDeviceTimeline(value) {
       this.deviceTimeline = value
+    },
+    setObjectCard(value) {
+      this.objectCard = value
+    },
+    setObjectCardData(data) {
+      this.objectCardData = data
+    },
+    setNodeLabel(label) {
+      this.nodeLabel = label
     },
     matchGatewayToSite(gateway) {
       if (!this.gatewayInfo) return null
@@ -1021,13 +1033,16 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     },
     async exportTtl(compare, fileName) {
       await axios
-        .get(`${this.apiPrefix}/api/operations/${compare ? 'ttl_compare_file' : 'ttl_file'}/${fileName}`, {
-          headers: {
-            Accept: 'text/turtle',
+        .get(
+          `${this.apiPrefix}/api/operations/${compare ? 'ttl_compare_file' : 'ttl_file'}/${fileName}`,
+          {
+            headers: {
+              Accept: 'text/turtle',
+            },
+            responseType: 'blob',
+            withCredentials: true,
           },
-          responseType: 'blob',
-          withCredentials: true,
-        })
+        )
         .then(response => {
           const blob = new Blob([response.data], { type: 'text/turtle' })
 

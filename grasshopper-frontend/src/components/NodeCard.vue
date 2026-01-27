@@ -1,7 +1,15 @@
 <template>
   <div class="node-card">
     <!-- <TimelineCard v-if="store.nodeCard && store.timelineCard && store.deviceTimeline" :store="store" ref="timelineCard" /> -->
+    <ObjectCard
+      v-if="store.nodeCard && store.objectCard"
+      :store="store"
+      ref="objectCard"
+    />
     <div :class="store.deviceTimeline ? 'card-close-tl' : 'card-close'">
+      <h5 class="title">
+        {{ selectedNodeType.toUpperCase() }} {{ store.nodeLabel }}
+      </h5>
       <v-btn
         v-if="store.deviceTimeline"
         variant="plain"
@@ -12,11 +20,11 @@
         density="compact"
         color="#c1d200"
         @click="store.setTimelineCard(true)"
-        >
+      >
         <v-icon>mdi-timeline-clock-outline</v-icon>
       </v-btn>
       <v-btn
-        @click="closeCard()"
+        @click="(closeCard(), $refs.objectCard?.closeCard())"
         variant="plain"
         :ripple="false"
         icon=""
@@ -37,7 +45,8 @@
             v-for="item in cardInfo.filter(
               item =>
                 item.title.toLowerCase() !== 'label' &&
-                item.title.toLowerCase() !== 'vendor id',
+                item.title.toLowerCase() !== 'vendor id' &&
+                item.title.toLowerCase() !== 'total objects',
             )"
             :key="item"
             class="text-left"
@@ -52,11 +61,37 @@
             v-for="item in cardInfo.filter(
               item =>
                 item.title.toLowerCase() !== 'label' &&
-                item.title.toLowerCase() !== 'vendor id',
+                item.title.toLowerCase() !== 'vendor id' &&
+                item.title.toLowerCase() !== 'total objects',
             )"
             :key="item"
           >
-            {{ item.value }}
+            <v-tooltip
+              v-if="item.title.toLowerCase() == 'object count'"
+              text="Detailed Object Info"
+              bottom
+              delay="1000"
+            >
+              <template v-slot:activator="{ props }">
+                <div class="count-item" v-bind="props">
+                  <v-btn
+                    @click="
+                      store.objectCard
+                        ? $refs.objectCard?.closeCard()
+                        : store.setObjectCard(true)
+                    "
+                    variant="plain"
+                    :ripple="false"
+                    append-icon="mdi-information-outline"
+                  >
+                    {{ item.value }}
+                  </v-btn>
+                </div>
+              </template>
+            </v-tooltip>
+            <div v-else>
+              {{ item.value }}
+            </div>
           </td>
         </tr>
       </tbody>
@@ -65,9 +100,9 @@
       <!-- <v-btn @click="toggleNote()" variant="plain" append-icon="mdi-plus" size="x-small">
             Add Note
           </v-btn> -->
-      <!-- <v-btn @click="toggleHideSelectedNode()" variant="plain" size="x-small">
+      <v-btn @click="toggleHideSelectedNode()" variant="plain" size="x-small">
         {{ showHideText }} {{ selectedNodeType }}
-      </v-btn> -->
+      </v-btn>
     </div>
   </div>
 </template>
@@ -75,8 +110,12 @@
 <script>
 import { gsap } from 'gsap'
 import { vendors } from '../vendors/bacnet_vendors.json'
+import ObjectCard from '@/components/ObjectCard.vue'
 
 export default {
+  components: {
+    ObjectCard,
+  },
   props: [
     'store',
     'altCard',
@@ -161,7 +200,8 @@ export default {
 .card-close {
   display: flex;
   margin-left: 5px;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
 }
 .card-close-tl {
   display: flex;
@@ -171,11 +211,21 @@ export default {
 .card-buttons {
   display: flex;
   justify-content: space-between;
+  flex-direction: row-reverse;
 }
 .alt-card {
   font-size: 14px;
   font-weight: 900;
   margin: 5px;
   width: 300px;
+}
+.count-item {
+  display: flex;
+  align-items: center;
+  color: #c1d200;
+  gap: 8px;
+}
+.title {
+  color: #c1d200;
 }
 </style>

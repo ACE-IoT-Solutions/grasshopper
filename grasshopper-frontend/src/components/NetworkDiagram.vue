@@ -887,6 +887,8 @@ export default {
         const capitalizedWords = words.map(word => {
           if (word.toLowerCase() === 'id') {
             return 'ID'
+          } else if (word.toLowerCase() === 'cidr') {
+            return 'CIDR'
           }
           return word.charAt(0).toUpperCase() + word.slice(1)
         })
@@ -903,6 +905,10 @@ export default {
 
         formattedData.push({ title, value })
       })
+
+      if (data['total-objects']) {
+        this.store.setObjectCardData(data['total-objects'])
+      }
 
       return formattedData
     },
@@ -1173,7 +1179,10 @@ export default {
 
           if (clickedNode) {
             // console.log(clickedNode.data)
+            // console.log(clickedNode)
             // const cleanedTitle = clickedNode.id;
+            this.store.setObjectCardData(null)
+            this.$refs.nodeCard?.$refs.objectCard?.closeCard()
             const nodeType = clickedNode.data.type
             const nodeLabel = clickedNode.data.label
 
@@ -1197,6 +1206,7 @@ export default {
               this.altCard = false
               this.selectedNode = clickedNode.id
               this.selectedNodeType = 'BBMD'
+              this.store.setNodeLabel(clickedNode.label)
               // show connecting bdt edges
               const matchingEdges = this.bdtEdges.filter(
                 edge => edge.from === nodeLabel || edge.to === nodeLabel,
@@ -1217,6 +1227,7 @@ export default {
               this.selectedNodeType = nodeType
 
               this.selectedNode = clickedNode.id
+              this.store.setNodeLabel(clickedNode.label)
 
               // if (nodeType == 'Device' || nodeType == 'BBMD') {
               //   // fetch device info
