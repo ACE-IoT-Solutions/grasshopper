@@ -314,6 +314,8 @@ export default {
       // Tree layout data for custom drawing
       treeLayoutData: null,
       layoutParentChild: null,
+      // Clickable edge paths for tree layout
+      drawnEdgePaths: [],
 
       // showNoteCard: false,
     }
@@ -624,6 +626,17 @@ export default {
         return this.getNodeLevel(nodeId, nodeMap[nodeId]?.data?.type)
       }
 
+      // Helper to find edge data by from/to
+      const findEdge = (fromId, toId) => {
+        return edges.find(e =>
+          (e.from === fromId && e.to === toId) ||
+          (e.from === toId && e.to === fromId)
+        )
+      }
+
+      // Clear and rebuild edge paths for click detection
+      this.drawnEdgePaths = []
+
       canvasContext.save()
       canvasContext.strokeStyle = 'rgba(140, 140, 140, 0.7)'
       canvasContext.lineWidth = 1
@@ -638,13 +651,18 @@ export default {
 
         const parentLevel = getEffectiveLevel(parentId)
         const childLevel = getEffectiveLevel(childId)
+        const edge = findEdge(parentId, childId)
 
         // Device to Network connections (level 3 -> 4) - vertical drops to bus
         if (parentLevel === 3 && childLevel === 4) {
+          const segments = [
+            { x1: childPos.x, y1: childPos.y - 15, x2: childPos.x, y2: parentPos.y }
+          ]
           canvasContext.beginPath()
           canvasContext.moveTo(childPos.x, childPos.y - 15)
           canvasContext.lineTo(childPos.x, parentPos.y)
           canvasContext.stroke()
+          if (edge) this.drawnEdgePaths.push({ edge, segments })
           return
         }
 
@@ -653,20 +671,30 @@ export default {
 
         if (horizontalOffset < 30) {
           // Nearly aligned - draw simple vertical line
+          const segments = [
+            { x1: parentPos.x, y1: parentPos.y + 20, x2: childPos.x, y2: childPos.y - 20 }
+          ]
           canvasContext.beginPath()
           canvasContext.moveTo(parentPos.x, parentPos.y + 20)
           canvasContext.lineTo(childPos.x, childPos.y - 20)
           canvasContext.stroke()
+          if (edge) this.drawnEdgePaths.push({ edge, segments })
         } else {
           // Offset - draw orthogonal with waypoint closer to child
           const waypointY = childPos.y - 40
+          const segments = [
+            { x1: parentPos.x, y1: parentPos.y + 20, x2: parentPos.x, y2: waypointY },
+            { x1: parentPos.x, y1: waypointY, x2: childPos.x, y2: waypointY },
+            { x1: childPos.x, y1: waypointY, x2: childPos.x, y2: childPos.y - 20 }
+          ]
 
           canvasContext.beginPath()
-          canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent
-          canvasContext.lineTo(parentPos.x, waypointY) // Down near child level
-          canvasContext.lineTo(childPos.x, waypointY) // Horizontal to child X
-          canvasContext.lineTo(childPos.x, childPos.y - 20) // Down to child
+          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
+          canvasContext.lineTo(parentPos.x, waypointY)
+          canvasContext.lineTo(childPos.x, waypointY)
+          canvasContext.lineTo(childPos.x, childPos.y - 20)
           canvasContext.stroke()
+          if (edge) this.drawnEdgePaths.push({ edge, segments })
         }
       })
 
@@ -690,13 +718,92 @@ export default {
         if (!grasshopperPos || !subnetPos) return
 
         // Draw horizontal line connecting Grasshopper to subnet at same level
+        const segments = [
+          { x1: grasshopperPos.x, y1: grasshopperPos.y, x2: subnetPos.x, y2: subnetPos.y }
+        ]
         canvasContext.beginPath()
         canvasContext.moveTo(grasshopperPos.x, grasshopperPos.y)
         canvasContext.lineTo(subnetPos.x, subnetPos.y)
         canvasContext.stroke()
+        this.drawnEdgePaths.push({ edge, segments })
       })
 
       canvasContext.restore()
+    },
+    // Calculate distance from point to line segment
+    pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+      const A = px - x1
+      const B = py - y1
+      const C = x2 - x1
+      const D = y2 - y1
+
+      const dot = A * C + B * D
+      const lenSq = C * C + D * D
+      let param = -1
+
+      if (lenSq !== 0) param = dot / lenSq
+
+      let xx, yy
+
+      if (param < 0) {
+        xx = x1
+        yy = y1
+      } else if (param > 1) {
+        xx = x2
+        yy = y2
+      } else {
+        xx = x1 + param * C
+        yy = y1 + param * D
+      }
+
+      const dx = px - xx
+      const dy = py - yy
+      return Math.sqrt(dx * dx + dy * dy)
+    },
+    // Find edge at canvas coordinates
+    findEdgeAtPoint(canvasX, canvasY, threshold = 8) {
+      if (!this.drawnEdgePaths || this.drawnEdgePaths.length === 0) return null
+
+      for (const { edge, segments } of this.drawnEdgePaths) {
+        for (const seg of segments) {
+          const dist = this.pointToSegmentDistance(canvasX, canvasY, seg.x1, seg.y1, seg.x2, seg.y2)
+          if (dist <= threshold) {
+            return edge
+          }
+        }
+      }
+      return null
+    },
+    // Handle click on custom-drawn edges in tree layout
+    handleTreeEdgeClick(event) {
+      if (this.store.layoutMode !== 'tree' || !this.network) return false
+
+      // Get canvas coordinates from DOM event
+      const rect = this.$refs.network.getBoundingClientRect()
+      const domX = event.clientX - rect.left
+      const domY = event.clientY - rect.top
+
+      // Convert DOM coordinates to canvas coordinates
+      const canvasCoords = this.network.DOMtoCanvas({ x: domX, y: domY })
+
+      const clickedEdge = this.findEdgeAtPoint(canvasCoords.x, canvasCoords.y)
+      if (clickedEdge) {
+        // Trigger edge selection similar to vis-network click handler
+        const cleanedLabel = clickedEdge.label ? clickedEdge.label.replace(
+          'http://data.ashrae.org/bacnet/2020#',
+          '',
+        ) : ''
+        this.selectedEdge = clickedEdge.id
+        this.edgeInfo = {
+          type: cleanedLabel,
+          from: clickedEdge.from,
+          to: clickedEdge.to,
+        }
+        this.store.setEdgeCard(true)
+        this.store.setNodeCard(false)
+        return true
+      }
+      return false
     },
     toggleHideSelectedNode() {
       if (this.selectedNodeType === 'Network') {
@@ -1649,6 +1756,13 @@ export default {
       })
 
       this.network.on('click', params => {
+        // In tree layout, check for custom-drawn edge clicks first
+        if (this.store.layoutMode === 'tree' && params.nodes.length === 0 && params.edges.length === 0) {
+          if (this.handleTreeEdgeClick(params.event.srcEvent)) {
+            return // Custom edge was clicked, handled by handleTreeEdgeClick
+          }
+        }
+
         if (!params.nodes.length) {
           this.unhighlightNode()
 
