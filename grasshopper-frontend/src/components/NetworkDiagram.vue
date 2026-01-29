@@ -324,20 +324,21 @@ export default {
     getNodeLevel(nodeId, nodeType) {
       // Assign hierarchical levels for tree layout (like a controls riser diagram)
       // Level 0: BBMDs (top of the riser - manage broadcast domains)
-      // Level 1: Subnets (IP subnets)
+      // Level 1: Subnets and Grasshopper (IP subnets, scanner is at this level)
       // Level 2: Routers (connect subnets to BACnet networks)
-      // Level 3: Networks (BACnet network numbers)
-      // Level 4: Devices and Grasshopper (leaves)
+      // Level 3: Networks (BACnet network numbers) - rendered as buses
+      // Level 4: Devices (leaves - connect directly to network bus)
       if (nodeType === 'BBMD') {
         return 0
       } else if (nodeId.startsWith('bacnet://subnet/')) {
+        return 1
+      } else if (nodeId.startsWith('bacnet://Grasshopper')) {
+        // Grasshopper/Sentinel is the scanner - put at subnet level
         return 1
       } else if (nodeId.startsWith('bacnet://router/')) {
         return 2
       } else if (nodeId.startsWith('bacnet://network/')) {
         return 3
-      } else if (nodeId.startsWith('bacnet://Grasshopper')) {
-        return 4
       } else {
         // Regular devices
         return 4
@@ -476,23 +477,13 @@ export default {
     },
     drawRiserDiagram(ctx, networkInstance, treePositions, edges, nodeMap) {
       // Custom drawing for riser diagram style:
-      // 1. Draw horizontal buses for network nodes
-      // 2. Draw orthogonal edges
+      // Draw horizontal buses for network nodes
 
       if (!treePositions || !networkInstance) return
 
       const canvasContext = ctx
 
-      // Get the current transform to convert coordinates
-      const scale = networkInstance.getScale()
-      const viewPosition = networkInstance.getViewPosition()
-
-      // Helper to convert DOM position to canvas position
-      const toCanvas = (x, y) => {
-        return networkInstance.canvasToDOM({ x, y })
-      }
-
-      // Collect network nodes and their children for bus drawing
+      // Collect network nodes and their device children for bus drawing
       const networkBuses = {}
       const nodePositions = {}
 
@@ -504,45 +495,48 @@ export default {
         }
       })
 
-      // Build parent-child relationships for networks
+      // Find device children for each network (level 3 -> level 4 connections)
       edges.forEach(edge => {
         const fromId = edge.from
         const toId = edge.to
+        const fromLevel = this.getNodeLevel(fromId, nodeMap[fromId]?.data?.type)
+        const toLevel = this.getNodeLevel(toId, nodeMap[toId]?.data?.type)
 
-        if (this.isNetworkNode(fromId) && nodePositions[fromId]) {
+        // Network (level 3) to Device (level 4) connections
+        if (fromLevel === 3 && toLevel === 4 && nodePositions[fromId] && nodePositions[toId]) {
           if (!networkBuses[fromId]) {
             networkBuses[fromId] = {
               pos: nodePositions[fromId],
               children: [],
+              childIds: [],
             }
           }
-          if (nodePositions[toId]) {
-            networkBuses[fromId].children.push(nodePositions[toId])
-          }
+          networkBuses[fromId].children.push(nodePositions[toId])
+          networkBuses[fromId].childIds.push(toId)
         }
-        if (this.isNetworkNode(toId) && nodePositions[toId]) {
+        if (toLevel === 3 && fromLevel === 4 && nodePositions[toId] && nodePositions[fromId]) {
           if (!networkBuses[toId]) {
             networkBuses[toId] = {
               pos: nodePositions[toId],
               children: [],
+              childIds: [],
             }
           }
-          if (nodePositions[fromId]) {
-            networkBuses[toId].children.push(nodePositions[fromId])
-          }
+          networkBuses[toId].children.push(nodePositions[fromId])
+          networkBuses[toId].childIds.push(fromId)
         }
       })
 
-      // Draw network buses (horizontal lines)
+      // Draw network buses (horizontal lines) - only spanning their own children
       canvasContext.save()
       canvasContext.strokeStyle = '#FFD700' // Gold color for buses
-      canvasContext.lineWidth = 3
+      canvasContext.lineWidth = 4
 
       Object.keys(networkBuses).forEach(networkId => {
         const bus = networkBuses[networkId]
         if (bus.children.length === 0) return
 
-        // Find the extent of children (min and max X)
+        // Find the extent of THIS network's children only
         let minX = bus.pos.x
         let maxX = bus.pos.x
 
@@ -551,17 +545,20 @@ export default {
           maxX = Math.max(maxX, childPos.x)
         })
 
-        // Draw horizontal bus line from network node to span all children
+        // Draw horizontal bus line from leftmost to rightmost child
         const busY = bus.pos.y
-        const padding = 30
+        const padding = 20
 
         canvasContext.beginPath()
-        canvasContext.moveTo(bus.pos.x, busY)
+        canvasContext.moveTo(minX - padding, busY)
         canvasContext.lineTo(maxX + padding, busY)
         canvasContext.stroke()
       })
 
       canvasContext.restore()
+
+      // Store bus info for device drop connections
+      this.networkBusData = networkBuses
     },
     drawOrthogonalEdges(ctx, networkInstance, edges, nodeMap) {
       // Draw orthogonal (right-angle) edges
@@ -570,8 +567,11 @@ export default {
       const canvasContext = ctx
 
       canvasContext.save()
-      canvasContext.strokeStyle = 'rgba(150, 150, 150, 0.6)'
+      canvasContext.strokeStyle = 'rgba(150, 150, 150, 0.8)'
       canvasContext.lineWidth = 1
+
+      // Track which device-network edges we handle via bus drops
+      const busDropEdges = new Set()
 
       edges.forEach(edge => {
         const fromPos = networkInstance.getPosition(edge.from)
@@ -579,22 +579,36 @@ export default {
 
         if (!fromPos || !toPos) return
 
-        // Skip edges that are handled by bus rendering
-        // (network to device edges will connect via the bus)
-
         const fromLevel = this.getNodeLevel(edge.from, nodeMap[edge.from]?.data?.type)
         const toLevel = this.getNodeLevel(edge.to, nodeMap[edge.to]?.data?.type)
 
+        // Device to Network connections - draw as vertical drops to bus
+        if ((fromLevel === 4 && toLevel === 3) || (fromLevel === 3 && toLevel === 4)) {
+          const devicePos = fromLevel === 4 ? fromPos : toPos
+          const networkPos = fromLevel === 3 ? fromPos : toPos
+
+          // Draw vertical drop from device up to bus level
+          canvasContext.beginPath()
+          canvasContext.moveTo(devicePos.x, devicePos.y - 20) // Start above device
+          canvasContext.lineTo(devicePos.x, networkPos.y) // Vertical line to bus Y
+          canvasContext.stroke()
+          return
+        }
+
         // Determine which node is higher (parent) and lower (child)
-        let parentPos, childPos
+        let parentPos, childPos, parentLevel, childLevel
         if (fromLevel < toLevel) {
           parentPos = fromPos
           childPos = toPos
+          parentLevel = fromLevel
+          childLevel = toLevel
         } else if (toLevel < fromLevel) {
           parentPos = toPos
           childPos = fromPos
+          parentLevel = toLevel
+          childLevel = fromLevel
         } else {
-          // Same level - draw straight line
+          // Same level - draw straight horizontal line
           canvasContext.beginPath()
           canvasContext.moveTo(fromPos.x, fromPos.y)
           canvasContext.lineTo(toPos.x, toPos.y)
@@ -606,10 +620,10 @@ export default {
         const midY = parentPos.y + (childPos.y - parentPos.y) / 2
 
         canvasContext.beginPath()
-        canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent node
+        canvasContext.moveTo(parentPos.x, parentPos.y + 25) // Start below parent node
         canvasContext.lineTo(parentPos.x, midY) // Vertical down to midpoint
         canvasContext.lineTo(childPos.x, midY) // Horizontal to child's X
-        canvasContext.lineTo(childPos.x, childPos.y - 20) // Vertical down to child
+        canvasContext.lineTo(childPos.x, childPos.y - 25) // Vertical down to child
         canvasContext.stroke()
       })
 
