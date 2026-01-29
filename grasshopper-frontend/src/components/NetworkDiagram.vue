@@ -311,6 +311,9 @@ export default {
       bdtEdges: [],
       closestBbmd: null,
 
+      // Tree layout data for custom drawing
+      treeLayoutData: null,
+
       // showNoteCard: false,
     }
   },
@@ -470,6 +473,147 @@ export default {
     },
     isNetworkNode(nodeId) {
       return nodeId.startsWith('bacnet://network/')
+    },
+    drawRiserDiagram(ctx, networkInstance, treePositions, edges, nodeMap) {
+      // Custom drawing for riser diagram style:
+      // 1. Draw horizontal buses for network nodes
+      // 2. Draw orthogonal edges
+
+      if (!treePositions || !networkInstance) return
+
+      const canvasContext = ctx
+
+      // Get the current transform to convert coordinates
+      const scale = networkInstance.getScale()
+      const viewPosition = networkInstance.getViewPosition()
+
+      // Helper to convert DOM position to canvas position
+      const toCanvas = (x, y) => {
+        return networkInstance.canvasToDOM({ x, y })
+      }
+
+      // Collect network nodes and their children for bus drawing
+      const networkBuses = {}
+      const nodePositions = {}
+
+      // Get actual positions from the network
+      Object.keys(treePositions).forEach(nodeId => {
+        const pos = networkInstance.getPosition(nodeId)
+        if (pos) {
+          nodePositions[nodeId] = pos
+        }
+      })
+
+      // Build parent-child relationships for networks
+      edges.forEach(edge => {
+        const fromId = edge.from
+        const toId = edge.to
+
+        if (this.isNetworkNode(fromId) && nodePositions[fromId]) {
+          if (!networkBuses[fromId]) {
+            networkBuses[fromId] = {
+              pos: nodePositions[fromId],
+              children: [],
+            }
+          }
+          if (nodePositions[toId]) {
+            networkBuses[fromId].children.push(nodePositions[toId])
+          }
+        }
+        if (this.isNetworkNode(toId) && nodePositions[toId]) {
+          if (!networkBuses[toId]) {
+            networkBuses[toId] = {
+              pos: nodePositions[toId],
+              children: [],
+            }
+          }
+          if (nodePositions[fromId]) {
+            networkBuses[toId].children.push(nodePositions[fromId])
+          }
+        }
+      })
+
+      // Draw network buses (horizontal lines)
+      canvasContext.save()
+      canvasContext.strokeStyle = '#FFD700' // Gold color for buses
+      canvasContext.lineWidth = 3
+
+      Object.keys(networkBuses).forEach(networkId => {
+        const bus = networkBuses[networkId]
+        if (bus.children.length === 0) return
+
+        // Find the extent of children (min and max X)
+        let minX = bus.pos.x
+        let maxX = bus.pos.x
+
+        bus.children.forEach(childPos => {
+          minX = Math.min(minX, childPos.x)
+          maxX = Math.max(maxX, childPos.x)
+        })
+
+        // Draw horizontal bus line from network node to span all children
+        const busY = bus.pos.y
+        const padding = 30
+
+        canvasContext.beginPath()
+        canvasContext.moveTo(bus.pos.x, busY)
+        canvasContext.lineTo(maxX + padding, busY)
+        canvasContext.stroke()
+      })
+
+      canvasContext.restore()
+    },
+    drawOrthogonalEdges(ctx, networkInstance, edges, nodeMap) {
+      // Draw orthogonal (right-angle) edges
+      if (!networkInstance) return
+
+      const canvasContext = ctx
+
+      canvasContext.save()
+      canvasContext.strokeStyle = 'rgba(150, 150, 150, 0.6)'
+      canvasContext.lineWidth = 1
+
+      edges.forEach(edge => {
+        const fromPos = networkInstance.getPosition(edge.from)
+        const toPos = networkInstance.getPosition(edge.to)
+
+        if (!fromPos || !toPos) return
+
+        // Skip edges that are handled by bus rendering
+        // (network to device edges will connect via the bus)
+
+        const fromLevel = this.getNodeLevel(edge.from, nodeMap[edge.from]?.data?.type)
+        const toLevel = this.getNodeLevel(edge.to, nodeMap[edge.to]?.data?.type)
+
+        // Determine which node is higher (parent) and lower (child)
+        let parentPos, childPos
+        if (fromLevel < toLevel) {
+          parentPos = fromPos
+          childPos = toPos
+        } else if (toLevel < fromLevel) {
+          parentPos = toPos
+          childPos = fromPos
+        } else {
+          // Same level - draw straight line
+          canvasContext.beginPath()
+          canvasContext.moveTo(fromPos.x, fromPos.y)
+          canvasContext.lineTo(toPos.x, toPos.y)
+          canvasContext.stroke()
+          return
+        }
+
+        // Draw orthogonal edge: vertical down, horizontal across, vertical down
+        const midY = parentPos.y + (childPos.y - parentPos.y) / 2
+
+        canvasContext.beginPath()
+        canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent node
+        canvasContext.lineTo(parentPos.x, midY) // Vertical down to midpoint
+        canvasContext.lineTo(childPos.x, midY) // Horizontal to child's X
+        canvasContext.lineTo(childPos.x, childPos.y - 20) // Vertical down to child
+        canvasContext.stroke()
+      })
+
+      canvasContext.restore()
     },
     toggleHideSelectedNode() {
       if (this.selectedNodeType === 'Network') {
@@ -1250,8 +1394,21 @@ export default {
 
       // Calculate custom tree positions if in tree mode
       let treePositions = null
+      const nodeMap = {}
+      this.nodes.forEach(n => {
+        nodeMap[n.id] = n
+      })
+
       if (isTreeLayout) {
         treePositions = this.calculateTreeLayout(this.nodes, processedEdges)
+        // Store for custom drawing
+        this.treeLayoutData = {
+          positions: treePositions,
+          edges: processedEdges,
+          nodeMap: nodeMap,
+        }
+      } else {
+        this.treeLayoutData = null
       }
 
       const data = {
@@ -1276,6 +1433,14 @@ export default {
             ...(this.store.compareMode
               ? this.getCompareEdgeColor(edge.data, file1, file2)
               : {}),
+          }
+
+          // Hide default edges in tree mode - we draw custom orthogonal edges
+          if (isTreeLayout) {
+            return {
+              ...base,
+              hidden: true,
+            }
           }
 
           if (
@@ -1365,6 +1530,27 @@ export default {
         this.loaded = true
         this.store.setLoading(false)
       })
+
+      // Custom drawing for tree layout (buses and orthogonal edges)
+      if (isTreeLayout) {
+        this.network.on('afterDrawing', ctx => {
+          if (this.treeLayoutData) {
+            this.drawOrthogonalEdges(
+              ctx,
+              this.network,
+              this.treeLayoutData.edges,
+              this.treeLayoutData.nodeMap,
+            )
+            this.drawRiserDiagram(
+              ctx,
+              this.network,
+              this.treeLayoutData.positions,
+              this.treeLayoutData.edges,
+              this.treeLayoutData.nodeMap,
+            )
+          }
+        })
+      }
 
       // eslint-disable-next-line no-unused-vars
       this.network.on('hoverNode', ({ node }) => {
