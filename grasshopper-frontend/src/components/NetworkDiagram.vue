@@ -583,15 +583,26 @@ export default {
           return
         }
 
-        // Calculate waypoint Y as midpoint between parent and child
-        const waypointY = parentPos.y + (childPos.y - parentPos.y) * 0.3
+        // Check if parent and child are nearly vertically aligned
+        const horizontalOffset = Math.abs(parentPos.x - childPos.x)
 
-        canvasContext.beginPath()
-        canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent
-        canvasContext.lineTo(parentPos.x, waypointY) // Down to waypoint
-        canvasContext.lineTo(childPos.x, waypointY) // Horizontal to child X
-        canvasContext.lineTo(childPos.x, childPos.y - 20) // Down to child
-        canvasContext.stroke()
+        if (horizontalOffset < 30) {
+          // Nearly aligned - draw simple vertical line
+          canvasContext.beginPath()
+          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
+          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.stroke()
+        } else {
+          // Offset - draw orthogonal with waypoint closer to child
+          const waypointY = childPos.y - 40
+
+          canvasContext.beginPath()
+          canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent
+          canvasContext.lineTo(parentPos.x, waypointY) // Down near child level
+          canvasContext.lineTo(childPos.x, waypointY) // Horizontal to child X
+          canvasContext.lineTo(childPos.x, childPos.y - 20) // Down to child
+          canvasContext.stroke()
+        }
       })
 
       // Special handling for Grasshopper node - draw its subnet connection
