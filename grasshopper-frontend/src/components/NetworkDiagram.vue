@@ -401,46 +401,75 @@ export default {
         }
       })
 
-      // BOTTOM-UP: Group devices by their parent network, place groups together
-      // Step 1: Group devices by their parent (network at level 3)
-      const devicesByParent = {}
-      const orphanDevices = []
+      // BOTTOM-UP: Group all nodes by their closest parent, place groups together
+      // Step 1: Group nodes at each level by their parent
+      const nodesByParent = {} // parentId -> [childIds]
+      const orphansByLevel = { 0: [], 1: [], 2: [], 3: [], 4: [] }
 
-      levelGroups[4].forEach(deviceId => {
-        const parentId = childToParent[deviceId]
-        if (parentId) {
-          if (!devicesByParent[parentId]) devicesByParent[parentId] = []
-          devicesByParent[parentId].push(deviceId)
-        } else {
-          orphanDevices.push(deviceId)
-        }
-      })
-
-      // Step 2: Place devices grouped by parent network
-      let x = 0
-      const networkOrder = levelGroups[3].slice() // Networks
-
-      // Place devices for each network
-      networkOrder.forEach(networkId => {
-        const devices = devicesByParent[networkId] || []
-        devices.forEach(deviceId => {
-          positions[deviceId] = { x: x, y: 4 * levelHeight }
-          x += nodeSpacing
+      // Categorize all nodes
+      for (let level = 4; level >= 0; level--) {
+        levelGroups[level].forEach(nodeId => {
+          const parentId = childToParent[nodeId]
+          if (parentId) {
+            if (!nodesByParent[parentId]) nodesByParent[parentId] = []
+            nodesByParent[parentId].push(nodeId)
+          } else {
+            orphansByLevel[level].push(nodeId)
+          }
         })
-        if (devices.length > 0) {
-          x += nodeSpacing * 0.5 // Small gap between network groups
+      }
+
+      // Step 2: Place all leaf nodes (level 4 devices) first
+      let x = 0
+
+      // Helper to recursively get all leaf descendants
+      const getLeafDescendants = (nodeId) => {
+        const children = parentToChildren[nodeId] || []
+        if (children.length === 0) {
+          return [nodeId]
         }
+        let leaves = []
+        children.forEach(childId => {
+          leaves = leaves.concat(getLeafDescendants(childId))
+        })
+        return leaves
+      }
+
+      // Find all root nodes (nodes without parents in the layout)
+      const rootNodes = []
+      for (let level = 0; level <= 4; level++) {
+        levelGroups[level].forEach(nodeId => {
+          if (!childToParent[nodeId]) {
+            rootNodes.push(nodeId)
+          }
+        })
+      }
+
+      // Place each root's subtree
+      rootNodes.forEach(rootId => {
+        const rootLevel = this.getNodeLevel(rootId, nodeMap[rootId]?.data?.type)
+        const leaves = getLeafDescendants(rootId)
+
+        if (leaves.length > 0 && leaves[0] !== rootId) {
+          // Has leaf descendants - place them first
+          leaves.forEach(leafId => {
+            const leafLevel = this.getNodeLevel(leafId, nodeMap[leafId]?.data?.type)
+            positions[leafId] = { x: x, y: leafLevel * levelHeight }
+            x += nodeSpacing
+          })
+        } else {
+          // Root is itself a leaf or has no descendants
+          positions[rootId] = { x: x, y: rootLevel * levelHeight }
+          x += nodeSpacing
+        }
+        x += nodeSpacing * 0.5 // Gap between subtrees
       })
 
-      // Place orphan devices at the end
-      orphanDevices.forEach(deviceId => {
-        positions[deviceId] = { x: x, y: 4 * levelHeight }
-        x += nodeSpacing
-      })
-
-      // Step 3: For each level from 3 down to 0, center parent over its children
+      // Step 3: Bottom-up - center parents over their children
       for (let level = 3; level >= 0; level--) {
         levelGroups[level].forEach(nodeId => {
+          if (positions[nodeId]) return // Already positioned
+
           const children = parentToChildren[nodeId] || []
           const childPositions = children
             .map(cid => positions[cid])
@@ -452,12 +481,21 @@ export default {
             const maxX = Math.max(...childPositions.map(p => p.x))
             positions[nodeId] = { x: (minX + maxX) / 2, y: level * levelHeight }
           } else {
-            // No children, place at current x
+            // No positioned children, place at current x
             positions[nodeId] = { x: x, y: level * levelHeight }
             x += nodeSpacing
           }
         })
       }
+
+      // Step 4: Ensure ALL nodes have positions (catch any missed)
+      nodes.forEach(n => {
+        if (!positions[n.id]) {
+          const level = this.getNodeLevel(n.id, n.data?.type)
+          positions[n.id] = { x: x, y: level * levelHeight }
+          x += nodeSpacing
+        }
+      })
 
       // Store the parent-child relationships for edge drawing
       this.layoutParentChild = { childToParent, parentToChildren }
