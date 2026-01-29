@@ -348,9 +348,9 @@ export default {
       // Custom tree layout that groups children under their parents
       // Returns a map of nodeId -> {x, y} positions
       const positions = {}
-      const nodeSpacing = 120
-      const levelHeight = 150
-      const busHeight = 40 // Extra space for network buses
+      const nodeSpacing = 80 // Horizontal spacing between sibling nodes
+      const levelHeight = 100 // Vertical spacing between levels
+      const busHeight = 20 // Extra space for network buses
 
       // Build adjacency list and determine parent-child relationships
       const adjacency = {}
@@ -570,10 +570,10 @@ export default {
       canvasContext.strokeStyle = 'rgba(150, 150, 150, 0.8)'
       canvasContext.lineWidth = 1
 
-      // Track which device-network edges we handle via bus drops
-      const busDropEdges = new Set()
+      // Group edges by parent-child level pair to stagger horizontal segments
+      const levelPairEdges = {}
 
-      edges.forEach(edge => {
+      edges.forEach((edge, index) => {
         const fromPos = networkInstance.getPosition(edge.from)
         const toPos = networkInstance.getPosition(edge.to)
 
@@ -589,7 +589,7 @@ export default {
 
           // Draw vertical drop from device up to bus level
           canvasContext.beginPath()
-          canvasContext.moveTo(devicePos.x, devicePos.y - 20) // Start above device
+          canvasContext.moveTo(devicePos.x, devicePos.y - 15) // Start above device
           canvasContext.lineTo(devicePos.x, networkPos.y) // Vertical line to bus Y
           canvasContext.stroke()
           return
@@ -597,16 +597,21 @@ export default {
 
         // Determine which node is higher (parent) and lower (child)
         let parentPos, childPos, parentLevel, childLevel
+        let parentId, childId
         if (fromLevel < toLevel) {
           parentPos = fromPos
           childPos = toPos
           parentLevel = fromLevel
           childLevel = toLevel
+          parentId = edge.from
+          childId = edge.to
         } else if (toLevel < fromLevel) {
           parentPos = toPos
           childPos = fromPos
           parentLevel = toLevel
           childLevel = fromLevel
+          parentId = edge.to
+          childId = edge.from
         } else {
           // Same level - draw straight horizontal line
           canvasContext.beginPath()
@@ -616,15 +621,40 @@ export default {
           return
         }
 
-        // Draw orthogonal edge: vertical down, horizontal across, vertical down
-        const midY = parentPos.y + (childPos.y - parentPos.y) / 2
+        // Group by level pair for staggering
+        const levelKey = `${parentLevel}-${childLevel}`
+        if (!levelPairEdges[levelKey]) {
+          levelPairEdges[levelKey] = []
+        }
+        levelPairEdges[levelKey].push({
+          parentPos,
+          childPos,
+          parentId,
+          childId,
+          index: levelPairEdges[levelKey].length,
+        })
+      })
 
-        canvasContext.beginPath()
-        canvasContext.moveTo(parentPos.x, parentPos.y + 25) // Start below parent node
-        canvasContext.lineTo(parentPos.x, midY) // Vertical down to midpoint
-        canvasContext.lineTo(childPos.x, midY) // Horizontal to child's X
-        canvasContext.lineTo(childPos.x, childPos.y - 25) // Vertical down to child
-        canvasContext.stroke()
+      // Draw edges with staggered horizontal segments
+      Object.keys(levelPairEdges).forEach(levelKey => {
+        const edgeGroup = levelPairEdges[levelKey]
+        const staggerStep = 8 // Pixels between staggered lines
+
+        edgeGroup.forEach((edgeData, i) => {
+          const { parentPos, childPos } = edgeData
+
+          // Calculate staggered midY - offset based on index
+          const baseMidY = parentPos.y + (childPos.y - parentPos.y) * 0.4
+          const staggerOffset = (i - edgeGroup.length / 2) * staggerStep
+          const midY = baseMidY + staggerOffset
+
+          canvasContext.beginPath()
+          canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent node
+          canvasContext.lineTo(parentPos.x, midY) // Vertical down to staggered midpoint
+          canvasContext.lineTo(childPos.x, midY) // Horizontal to child's X
+          canvasContext.lineTo(childPos.x, childPos.y - 20) // Vertical down to child
+          canvasContext.stroke()
+        })
       })
 
       canvasContext.restore()
