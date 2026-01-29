@@ -594,6 +594,32 @@ export default {
         canvasContext.stroke()
       })
 
+      // Special handling for Grasshopper node - draw its subnet connection
+      // Grasshopper is at level 1 (same as subnet) so it gets skipped by parent-child logic
+      edges.forEach(edge => {
+        const fromIsGrasshopper = edge.from.startsWith('bacnet://Grasshopper')
+        const toIsGrasshopper = edge.to.startsWith('bacnet://Grasshopper')
+
+        if (!fromIsGrasshopper && !toIsGrasshopper) return
+
+        const grasshopperId = fromIsGrasshopper ? edge.from : edge.to
+        const otherId = fromIsGrasshopper ? edge.to : edge.from
+
+        // Only draw subnet connections (same level)
+        if (!otherId.startsWith('bacnet://subnet/')) return
+
+        const grasshopperPos = networkInstance.getPosition(grasshopperId)
+        const subnetPos = networkInstance.getPosition(otherId)
+
+        if (!grasshopperPos || !subnetPos) return
+
+        // Draw horizontal line connecting Grasshopper to subnet at same level
+        canvasContext.beginPath()
+        canvasContext.moveTo(grasshopperPos.x, grasshopperPos.y)
+        canvasContext.lineTo(subnetPos.x, subnetPos.y)
+        canvasContext.stroke()
+      })
+
       canvasContext.restore()
     },
     toggleHideSelectedNode() {
