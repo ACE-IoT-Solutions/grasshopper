@@ -313,6 +313,7 @@ export default {
 
       // Tree layout data for custom drawing
       treeLayoutData: null,
+      layoutParentChild: null,
 
       // showNoteCard: false,
     }
@@ -458,6 +459,9 @@ export default {
         })
       }
 
+      // Store the parent-child relationships for edge drawing
+      this.layoutParentChild = { childToParent, parentToChildren }
+
       return positions
     },
     isNetworkNode(nodeId) {
@@ -549,100 +553,47 @@ export default {
       this.networkBusData = networkBuses
     },
     drawOrthogonalEdges(ctx, networkInstance, edges, nodeMap) {
-      // Draw orthogonal (right-angle) edges
-      if (!networkInstance) return
+      // Draw orthogonal edges based on LAYOUT parent-child relationships only
+      // This prevents drawing duplicate/extra edges from the graph
+      if (!networkInstance || !this.layoutParentChild) return
 
       const canvasContext = ctx
+      const { childToParent, parentToChildren } = this.layoutParentChild
 
       canvasContext.save()
       canvasContext.strokeStyle = 'rgba(150, 150, 150, 0.8)'
       canvasContext.lineWidth = 1
 
-      // Group edges by parent-child level pair to stagger horizontal segments
-      const levelPairEdges = {}
+      // Draw edges for each parent-child relationship in the layout
+      Object.keys(childToParent).forEach(childId => {
+        const parentId = childToParent[childId]
+        const parentPos = networkInstance.getPosition(parentId)
+        const childPos = networkInstance.getPosition(childId)
 
-      edges.forEach((edge, index) => {
-        const fromPos = networkInstance.getPosition(edge.from)
-        const toPos = networkInstance.getPosition(edge.to)
+        if (!parentPos || !childPos) return
 
-        if (!fromPos || !toPos) return
+        const parentLevel = this.getNodeLevel(parentId, nodeMap[parentId]?.data?.type)
+        const childLevel = this.getNodeLevel(childId, nodeMap[childId]?.data?.type)
 
-        const fromLevel = this.getNodeLevel(edge.from, nodeMap[edge.from]?.data?.type)
-        const toLevel = this.getNodeLevel(edge.to, nodeMap[edge.to]?.data?.type)
-
-        // Device to Network connections - draw as vertical drops to bus
-        if ((fromLevel === 4 && toLevel === 3) || (fromLevel === 3 && toLevel === 4)) {
-          const devicePos = fromLevel === 4 ? fromPos : toPos
-          const networkPos = fromLevel === 3 ? fromPos : toPos
-
-          // Draw vertical drop from device up to bus level
+        // Device to Network connections (level 3 -> 4) - vertical drops to bus
+        if (parentLevel === 3 && childLevel === 4) {
           canvasContext.beginPath()
-          canvasContext.moveTo(devicePos.x, devicePos.y - 15) // Start above device
-          canvasContext.lineTo(devicePos.x, networkPos.y) // Vertical line to bus Y
+          canvasContext.moveTo(childPos.x, childPos.y - 15)
+          canvasContext.lineTo(childPos.x, parentPos.y)
           canvasContext.stroke()
           return
         }
 
-        // Determine which node is higher (parent) and lower (child)
-        let parentPos, childPos, parentLevel, childLevel
-        let parentId, childId
-        if (fromLevel < toLevel) {
-          parentPos = fromPos
-          childPos = toPos
-          parentLevel = fromLevel
-          childLevel = toLevel
-          parentId = edge.from
-          childId = edge.to
-        } else if (toLevel < fromLevel) {
-          parentPos = toPos
-          childPos = fromPos
-          parentLevel = toLevel
-          childLevel = fromLevel
-          parentId = edge.to
-          childId = edge.from
-        } else {
-          // Same level - draw straight horizontal line
-          canvasContext.beginPath()
-          canvasContext.moveTo(fromPos.x, fromPos.y)
-          canvasContext.lineTo(toPos.x, toPos.y)
-          canvasContext.stroke()
-          return
-        }
+        // All other parent-child connections - simple orthogonal routing
+        // Go down from parent, across, then down to child
+        const midY = parentPos.y + (childPos.y - parentPos.y) * 0.5
 
-        // Group by level pair for staggering
-        const levelKey = `${parentLevel}-${childLevel}`
-        if (!levelPairEdges[levelKey]) {
-          levelPairEdges[levelKey] = []
-        }
-        levelPairEdges[levelKey].push({
-          parentPos,
-          childPos,
-          parentId,
-          childId,
-          index: levelPairEdges[levelKey].length,
-        })
-      })
-
-      // Draw edges with staggered horizontal segments
-      Object.keys(levelPairEdges).forEach(levelKey => {
-        const edgeGroup = levelPairEdges[levelKey]
-        const staggerStep = 8 // Pixels between staggered lines
-
-        edgeGroup.forEach((edgeData, i) => {
-          const { parentPos, childPos } = edgeData
-
-          // Calculate staggered midY - offset based on index
-          const baseMidY = parentPos.y + (childPos.y - parentPos.y) * 0.4
-          const staggerOffset = (i - edgeGroup.length / 2) * staggerStep
-          const midY = baseMidY + staggerOffset
-
-          canvasContext.beginPath()
-          canvasContext.moveTo(parentPos.x, parentPos.y + 20) // Start below parent node
-          canvasContext.lineTo(parentPos.x, midY) // Vertical down to staggered midpoint
-          canvasContext.lineTo(childPos.x, midY) // Horizontal to child's X
-          canvasContext.lineTo(childPos.x, childPos.y - 20) // Vertical down to child
-          canvasContext.stroke()
-        })
+        canvasContext.beginPath()
+        canvasContext.moveTo(parentPos.x, parentPos.y + 18)
+        canvasContext.lineTo(parentPos.x, midY)
+        canvasContext.lineTo(childPos.x, midY)
+        canvasContext.lineTo(childPos.x, childPos.y - 18)
+        canvasContext.stroke()
       })
 
       canvasContext.restore()
