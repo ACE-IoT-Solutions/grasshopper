@@ -554,17 +554,16 @@ export default {
     },
     drawOrthogonalEdges(ctx, networkInstance, edges, nodeMap) {
       // Draw orthogonal edges based on LAYOUT parent-child relationships only
-      // This prevents drawing duplicate/extra edges from the graph
       if (!networkInstance || !this.layoutParentChild) return
 
       const canvasContext = ctx
-      const { childToParent, parentToChildren } = this.layoutParentChild
+      const { childToParent } = this.layoutParentChild
 
       canvasContext.save()
-      canvasContext.strokeStyle = 'rgba(150, 150, 150, 0.8)'
+      canvasContext.strokeStyle = 'rgba(140, 140, 140, 0.7)'
       canvasContext.lineWidth = 1
 
-      // Draw edges for each parent-child relationship in the layout
+      // Draw edges for each parent-child relationship
       Object.keys(childToParent).forEach(childId => {
         const parentId = childToParent[childId]
         const parentPos = networkInstance.getPosition(parentId)
@@ -584,15 +583,15 @@ export default {
           return
         }
 
-        // All other parent-child connections - simple orthogonal routing
-        // Go down from parent, across, then down to child
-        const midY = parentPos.y + (childPos.y - parentPos.y) * 0.5
+        // For other connections: draw straight down from parent, then L-shaped to child
+        // This avoids the horizontal overlap by making horizontal segments at child level
+        const horizontalY = childPos.y - 25 // Horizontal just above child
 
         canvasContext.beginPath()
-        canvasContext.moveTo(parentPos.x, parentPos.y + 18)
-        canvasContext.lineTo(parentPos.x, midY)
-        canvasContext.lineTo(childPos.x, midY)
-        canvasContext.lineTo(childPos.x, childPos.y - 18)
+        canvasContext.moveTo(parentPos.x, parentPos.y + 18) // Start below parent
+        canvasContext.lineTo(parentPos.x, horizontalY) // Straight down
+        canvasContext.lineTo(childPos.x, horizontalY) // Horizontal to child X
+        canvasContext.lineTo(childPos.x, childPos.y - 18) // Down to child
         canvasContext.stroke()
       })
 
