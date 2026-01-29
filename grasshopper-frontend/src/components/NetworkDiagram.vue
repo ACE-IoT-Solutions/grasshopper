@@ -348,20 +348,13 @@ export default {
       // Custom tree layout that groups children under their parents
       // Returns a map of nodeId -> {x, y} positions
       const positions = {}
-      const nodeSpacing = 80 // Horizontal spacing between sibling nodes
-      const levelHeight = 100 // Vertical spacing between levels
-      const busHeight = 20 // Extra space for network buses
+      const nodeSpacing = 60 // Horizontal spacing between sibling nodes
+      const levelHeight = 80 // Vertical spacing between levels
 
-      // Build adjacency list and determine parent-child relationships
-      const adjacency = {}
+      // Build node map
       const nodeMap = {}
       nodes.forEach(n => {
-        adjacency[n.id] = []
         nodeMap[n.id] = n
-      })
-      edges.forEach(e => {
-        if (adjacency[e.from]) adjacency[e.from].push(e.to)
-        if (adjacency[e.to]) adjacency[e.to].push(e.from)
       })
 
       // Group nodes by level
@@ -373,7 +366,7 @@ export default {
         }
       })
 
-      // Build parent-child mapping (higher level -> lower level connections)
+      // Build parent-child mapping (only immediate parent-child, one level difference)
       const children = {} // parentId -> [childIds]
       const parents = {} // childId -> parentId
 
@@ -381,94 +374,100 @@ export default {
         const fromLevel = this.getNodeLevel(e.from, nodeMap[e.from]?.data?.type)
         const toLevel = this.getNodeLevel(e.to, nodeMap[e.to]?.data?.type)
 
-        if (fromLevel < toLevel) {
-          // from is parent, to is child
+        // Only connect adjacent levels (difference of 1)
+        if (fromLevel + 1 === toLevel) {
           if (!children[e.from]) children[e.from] = []
-          children[e.from].push(e.to)
-          parents[e.to] = e.from
-        } else if (toLevel < fromLevel) {
-          // to is parent, from is child
+          if (!children[e.from].includes(e.to)) {
+            children[e.from].push(e.to)
+          }
+          if (!parents[e.to]) parents[e.to] = e.from
+        } else if (toLevel + 1 === fromLevel) {
           if (!children[e.to]) children[e.to] = []
-          children[e.to].push(e.from)
-          parents[e.from] = e.to
+          if (!children[e.to].includes(e.from)) {
+            children[e.to].push(e.from)
+          }
+          if (!parents[e.from]) parents[e.from] = e.to
         }
       })
 
-      // Calculate subtree widths for proper spacing
-      const subtreeWidths = {}
-      const calculateSubtreeWidth = (nodeId) => {
-        if (subtreeWidths[nodeId] !== undefined) return subtreeWidths[nodeId]
+      // Count leaf descendants for width calculation
+      const leafCounts = {}
+      const countLeaves = (nodeId) => {
+        if (leafCounts[nodeId] !== undefined) return leafCounts[nodeId]
 
         const nodeChildren = children[nodeId] || []
         if (nodeChildren.length === 0) {
-          subtreeWidths[nodeId] = nodeSpacing
-          return nodeSpacing
+          leafCounts[nodeId] = 1
+          return 1
         }
 
-        let totalWidth = 0
+        let total = 0
         nodeChildren.forEach(childId => {
-          totalWidth += calculateSubtreeWidth(childId)
+          total += countLeaves(childId)
         })
-        subtreeWidths[nodeId] = Math.max(nodeSpacing, totalWidth)
-        return subtreeWidths[nodeId]
+        leafCounts[nodeId] = total
+        return total
       }
 
-      // Calculate widths for all root nodes (level 0)
-      levelGroups[0].forEach(nodeId => calculateSubtreeWidth(nodeId))
-      // Also calculate for orphan nodes at each level
-      for (let level = 1; level <= 4; level++) {
+      // Count leaves for all nodes
+      nodes.forEach(n => countLeaves(n.id))
+
+      // Position nodes - simple approach: place at level, spread by leaf count
+      // First, gather all roots (nodes without parents at each starting level)
+      const roots = []
+      for (let level = 0; level <= 4; level++) {
         levelGroups[level].forEach(nodeId => {
           if (!parents[nodeId]) {
-            calculateSubtreeWidth(nodeId)
+            roots.push({ nodeId, level })
           }
         })
       }
 
-      // Position nodes level by level, grouping children under parents
+      // Position subtrees
+      let globalX = 0
+
       const positionSubtree = (nodeId, startX, level) => {
         const nodeChildren = children[nodeId] || []
-        const width = subtreeWidths[nodeId] || nodeSpacing
+        const leafCount = leafCounts[nodeId] || 1
+        const width = leafCount * nodeSpacing
 
-        // Calculate Y position - networks get extra space for bus rendering
-        let y = level * levelHeight
-        if (level >= 3) {
-          y += busHeight // Add bus space after routers
-        }
+        // Y position based on level
+        const y = level * levelHeight
 
-        // Center this node over its subtree
-        const centerX = startX + width / 2
-        positions[nodeId] = { x: centerX, y }
+        if (nodeChildren.length === 0) {
+          // Leaf node - place at startX
+          positions[nodeId] = { x: startX + nodeSpacing / 2, y }
+        } else {
+          // Parent node - center over children
+          let childX = startX
+          nodeChildren.forEach(childId => {
+            const childLevel = this.getNodeLevel(childId, nodeMap[childId]?.data?.type)
+            const childLeaves = leafCounts[childId] || 1
+            const childWidth = childLeaves * nodeSpacing
+            positionSubtree(childId, childX, childLevel)
+            childX += childWidth
+          })
 
-        // Position children
-        let childX = startX
-        nodeChildren.forEach(childId => {
-          const childLevel = this.getNodeLevel(childId, nodeMap[childId]?.data?.type)
-          const childWidth = subtreeWidths[childId] || nodeSpacing
-          positionSubtree(childId, childX, childLevel)
-          childX += childWidth
-        })
-      }
-
-      // Position all root nodes (nodes without parents) at their respective levels
-      let currentX = 0
-
-      // First, position level 0 nodes and their subtrees
-      levelGroups[0].forEach(nodeId => {
-        const width = subtreeWidths[nodeId] || nodeSpacing
-        positionSubtree(nodeId, currentX, 0)
-        currentX += width
-      })
-
-      // Position orphan nodes (nodes not connected to higher levels)
-      for (let level = 1; level <= 4; level++) {
-        levelGroups[level].forEach(nodeId => {
-          if (!parents[nodeId] && !positions[nodeId]) {
-            const width = subtreeWidths[nodeId] || nodeSpacing
-            positionSubtree(nodeId, currentX, level)
-            currentX += width
+          // Center parent over its children
+          const firstChild = positions[nodeChildren[0]]
+          const lastChild = positions[nodeChildren[nodeChildren.length - 1]]
+          if (firstChild && lastChild) {
+            positions[nodeId] = { x: (firstChild.x + lastChild.x) / 2, y }
+          } else {
+            positions[nodeId] = { x: startX + width / 2, y }
           }
-        })
+        }
       }
+
+      // Position each root and its subtree
+      roots.forEach(({ nodeId, level }) => {
+        if (!positions[nodeId]) {
+          const leafCount = leafCounts[nodeId] || 1
+          const width = leafCount * nodeSpacing
+          positionSubtree(nodeId, globalX, level)
+          globalX += width + nodeSpacing // Add gap between separate trees
+        }
+      })
 
       return positions
     },
