@@ -340,6 +340,137 @@ export default {
         return 4
       }
     },
+    calculateTreeLayout(nodes, edges) {
+      // Custom tree layout that groups children under their parents
+      // Returns a map of nodeId -> {x, y} positions
+      const positions = {}
+      const nodeSpacing = 120
+      const levelHeight = 150
+      const busHeight = 40 // Extra space for network buses
+
+      // Build adjacency list and determine parent-child relationships
+      const adjacency = {}
+      const nodeMap = {}
+      nodes.forEach(n => {
+        adjacency[n.id] = []
+        nodeMap[n.id] = n
+      })
+      edges.forEach(e => {
+        if (adjacency[e.from]) adjacency[e.from].push(e.to)
+        if (adjacency[e.to]) adjacency[e.to].push(e.from)
+      })
+
+      // Group nodes by level
+      const levelGroups = { 0: [], 1: [], 2: [], 3: [], 4: [] }
+      nodes.forEach(n => {
+        const level = this.getNodeLevel(n.id, n.data?.type)
+        if (levelGroups[level]) {
+          levelGroups[level].push(n.id)
+        }
+      })
+
+      // Build parent-child mapping (higher level -> lower level connections)
+      const children = {} // parentId -> [childIds]
+      const parents = {} // childId -> parentId
+
+      edges.forEach(e => {
+        const fromLevel = this.getNodeLevel(e.from, nodeMap[e.from]?.data?.type)
+        const toLevel = this.getNodeLevel(e.to, nodeMap[e.to]?.data?.type)
+
+        if (fromLevel < toLevel) {
+          // from is parent, to is child
+          if (!children[e.from]) children[e.from] = []
+          children[e.from].push(e.to)
+          parents[e.to] = e.from
+        } else if (toLevel < fromLevel) {
+          // to is parent, from is child
+          if (!children[e.to]) children[e.to] = []
+          children[e.to].push(e.from)
+          parents[e.from] = e.to
+        }
+      })
+
+      // Calculate subtree widths for proper spacing
+      const subtreeWidths = {}
+      const calculateSubtreeWidth = (nodeId) => {
+        if (subtreeWidths[nodeId] !== undefined) return subtreeWidths[nodeId]
+
+        const nodeChildren = children[nodeId] || []
+        if (nodeChildren.length === 0) {
+          subtreeWidths[nodeId] = nodeSpacing
+          return nodeSpacing
+        }
+
+        let totalWidth = 0
+        nodeChildren.forEach(childId => {
+          totalWidth += calculateSubtreeWidth(childId)
+        })
+        subtreeWidths[nodeId] = Math.max(nodeSpacing, totalWidth)
+        return subtreeWidths[nodeId]
+      }
+
+      // Calculate widths for all root nodes (level 0)
+      levelGroups[0].forEach(nodeId => calculateSubtreeWidth(nodeId))
+      // Also calculate for orphan nodes at each level
+      for (let level = 1; level <= 4; level++) {
+        levelGroups[level].forEach(nodeId => {
+          if (!parents[nodeId]) {
+            calculateSubtreeWidth(nodeId)
+          }
+        })
+      }
+
+      // Position nodes level by level, grouping children under parents
+      const positionSubtree = (nodeId, startX, level) => {
+        const nodeChildren = children[nodeId] || []
+        const width = subtreeWidths[nodeId] || nodeSpacing
+
+        // Calculate Y position - networks get extra space for bus rendering
+        let y = level * levelHeight
+        if (level >= 3) {
+          y += busHeight // Add bus space after routers
+        }
+
+        // Center this node over its subtree
+        const centerX = startX + width / 2
+        positions[nodeId] = { x: centerX, y }
+
+        // Position children
+        let childX = startX
+        nodeChildren.forEach(childId => {
+          const childLevel = this.getNodeLevel(childId, nodeMap[childId]?.data?.type)
+          const childWidth = subtreeWidths[childId] || nodeSpacing
+          positionSubtree(childId, childX, childLevel)
+          childX += childWidth
+        })
+      }
+
+      // Position all root nodes (nodes without parents) at their respective levels
+      let currentX = 0
+
+      // First, position level 0 nodes and their subtrees
+      levelGroups[0].forEach(nodeId => {
+        const width = subtreeWidths[nodeId] || nodeSpacing
+        positionSubtree(nodeId, currentX, 0)
+        currentX += width
+      })
+
+      // Position orphan nodes (nodes not connected to higher levels)
+      for (let level = 1; level <= 4; level++) {
+        levelGroups[level].forEach(nodeId => {
+          if (!parents[nodeId] && !positions[nodeId]) {
+            const width = subtreeWidths[nodeId] || nodeSpacing
+            positionSubtree(nodeId, currentX, level)
+            currentX += width
+          }
+        })
+      }
+
+      return positions
+    },
+    isNetworkNode(nodeId) {
+      return nodeId.startsWith('bacnet://network/')
+    },
     toggleHideSelectedNode() {
       if (this.selectedNodeType === 'Network') {
         if (this.hiddenNetworkIds.includes(this.selectedNode)) {
@@ -1117,6 +1248,12 @@ export default {
 
       const isTreeLayout = this.store.layoutMode === 'tree'
 
+      // Calculate custom tree positions if in tree mode
+      let treePositions = null
+      if (isTreeLayout) {
+        treePositions = this.calculateTreeLayout(this.nodes, processedEdges)
+      }
+
       const data = {
         nodes: this.nodes.map(node => {
           const baseNode = {
@@ -1125,9 +1262,11 @@ export default {
               ? this.getCompareConfig(node.id, node.data, file1, file2)
               : this.getNodeConfig(node.id, node.data)),
           }
-          // Add level for hierarchical layout
-          if (isTreeLayout) {
-            baseNode.level = this.getNodeLevel(node.id, node.data?.type)
+          // Apply custom tree layout positions
+          if (isTreeLayout && treePositions && treePositions[node.id]) {
+            baseNode.x = treePositions[node.id].x
+            baseNode.y = treePositions[node.id].y
+            baseNode.fixed = { x: true, y: true } // Lock positions
           }
           return baseNode
         }),
@@ -1173,7 +1312,7 @@ export default {
                 enabled: true,
                 type: 'cubicBezier',
                 forceDirection: 'vertical',
-                roundness: 0.4,
+                roundness: 0.5,
               }
             : {
                 enabled: false,
@@ -1195,26 +1334,13 @@ export default {
           hover: true,
         },
         physics: isTreeLayout
-          ? { enabled: false } // No physics for tree layout - fully deterministic
+          ? { enabled: false } // No physics - using custom deterministic positions
           : this.store.physicsConfig,
-        layout: isTreeLayout
-          ? {
-              hierarchical: {
-                enabled: true,
-                direction: 'UD', // Up-Down (BBMDs at top, devices at bottom)
-                sortMethod: 'hubsize', // Sort by connection count for better grouping
-                shakeTowards: 'roots', // Push roots (BBMDs) to top
-                levelSeparation: 150,
-                nodeSpacing: 100,
-                treeSpacing: 150,
-                blockShifting: true,
-                edgeMinimization: true,
-                parentCentralization: true,
-              },
-            }
-          : {
-              improvedLayout: false,
-            },
+        layout: {
+          // Don't use vis-network's hierarchical layout - we use custom positions
+          improvedLayout: false,
+          hierarchical: false,
+        },
       }
 
       // Only force-enable physics for force layout
