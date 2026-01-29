@@ -401,6 +401,27 @@ export default {
         }
       })
 
+      // Detect devices directly connected to subnet - move to level 2 (router level)
+      // These are IP devices that don't go through a network number
+      const adjustedLevel = {} // nodeId -> adjusted level
+      levelGroups[4].forEach(deviceId => {
+        const parentId = childToParent[deviceId]
+        if (parentId && parentId.startsWith('bacnet://subnet/')) {
+          // This device connects directly to a subnet - place at router level
+          adjustedLevel[deviceId] = 2
+          // Move from level 4 to level 2 group
+          levelGroups[2].push(deviceId)
+        }
+      })
+      // Remove moved devices from level 4
+      levelGroups[4] = levelGroups[4].filter(id => !adjustedLevel[id])
+
+      // Helper to get effective level (adjusted or original)
+      const getEffectiveLevel = (nodeId) => {
+        if (adjustedLevel[nodeId] !== undefined) return adjustedLevel[nodeId]
+        return this.getNodeLevel(nodeId, nodeMap[nodeId]?.data?.type)
+      }
+
       // BOTTOM-UP: Group all nodes by their closest parent, place groups together
       // Step 1: Group nodes at each level by their parent
       const nodesByParent = {} // parentId -> [childIds]
@@ -447,13 +468,13 @@ export default {
 
       // Place each root's subtree
       rootNodes.forEach(rootId => {
-        const rootLevel = this.getNodeLevel(rootId, nodeMap[rootId]?.data?.type)
+        const rootLevel = getEffectiveLevel(rootId)
         const leaves = getLeafDescendants(rootId)
 
         if (leaves.length > 0 && leaves[0] !== rootId) {
           // Has leaf descendants - place them first
           leaves.forEach(leafId => {
-            const leafLevel = this.getNodeLevel(leafId, nodeMap[leafId]?.data?.type)
+            const leafLevel = getEffectiveLevel(leafId)
             positions[leafId] = { x: x, y: leafLevel * levelHeight }
             x += nodeSpacing
           })
@@ -491,14 +512,14 @@ export default {
       // Step 4: Ensure ALL nodes have positions (catch any missed)
       nodes.forEach(n => {
         if (!positions[n.id]) {
-          const level = this.getNodeLevel(n.id, n.data?.type)
+          const level = getEffectiveLevel(n.id)
           positions[n.id] = { x: x, y: level * levelHeight }
           x += nodeSpacing
         }
       })
 
-      // Store the parent-child relationships for edge drawing
-      this.layoutParentChild = { childToParent, parentToChildren }
+      // Store the parent-child relationships and adjusted levels for edge drawing
+      this.layoutParentChild = { childToParent, parentToChildren, adjustedLevel }
 
       return positions
     },
@@ -595,7 +616,13 @@ export default {
       if (!networkInstance || !this.layoutParentChild) return
 
       const canvasContext = ctx
-      const { childToParent } = this.layoutParentChild
+      const { childToParent, adjustedLevel } = this.layoutParentChild
+
+      // Helper to get effective level
+      const getEffectiveLevel = (nodeId) => {
+        if (adjustedLevel && adjustedLevel[nodeId] !== undefined) return adjustedLevel[nodeId]
+        return this.getNodeLevel(nodeId, nodeMap[nodeId]?.data?.type)
+      }
 
       canvasContext.save()
       canvasContext.strokeStyle = 'rgba(140, 140, 140, 0.7)'
@@ -609,8 +636,8 @@ export default {
 
         if (!parentPos || !childPos) return
 
-        const parentLevel = this.getNodeLevel(parentId, nodeMap[parentId]?.data?.type)
-        const childLevel = this.getNodeLevel(childId, nodeMap[childId]?.data?.type)
+        const parentLevel = getEffectiveLevel(parentId)
+        const childLevel = getEffectiveLevel(childId)
 
         // Device to Network connections (level 3 -> 4) - vertical drops to bus
         if (parentLevel === 3 && childLevel === 4) {
