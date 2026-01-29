@@ -345,6 +345,23 @@ export default {
         return 4
       }
     },
+    // Fixed Y levels for consistent layout
+    levelYPositions: {
+      0: 0,    // BBMD
+      1: 70,   // Subnet, Grasshopper
+      2: 140,  // Router
+      3: 210,  // Network (bus level)
+      4: 280,  // Device
+    },
+    // Fixed Y positions for horizontal edge waypoints (between levels)
+    edgeWaypointY: {
+      '0-1': 50,   // BBMD to Subnet
+      '1-2': 120,  // Subnet to Router
+      '2-3': 190,  // Router to Network
+      '0-2': 50,   // BBMD to Router (skip level)
+      '0-3': 50,   // BBMD to Network (skip level)
+      '1-3': 120,  // Subnet to Network (skip level)
+    },
     calculateTreeLayout(nodes, edges) {
       // Bottom-up tree layout: place devices first, then center parents over children
       const positions = {}
@@ -553,7 +570,7 @@ export default {
       this.networkBusData = networkBuses
     },
     drawOrthogonalEdges(ctx, networkInstance, edges, nodeMap) {
-      // Draw orthogonal edges based on LAYOUT parent-child relationships only
+      // Draw orthogonal edges using FIXED Y waypoint levels
       if (!networkInstance || !this.layoutParentChild) return
 
       const canvasContext = ctx
@@ -576,22 +593,28 @@ export default {
 
         // Device to Network connections (level 3 -> 4) - vertical drops to bus
         if (parentLevel === 3 && childLevel === 4) {
+          const busY = this.levelYPositions[3]
           canvasContext.beginPath()
-          canvasContext.moveTo(childPos.x, childPos.y - 15)
-          canvasContext.lineTo(childPos.x, parentPos.y)
+          canvasContext.moveTo(childPos.x, this.levelYPositions[4] - 15)
+          canvasContext.lineTo(childPos.x, busY)
           canvasContext.stroke()
           return
         }
 
-        // For other connections: draw straight down from parent, then L-shaped to child
-        // This avoids the horizontal overlap by making horizontal segments at child level
-        const horizontalY = childPos.y - 25 // Horizontal just above child
+        // Get fixed waypoint Y for this level pair
+        const levelKey = `${parentLevel}-${childLevel}`
+        const waypointY = this.edgeWaypointY[levelKey] ||
+                         (this.levelYPositions[parentLevel] + this.levelYPositions[childLevel]) / 2
+
+        // Fixed Y positions for parent and child
+        const parentY = this.levelYPositions[parentLevel]
+        const childY = this.levelYPositions[childLevel]
 
         canvasContext.beginPath()
-        canvasContext.moveTo(parentPos.x, parentPos.y + 18) // Start below parent
-        canvasContext.lineTo(parentPos.x, horizontalY) // Straight down
-        canvasContext.lineTo(childPos.x, horizontalY) // Horizontal to child X
-        canvasContext.lineTo(childPos.x, childPos.y - 18) // Down to child
+        canvasContext.moveTo(parentPos.x, parentY + 20) // Start below parent at fixed Y
+        canvasContext.lineTo(parentPos.x, waypointY) // Down to waypoint level
+        canvasContext.lineTo(childPos.x, waypointY) // Horizontal at fixed waypoint Y
+        canvasContext.lineTo(childPos.x, childY - 20) // Down to child at fixed Y
         canvasContext.stroke()
       })
 
