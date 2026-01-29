@@ -320,24 +320,24 @@ export default {
     },
     getNodeLevel(nodeId, nodeType) {
       // Assign hierarchical levels for tree layout (like a controls riser diagram)
-      // Level 0: BBMDs (top of the riser)
-      // Level 1: Subnets
-      // Level 2: Routers and Networks
-      // Level 3: Devices and Grasshopper (leaves)
+      // Level 0: BBMDs (top of the riser - manage broadcast domains)
+      // Level 1: Subnets (IP subnets)
+      // Level 2: Routers (connect subnets to BACnet networks)
+      // Level 3: Networks (BACnet network numbers)
+      // Level 4: Devices and Grasshopper (leaves)
       if (nodeType === 'BBMD') {
         return 0
       } else if (nodeId.startsWith('bacnet://subnet/')) {
         return 1
-      } else if (
-        nodeId.startsWith('bacnet://router/') ||
-        nodeId.startsWith('bacnet://network/')
-      ) {
+      } else if (nodeId.startsWith('bacnet://router/')) {
         return 2
-      } else if (nodeId.startsWith('bacnet://Grasshopper')) {
+      } else if (nodeId.startsWith('bacnet://network/')) {
         return 3
+      } else if (nodeId.startsWith('bacnet://Grasshopper')) {
+        return 4
       } else {
         // Regular devices
-        return 3
+        return 4
       }
     },
     toggleHideSelectedNode() {
