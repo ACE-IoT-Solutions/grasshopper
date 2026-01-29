@@ -443,7 +443,32 @@ export default {
       // Step 2: Place all leaf nodes (level 4 devices) first
       let x = 0
 
-      // Helper to recursively get all leaf descendants
+      // Helper to get sort key for deterministic ordering
+      const getSortKey = (nodeId) => {
+        const node = nodeMap[nodeId]
+        if (!node) return nodeId
+
+        // Try device instance first (numeric sort)
+        const deviceInstance = node.data?.['device-instance']
+        if (deviceInstance !== undefined) {
+          return String(deviceInstance).padStart(10, '0')
+        }
+
+        // Fall back to label
+        if (node.label) return node.label
+
+        // Fall back to node ID
+        return nodeId
+      }
+
+      // Sort children in parentToChildren for deterministic ordering
+      Object.keys(parentToChildren).forEach(parentId => {
+        parentToChildren[parentId].sort((a, b) => {
+          return getSortKey(a).localeCompare(getSortKey(b), undefined, { numeric: true })
+        })
+      })
+
+      // Helper to recursively get all leaf descendants (in sorted order)
       const getLeafDescendants = (nodeId) => {
         const children = parentToChildren[nodeId] || []
         if (children.length === 0) {
@@ -465,6 +490,14 @@ export default {
           }
         })
       }
+
+      // Sort root nodes for deterministic ordering
+      rootNodes.sort((a, b) => {
+        const levelA = getEffectiveLevel(a)
+        const levelB = getEffectiveLevel(b)
+        if (levelA !== levelB) return levelA - levelB
+        return getSortKey(a).localeCompare(getSortKey(b), undefined, { numeric: true })
+      })
 
       // Place each root's subtree
       rootNodes.forEach(rootId => {
