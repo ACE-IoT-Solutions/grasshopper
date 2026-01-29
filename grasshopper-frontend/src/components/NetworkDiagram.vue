@@ -32,6 +32,20 @@
             <v-icon>mdi-plus</v-icon>
           </v-btn>
         </div>
+        <div class="layout-toggle">
+          <v-btn
+            @click="toggleLayout"
+            variant="plain"
+            id="no-background-hover"
+            :ripple="false"
+            icon=""
+            size="medium"
+            density="compact"
+            :title="store.layoutMode === 'force' ? 'Switch to Tree Layout' : 'Switch to Force Layout'"
+          >
+            <v-icon>{{ store.layoutMode === 'force' ? 'mdi-file-tree' : 'mdi-graph' }}</v-icon>
+          </v-btn>
+        </div>
         <div class="search-icon">
           <v-btn
             @click="(store.setSearchMenu(true), store.setEdgeMenu(false))"
@@ -172,6 +186,12 @@ export default {
       const allEdges = this.network.body.data.edges.get()
       this.toggleBdtEdges(allEdges, visible)
     },
+    'store.layoutMode'() {
+      // Regenerate the graph when layout mode changes
+      if (this.network) {
+        this.generate()
+      }
+    },
   },
   computed: {
     showHideText() {
@@ -295,6 +315,31 @@ export default {
     }
   },
   methods: {
+    toggleLayout() {
+      this.store.toggleLayoutMode()
+    },
+    getNodeLevel(nodeId, nodeType) {
+      // Assign hierarchical levels for tree layout (like a controls riser diagram)
+      // Level 0: BBMDs (top of the riser)
+      // Level 1: Subnets
+      // Level 2: Routers and Networks
+      // Level 3: Devices and Grasshopper (leaves)
+      if (nodeType === 'BBMD') {
+        return 0
+      } else if (nodeId.startsWith('bacnet://subnet/')) {
+        return 1
+      } else if (
+        nodeId.startsWith('bacnet://router/') ||
+        nodeId.startsWith('bacnet://network/')
+      ) {
+        return 2
+      } else if (nodeId.startsWith('bacnet://Grasshopper')) {
+        return 3
+      } else {
+        // Regular devices
+        return 3
+      }
+    },
     toggleHideSelectedNode() {
       if (this.selectedNodeType === 'Network') {
         if (this.hiddenNetworkIds.includes(this.selectedNode)) {
@@ -1070,13 +1115,22 @@ export default {
         })
       }
 
+      const isTreeLayout = this.store.layoutMode === 'tree'
+
       const data = {
-        nodes: this.nodes.map(node => ({
-          ...node,
-          ...(this.store.compareMode
-            ? this.getCompareConfig(node.id, node.data, file1, file2)
-            : this.getNodeConfig(node.id, node.data)),
-        })),
+        nodes: this.nodes.map(node => {
+          const baseNode = {
+            ...node,
+            ...(this.store.compareMode
+              ? this.getCompareConfig(node.id, node.data, file1, file2)
+              : this.getNodeConfig(node.id, node.data)),
+          }
+          // Add level for hierarchical layout
+          if (isTreeLayout) {
+            baseNode.level = this.getNodeLevel(node.id, node.data?.type)
+          }
+          return baseNode
+        }),
         edges: processedEdges.map(edge => {
           const base = {
             ...edge,
@@ -1114,10 +1168,17 @@ export default {
           color: {
             inherit: true,
           },
-          smooth: {
-            enabled: false,
-            type: 'dynamic',
-          },
+          smooth: isTreeLayout
+            ? {
+                enabled: true,
+                type: 'cubicBezier',
+                forceDirection: 'vertical',
+                roundness: 0.4,
+              }
+            : {
+                enabled: false,
+                type: 'dynamic',
+              },
           font: {
             size: 0,
           },
@@ -1133,13 +1194,47 @@ export default {
           hideNodesOnDrag: false,
           hover: true,
         },
-        physics: this.store.physicsConfig,
-        layout: {
-          improvedLayout: false,
-        },
+        physics: isTreeLayout
+          ? {
+              enabled: true,
+              hierarchicalRepulsion: {
+                centralGravity: 0,
+                springLength: 150,
+                springConstant: 0.01,
+                nodeDistance: 200,
+                damping: 0.09,
+              },
+              solver: 'hierarchicalRepulsion',
+              stabilization: {
+                enabled: true,
+                iterations: 200,
+                updateInterval: 50,
+              },
+            }
+          : this.store.physicsConfig,
+        layout: isTreeLayout
+          ? {
+              hierarchical: {
+                enabled: true,
+                direction: 'UD', // Up-Down (BBMDs at top, devices at bottom)
+                sortMethod: 'directed',
+                levelSeparation: 200,
+                nodeSpacing: 150,
+                treeSpacing: 200,
+                blockShifting: true,
+                edgeMinimization: true,
+                parentCentralization: true,
+              },
+            }
+          : {
+              improvedLayout: false,
+            },
       }
 
-      options.physics.enabled = true
+      // Only force-enable physics for force layout; tree layout already has proper config
+      if (!isTreeLayout) {
+        options.physics.enabled = true
+      }
 
       this.network = new Network(container, data, options)
 
@@ -1530,6 +1625,10 @@ export default {
   gap: 20px;
 }
 .zoom {
+  display: flex;
+  gap: 10px;
+}
+.layout-toggle {
   display: flex;
   gap: 10px;
 }

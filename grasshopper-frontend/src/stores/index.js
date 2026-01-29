@@ -81,6 +81,7 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     currentTask: null,
     legendEnabled: false,
     showBdtEdges: false,
+    layoutMode: 'force', // 'force' or 'tree'
     selectedNode: null,
     showNoteCard: false,
     isAuthenticated: false,
@@ -241,6 +242,12 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     },
     setBdtEdges(enabled) {
       this.showBdtEdges = enabled
+    },
+    setLayoutMode(mode) {
+      this.layoutMode = mode
+    },
+    toggleLayoutMode() {
+      this.layoutMode = this.layoutMode === 'force' ? 'tree' : 'force'
     },
     setSelectedNode(node) {
       this.selectedNode = node
