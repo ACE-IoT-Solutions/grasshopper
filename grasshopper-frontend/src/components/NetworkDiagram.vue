@@ -345,129 +345,118 @@ export default {
       }
     },
     calculateTreeLayout(nodes, edges) {
-      // Custom tree layout that groups children under their parents
-      // Returns a map of nodeId -> {x, y} positions
+      // Bottom-up tree layout: place devices first, then center parents over children
       const positions = {}
-      const nodeSpacing = 60 // Horizontal spacing between sibling nodes
-      const levelHeight = 80 // Vertical spacing between levels
+      const nodeSpacing = 55 // Tight horizontal spacing
+      const levelHeight = 70 // Vertical spacing between levels
 
-      // Build node map
+      // Build node map and group by level
       const nodeMap = {}
-      nodes.forEach(n => {
-        nodeMap[n.id] = n
-      })
-
-      // Group nodes by level
       const levelGroups = { 0: [], 1: [], 2: [], 3: [], 4: [] }
       nodes.forEach(n => {
+        nodeMap[n.id] = n
         const level = this.getNodeLevel(n.id, n.data?.type)
         if (levelGroups[level]) {
           levelGroups[level].push(n.id)
         }
       })
 
-      // Build parent-child mapping (only immediate parent-child, one level difference)
-      const children = {} // parentId -> [childIds]
-      const parents = {} // childId -> parentId
+      // Build child -> parents mapping (a child picks its closest parent by level)
+      const childToParent = {} // childId -> parentId (closest level parent)
+      const parentToChildren = {} // parentId -> [childIds]
 
       edges.forEach(e => {
         const fromLevel = this.getNodeLevel(e.from, nodeMap[e.from]?.data?.type)
         const toLevel = this.getNodeLevel(e.to, nodeMap[e.to]?.data?.type)
 
-        // Only connect adjacent levels (difference of 1)
-        if (fromLevel + 1 === toLevel) {
-          if (!children[e.from]) children[e.from] = []
-          if (!children[e.from].includes(e.to)) {
-            children[e.from].push(e.to)
-          }
-          if (!parents[e.to]) parents[e.to] = e.from
-        } else if (toLevel + 1 === fromLevel) {
-          if (!children[e.to]) children[e.to] = []
-          if (!children[e.to].includes(e.from)) {
-            children[e.to].push(e.from)
-          }
-          if (!parents[e.from]) parents[e.from] = e.to
-        }
-      })
-
-      // Count leaf descendants for width calculation
-      const leafCounts = {}
-      const countLeaves = (nodeId) => {
-        if (leafCounts[nodeId] !== undefined) return leafCounts[nodeId]
-
-        const nodeChildren = children[nodeId] || []
-        if (nodeChildren.length === 0) {
-          leafCounts[nodeId] = 1
-          return 1
-        }
-
-        let total = 0
-        nodeChildren.forEach(childId => {
-          total += countLeaves(childId)
-        })
-        leafCounts[nodeId] = total
-        return total
-      }
-
-      // Count leaves for all nodes
-      nodes.forEach(n => countLeaves(n.id))
-
-      // Position nodes - simple approach: place at level, spread by leaf count
-      // First, gather all roots (nodes without parents at each starting level)
-      const roots = []
-      for (let level = 0; level <= 4; level++) {
-        levelGroups[level].forEach(nodeId => {
-          if (!parents[nodeId]) {
-            roots.push({ nodeId, level })
-          }
-        })
-      }
-
-      // Position subtrees
-      let globalX = 0
-
-      const positionSubtree = (nodeId, startX, level) => {
-        const nodeChildren = children[nodeId] || []
-        const leafCount = leafCounts[nodeId] || 1
-        const width = leafCount * nodeSpacing
-
-        // Y position based on level
-        const y = level * levelHeight
-
-        if (nodeChildren.length === 0) {
-          // Leaf node - place at startX
-          positions[nodeId] = { x: startX + nodeSpacing / 2, y }
+        let parentId, childId, parentLevel, childLevel
+        if (fromLevel < toLevel) {
+          parentId = e.from
+          childId = e.to
+          parentLevel = fromLevel
+          childLevel = toLevel
+        } else if (toLevel < fromLevel) {
+          parentId = e.to
+          childId = e.from
+          parentLevel = toLevel
+          childLevel = fromLevel
         } else {
-          // Parent node - center over children
-          let childX = startX
-          nodeChildren.forEach(childId => {
-            const childLevel = this.getNodeLevel(childId, nodeMap[childId]?.data?.type)
-            const childLeaves = leafCounts[childId] || 1
-            const childWidth = childLeaves * nodeSpacing
-            positionSubtree(childId, childX, childLevel)
-            childX += childWidth
-          })
-
-          // Center parent over its children
-          const firstChild = positions[nodeChildren[0]]
-          const lastChild = positions[nodeChildren[nodeChildren.length - 1]]
-          if (firstChild && lastChild) {
-            positions[nodeId] = { x: (firstChild.x + lastChild.x) / 2, y }
-          } else {
-            positions[nodeId] = { x: startX + width / 2, y }
-          }
+          return // Same level, skip
         }
-      }
 
-      // Position each root and its subtree
-      roots.forEach(({ nodeId, level }) => {
-        if (!positions[nodeId]) {
-          const leafCount = leafCounts[nodeId] || 1
-          const width = leafCount * nodeSpacing
-          positionSubtree(nodeId, globalX, level)
-          globalX += width + nodeSpacing // Add gap between separate trees
+        // Child picks the closest parent (highest level that's still less than child)
+        if (!childToParent[childId] ||
+            parentLevel > this.getNodeLevel(childToParent[childId], nodeMap[childToParent[childId]]?.data?.type)) {
+          childToParent[childId] = parentId
         }
       })
+
+      // Build parentToChildren from childToParent
+      Object.keys(childToParent).forEach(childId => {
+        const parentId = childToParent[childId]
+        if (!parentToChildren[parentId]) parentToChildren[parentId] = []
+        if (!parentToChildren[parentId].includes(childId)) {
+          parentToChildren[parentId].push(childId)
+        }
+      })
+
+      // BOTTOM-UP: Group devices by their parent network, place groups together
+      // Step 1: Group devices by their parent (network at level 3)
+      const devicesByParent = {}
+      const orphanDevices = []
+
+      levelGroups[4].forEach(deviceId => {
+        const parentId = childToParent[deviceId]
+        if (parentId) {
+          if (!devicesByParent[parentId]) devicesByParent[parentId] = []
+          devicesByParent[parentId].push(deviceId)
+        } else {
+          orphanDevices.push(deviceId)
+        }
+      })
+
+      // Step 2: Place devices grouped by parent network
+      let x = 0
+      const networkOrder = levelGroups[3].slice() // Networks
+
+      // Place devices for each network
+      networkOrder.forEach(networkId => {
+        const devices = devicesByParent[networkId] || []
+        devices.forEach(deviceId => {
+          positions[deviceId] = { x: x, y: 4 * levelHeight }
+          x += nodeSpacing
+        })
+        if (devices.length > 0) {
+          x += nodeSpacing * 0.5 // Small gap between network groups
+        }
+      })
+
+      // Place orphan devices at the end
+      orphanDevices.forEach(deviceId => {
+        positions[deviceId] = { x: x, y: 4 * levelHeight }
+        x += nodeSpacing
+      })
+
+      // Step 3: For each level from 3 down to 0, center parent over its children
+      for (let level = 3; level >= 0; level--) {
+        levelGroups[level].forEach(nodeId => {
+          const children = parentToChildren[nodeId] || []
+          const childPositions = children
+            .map(cid => positions[cid])
+            .filter(p => p !== undefined)
+
+          if (childPositions.length > 0) {
+            // Center over children
+            const minX = Math.min(...childPositions.map(p => p.x))
+            const maxX = Math.max(...childPositions.map(p => p.x))
+            positions[nodeId] = { x: (minX + maxX) / 2, y: level * levelHeight }
+          } else {
+            // No children, place at current x
+            positions[nodeId] = { x: x, y: level * levelHeight }
+            x += nodeSpacing
+          }
+        })
+      }
 
       return positions
     },
