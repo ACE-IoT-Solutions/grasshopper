@@ -1195,32 +1195,18 @@ export default {
           hover: true,
         },
         physics: isTreeLayout
-          ? {
-              enabled: true,
-              hierarchicalRepulsion: {
-                centralGravity: 0,
-                springLength: 150,
-                springConstant: 0.01,
-                nodeDistance: 200,
-                damping: 0.09,
-              },
-              solver: 'hierarchicalRepulsion',
-              stabilization: {
-                enabled: true,
-                iterations: 200,
-                updateInterval: 50,
-              },
-            }
+          ? { enabled: false } // No physics for tree layout - fully deterministic
           : this.store.physicsConfig,
         layout: isTreeLayout
           ? {
               hierarchical: {
                 enabled: true,
                 direction: 'UD', // Up-Down (BBMDs at top, devices at bottom)
-                sortMethod: 'directed',
-                levelSeparation: 200,
-                nodeSpacing: 150,
-                treeSpacing: 200,
+                sortMethod: 'hubsize', // Sort by connection count for better grouping
+                shakeTowards: 'roots', // Push roots (BBMDs) to top
+                levelSeparation: 150,
+                nodeSpacing: 100,
+                treeSpacing: 150,
                 blockShifting: true,
                 edgeMinimization: true,
                 parentCentralization: true,
@@ -1231,12 +1217,23 @@ export default {
             },
       }
 
-      // Only force-enable physics for force layout; tree layout already has proper config
+      // Only force-enable physics for force layout
       if (!isTreeLayout) {
         options.physics.enabled = true
       }
 
       this.network = new Network(container, data, options)
+
+      // For tree layout (no physics), mark as loaded immediately after render
+      if (isTreeLayout) {
+        // Use nextTick to ensure the network has rendered
+        this.$nextTick(() => {
+          this.loaded = true
+          this.store.setLoading(false)
+          // Fit the view to show all nodes
+          this.network.fit({ animation: { duration: 300 } })
+        })
+      }
 
       this.network.on('stabilizationIterationsDone', () => {
         this.loaded = true
