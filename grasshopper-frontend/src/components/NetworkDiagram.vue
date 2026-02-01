@@ -326,6 +326,7 @@ export default {
       collapsedNetworks: new Set(), // Track collapsed network nodes
       networkDeviceCounts: {}, // Cache device counts per network for labels
       deviceRowMap: {}, // Track which row each device is in
+      selectedBbmdForTree: null, // Track selected BBMD for BDT edge highlighting in tree mode
 
       // showNoteCard: false,
     }
@@ -1013,6 +1014,44 @@ export default {
           canvasContext.stroke()
         }
       })
+
+      // Draw BDT/FDT edges for selected BBMD in tree mode
+      if (this.selectedBbmdForTree) {
+        canvasContext.strokeStyle = 'rgba(255, 165, 0, 0.9)' // Orange for BDT connections
+        canvasContext.lineWidth = 2
+        canvasContext.setLineDash([6, 4]) // Dashed line for BDT
+
+        const selectedBbmdLabel = nodeMap[this.selectedBbmdForTree]?.label
+
+        edges.forEach(edge => {
+          // Only draw BDT/FDT edges
+          if (!edge.label) return
+          if (!edge.label.includes('bdt-entry') && !edge.label.includes('fdr-entry')) return
+
+          // Check if this edge connects to the selected BBMD
+          const fromLabel = nodeMap[edge.from]?.label
+          const toLabel = nodeMap[edge.to]?.label
+
+          if (fromLabel !== selectedBbmdLabel && toLabel !== selectedBbmdLabel) return
+
+          const fromPos = networkInstance.getPosition(edge.from)
+          const toPos = networkInstance.getPosition(edge.to)
+
+          if (!fromPos || !toPos) return
+
+          // Draw orthogonal connection between BBMDs
+          const midY = Math.min(fromPos.y, toPos.y) - 40 // Route above the nodes
+
+          canvasContext.beginPath()
+          canvasContext.moveTo(fromPos.x, fromPos.y - 20)
+          canvasContext.lineTo(fromPos.x, midY)
+          canvasContext.lineTo(toPos.x, midY)
+          canvasContext.lineTo(toPos.x, toPos.y - 20)
+          canvasContext.stroke()
+        })
+
+        canvasContext.setLineDash([]) // Reset line dash
+      }
 
       canvasContext.restore()
     },
@@ -2017,6 +2056,12 @@ export default {
             this.store.setBdtEdges(false)
             this.toggleBdtEdges(this.bdtEdges, false)
           }
+
+          // Clear selected BBMD for tree layout when clicking empty space
+          if (this.store.layoutMode === 'tree' && this.selectedBbmdForTree) {
+            this.selectedBbmdForTree = null
+            this.network.redraw()
+          }
         }
 
         if (params.nodes.length > 0) {
@@ -2060,7 +2105,18 @@ export default {
                 edge => edge.from === nodeLabel || edge.to === nodeLabel,
               )
               this.toggleBdtEdges(matchingEdges, true)
+              // For tree layout, track selected BBMD to draw BDT connections
+              if (this.store.layoutMode === 'tree') {
+                this.selectedBbmdForTree = clickedNode.id
+                this.network.redraw() // Trigger redraw to show BDT edges
+              }
             } else {
+              // Clear BBMD selection when clicking on non-BBMD node
+              if (this.store.layoutMode === 'tree' && this.selectedBbmdForTree) {
+                this.selectedBbmdForTree = null
+                this.network.redraw()
+              }
+
               this.cardInfo = this.formatData(
                 Object.keys(clickedNode.data)
                   .sort()
