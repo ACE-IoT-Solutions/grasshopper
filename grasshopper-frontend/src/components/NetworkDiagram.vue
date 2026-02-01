@@ -130,6 +130,12 @@
           >Hidden Items
         </v-btn>
       </div>
+      <!-- Minimap for tree layout navigation -->
+      <NetworkMinimap
+        v-if="loaded && store.layoutMode === 'tree' && network"
+        :network="network"
+        :treePositions="treeLayoutData?.positions"
+      />
     </div>
   </div>
 </template>
@@ -142,6 +148,7 @@ import SearchCard from '@/components/SearchCard.vue'
 import HiddenItemsMenu from '@/components/HiddenItemsMenu.vue'
 import EdgeCard from '@/components/EdgeCard.vue'
 import ConfigMenu from '@/components/ConfigMenu.vue'
+import NetworkMinimap from '@/components/NetworkMinimap.vue'
 // import NoteCard from '@/components/NoteCard.vue'
 
 import routerSvg from '@/assets/router.svg'
@@ -172,6 +179,7 @@ export default {
     HiddenItemsMenu,
     EdgeCard,
     ConfigMenu,
+    NetworkMinimap,
     // NoteCard,
   },
   mounted() {
@@ -314,6 +322,10 @@ export default {
       // Tree layout data for custom drawing
       treeLayoutData: null,
       layoutParentChild: null,
+      networkRowInfo: {}, // Track multi-row device layouts per network
+      collapsedNetworks: new Set(), // Track collapsed network nodes
+      networkDeviceCounts: {}, // Cache device counts per network for labels
+      deviceRowMap: {}, // Track which row each device is in
 
       // showNoteCard: false,
     }
@@ -321,6 +333,16 @@ export default {
   methods: {
     toggleLayout() {
       this.store.toggleLayoutMode()
+    },
+    toggleNetworkCollapse(networkId) {
+      // Toggle collapse state for a network node
+      if (this.collapsedNetworks.has(networkId)) {
+        this.collapsedNetworks.delete(networkId)
+      } else {
+        this.collapsedNetworks.add(networkId)
+      }
+      // Regenerate the layout
+      this.generate()
     },
     getNodeLevel(nodeId, nodeType) {
       // Assign hierarchical levels for tree layout (like a controls riser diagram)
@@ -350,6 +372,8 @@ export default {
       const positions = {}
       const nodeSpacing = 70 // Horizontal spacing between nodes
       const levelHeight = 100 // Vertical spacing between levels
+      const maxDevicesPerRow = 12 // Wrap devices after this many per row
+      const deviceRowHeight = 110 // Height for additional device rows (needs room for icon + label + bus)
 
       // Build node map and group by level
       const nodeMap = {}
@@ -499,14 +523,109 @@ export default {
         return getSortKey(a).localeCompare(getSortKey(b), undefined, { numeric: true })
       })
 
+      // Track row info for each network (for multi-row device layout)
+      const networkRowInfo = {} // networkId -> { rows: number, startX: number, width: number }
+      const networkDeviceCounts = {} // networkId -> device count (for collapsed labels)
+
+      // Track which row each device is in (for edge drawing)
+      const deviceRowMap = {} // deviceId -> { row: number, networkId: string }
+
+      // Helper to place devices with row wrapping
+      const placeDevicesWithWrapping = (devices, baseY, startX, networkId) => {
+        let currentX = startX
+        let row = 0
+        let rowStartX = startX
+        let maxX = startX
+        let maxRow = 0
+
+        devices.forEach((deviceId, index) => {
+          const col = index % maxDevicesPerRow
+          if (col === 0 && index > 0) {
+            row++
+          }
+          // Reset X for each row
+          currentX = rowStartX + (col * nodeSpacing)
+
+          const deviceLevel = getEffectiveLevel(deviceId)
+          const yOffset = row * deviceRowHeight
+          positions[deviceId] = {
+            x: currentX,
+            y: deviceLevel * levelHeight + yOffset
+          }
+
+          // Track which row this device is in
+          deviceRowMap[deviceId] = { row, networkId }
+
+          maxX = Math.max(maxX, currentX)
+          maxRow = Math.max(maxRow, row)
+        })
+
+        // Calculate actual width based on devices placed
+        // First row width determines the network's horizontal extent
+        const firstRowDevices = Math.min(devices.length, maxDevicesPerRow)
+        const actualWidth = firstRowDevices * nodeSpacing
+
+        return {
+          rows: maxRow + 1,
+          width: actualWidth,
+          endX: startX + actualWidth,
+          startX: startX
+        }
+      }
+
       // Place each root's subtree
       rootNodes.forEach(rootId => {
         const rootLevel = getEffectiveLevel(rootId)
         const leaves = getLeafDescendants(rootId)
 
         if (leaves.length > 0 && leaves[0] !== rootId) {
-          // Has leaf descendants - place them first
+          // Group leaves by their parent network (level 3)
+          const devicesByNetwork = {}
+          const nonNetworkDevices = []
+
           leaves.forEach(leafId => {
+            const parentId = childToParent[leafId]
+            const parentLevel = parentId ? getEffectiveLevel(parentId) : -1
+
+            if (parentLevel === 3) {
+              // Device under a network - group by network
+              if (!devicesByNetwork[parentId]) devicesByNetwork[parentId] = []
+              devicesByNetwork[parentId].push(leafId)
+            } else {
+              // Device not under a network (e.g., directly on subnet/router)
+              nonNetworkDevices.push(leafId)
+            }
+          })
+
+          // Place devices grouped by network with wrapping
+          const networkIds = Object.keys(devicesByNetwork).sort((a, b) =>
+            getSortKey(a).localeCompare(getSortKey(b), undefined, { numeric: true })
+          )
+
+          // Store device counts for all networks (for collapsed labels)
+          networkIds.forEach(networkId => {
+            networkDeviceCounts[networkId] = devicesByNetwork[networkId].length
+          })
+
+          networkIds.forEach(networkId => {
+            const devices = devicesByNetwork[networkId]
+            const isCollapsed = this.collapsedNetworks.has(networkId)
+
+            if (isCollapsed) {
+              // Collapsed network: don't place devices, just reserve minimal space
+              networkRowInfo[networkId] = { rows: 0, startX: x, width: nodeSpacing, collapsed: true }
+              x += nodeSpacing * 1.5 // Minimal space for collapsed network
+            } else {
+              // Expanded network: place devices with wrapping
+              const baseY = 4 // Device level
+              const result = placeDevicesWithWrapping(devices, baseY, x, networkId)
+              networkRowInfo[networkId] = { rows: result.rows, startX: result.startX, width: result.width, collapsed: false }
+              x = result.endX + nodeSpacing * 0.5 // Gap between networks
+            }
+          })
+
+          // Place non-network devices (on subnet/router level)
+          nonNetworkDevices.forEach(leafId => {
             const leafLevel = getEffectiveLevel(leafId)
             positions[leafId] = { x: x, y: leafLevel * levelHeight }
             x += nodeSpacing
@@ -519,10 +638,30 @@ export default {
         x += nodeSpacing * 0.5 // Gap between subtrees
       })
 
+      // Store network row info, device counts, and row mapping for bus drawing and labels
+      this.networkRowInfo = networkRowInfo
+      this.networkDeviceCounts = networkDeviceCounts
+      this.deviceRowMap = deviceRowMap
+
       // Step 3: Bottom-up - center parents over their children
       for (let level = 3; level >= 0; level--) {
         levelGroups[level].forEach(nodeId => {
           if (positions[nodeId]) return // Already positioned
+
+          // Check if this is a collapsed network
+          const isCollapsed = level === 3 && this.collapsedNetworks.has(nodeId)
+
+          if (isCollapsed) {
+            // Collapsed network: position based on reserved space in networkRowInfo
+            const info = networkRowInfo[nodeId]
+            if (info) {
+              positions[nodeId] = { x: info.startX + nodeSpacing / 2, y: level * levelHeight }
+            } else {
+              positions[nodeId] = { x: x, y: level * levelHeight }
+              x += nodeSpacing
+            }
+            return
+          }
 
           const children = parentToChildren[nodeId] || []
           const childPositions = children
@@ -611,32 +750,90 @@ export default {
         }
       })
 
-      // Draw network buses (horizontal lines) - only spanning their own children
+      // Draw network buses (horizontal lines) - one per row for multi-row networks
       canvasContext.save()
       canvasContext.strokeStyle = '#FFD700' // Gold color for buses
       canvasContext.lineWidth = 4
+
+      const deviceRowHeight = 110 // Must match layout constant
+      const padding = 35 // Padding on left/right of buses
 
       Object.keys(networkBuses).forEach(networkId => {
         const bus = networkBuses[networkId]
         if (bus.children.length === 0) return
 
-        // Find the extent of THIS network's children only
-        let minX = bus.pos.x
-        let maxX = bus.pos.x
+        // Skip collapsed networks - they don't have visible device children
+        if (this.collapsedNetworks.has(networkId)) return
 
-        bus.children.forEach(childPos => {
-          minX = Math.min(minX, childPos.x)
-          maxX = Math.max(maxX, childPos.x)
+        const networkInfo = this.networkRowInfo[networkId]
+        const numRows = networkInfo ? networkInfo.rows : 1
+
+        // Group children by their row
+        const childrenByRow = {}
+        bus.childIds.forEach((childId, idx) => {
+          const deviceInfo = this.deviceRowMap[childId]
+          const row = deviceInfo ? deviceInfo.row : 0
+          if (!childrenByRow[row]) childrenByRow[row] = []
+          childrenByRow[row].push(bus.children[idx])
         })
 
-        // Draw horizontal bus line from leftmost to rightmost child
-        const busY = bus.pos.y
-        const padding = 20
+        // Find the leftmost X across all rows for the vertical connector
+        let overallMinX = Infinity
+        Object.values(childrenByRow).forEach(rowChildren => {
+          rowChildren.forEach(childPos => {
+            overallMinX = Math.min(overallMinX, childPos.x)
+          })
+        })
+        const connectorX = overallMinX - padding
 
-        canvasContext.beginPath()
-        canvasContext.moveTo(minX - padding, busY)
-        canvasContext.lineTo(maxX + padding, busY)
-        canvasContext.stroke()
+        // Draw a horizontal bus for each row
+        const levelHeight = 100 // Must match layout constant
+        const busGapAboveDevices = 55
+
+        const rowBusYPositions = [] // Track Y positions for vertical connector
+
+        for (let row = 0; row < numRows; row++) {
+          const rowChildren = childrenByRow[row] || []
+          if (rowChildren.length === 0) continue
+
+          // Find extent of children in this row
+          let minX = Infinity
+          let maxX = -Infinity
+          rowChildren.forEach(childPos => {
+            minX = Math.min(minX, childPos.x)
+            maxX = Math.max(maxX, childPos.x)
+          })
+
+          // Bus Y position: just above the devices in this row
+          // Row 0: use network position
+          // Row 1+: position just above that row's devices
+          let busY
+          if (row === 0) {
+            busY = bus.pos.y
+          } else {
+            // Devices in row r are at: network.y + levelHeight + r * deviceRowHeight
+            // Bus should be busGapAboveDevices above the devices
+            busY = bus.pos.y + levelHeight + (row * deviceRowHeight) - busGapAboveDevices
+          }
+
+          rowBusYPositions.push(busY)
+
+          canvasContext.beginPath()
+          canvasContext.moveTo(connectorX, busY) // Start from connector X for alignment
+          canvasContext.lineTo(maxX + padding, busY)
+          canvasContext.stroke()
+        }
+
+        // Draw vertical connector between row buses (on the left side)
+        if (rowBusYPositions.length > 1) {
+          const topBusY = rowBusYPositions[0]
+          const bottomBusY = rowBusYPositions[rowBusYPositions.length - 1]
+
+          canvasContext.beginPath()
+          canvasContext.moveTo(connectorX, topBusY)
+          canvasContext.lineTo(connectorX, bottomBusY)
+          canvasContext.stroke()
+        }
       })
 
       canvasContext.restore()
@@ -661,9 +858,19 @@ export default {
       canvasContext.strokeStyle = 'rgba(140, 140, 140, 0.7)'
       canvasContext.lineWidth = 1
 
-      // Draw edges for each parent-child relationship
+      const deviceRowHeight = 110 // Must match layout constant
+      const levelHeight = 100 // Must match layout constant
+      const busGapAboveDevices = 55
+
+      // Draw device connections
       Object.keys(childToParent).forEach(childId => {
         const parentId = childToParent[childId]
+
+        // Skip devices under collapsed networks
+        if (parentId.startsWith('bacnet://network/') && this.collapsedNetworks.has(parentId)) {
+          return
+        }
+
         const parentPos = networkInstance.getPosition(parentId)
         const childPos = networkInstance.getPosition(childId)
 
@@ -672,11 +879,26 @@ export default {
         const parentLevel = getEffectiveLevel(parentId)
         const childLevel = getEffectiveLevel(childId)
 
-        // Device to Network connections (level 3 -> 4) - vertical drops to bus
+        // Device to Network connections (level 3 -> 4)
+        // Each device connects to the bus directly above it (no overlap)
         if (parentLevel === 3 && childLevel === 4) {
+          const deviceRowInfo = this.deviceRowMap[childId]
+          const row = deviceRowInfo ? deviceRowInfo.row : 0
+
+          // Bus Y position: matches drawRiserDiagram calculation
+          // Row 0: use network position
+          // Row 1+: position just above that row's devices
+          let busY
+          if (row === 0) {
+            busY = parentPos.y
+          } else {
+            busY = parentPos.y + levelHeight + (row * deviceRowHeight) - busGapAboveDevices
+          }
+
+          // Simple vertical drop from device to its row's bus
           canvasContext.beginPath()
           canvasContext.moveTo(childPos.x, childPos.y - 15)
-          canvasContext.lineTo(childPos.x, parentPos.y)
+          canvasContext.lineTo(childPos.x, busY)
           canvasContext.stroke()
           return
         }
@@ -727,6 +949,69 @@ export default {
         canvasContext.moveTo(grasshopperPos.x, grasshopperPos.y)
         canvasContext.lineTo(subnetPos.x, subnetPos.y)
         canvasContext.stroke()
+      })
+
+      // Draw any edges not covered by childToParent (same-level connections, etc.)
+      // This catches edges between nodes at the same level or edges missed by the hierarchy
+      const drawnEdges = new Set()
+      Object.keys(childToParent).forEach(childId => {
+        const parentId = childToParent[childId]
+        drawnEdges.add(`${parentId}-${childId}`)
+        drawnEdges.add(`${childId}-${parentId}`)
+      })
+
+      edges.forEach(edge => {
+        // Skip if already drawn via childToParent
+        if (drawnEdges.has(`${edge.from}-${edge.to}`)) return
+
+        // Skip BDT entries (BBMD-to-BBMD) - handled separately
+        if (edge.label && edge.label.includes('bdt-entry')) return
+
+        // Skip device-on-network edges (handled by bus drawing)
+        if (edge.label && edge.label.includes('device-on-network')) return
+
+        const fromPos = networkInstance.getPosition(edge.from)
+        const toPos = networkInstance.getPosition(edge.to)
+
+        if (!fromPos || !toPos) return
+
+        const fromLevel = getEffectiveLevel(edge.from)
+        const toLevel = getEffectiveLevel(edge.to)
+
+        // Determine parent/child for drawing direction
+        let parentPos, childPos
+        if (fromLevel < toLevel) {
+          parentPos = fromPos
+          childPos = toPos
+        } else if (toLevel < fromLevel) {
+          parentPos = toPos
+          childPos = fromPos
+        } else {
+          // Same level - draw simple line
+          canvasContext.beginPath()
+          canvasContext.moveTo(fromPos.x, fromPos.y)
+          canvasContext.lineTo(toPos.x, toPos.y)
+          canvasContext.stroke()
+          return
+        }
+
+        // Draw orthogonal edge
+        const horizontalOffset = Math.abs(parentPos.x - childPos.x)
+
+        if (horizontalOffset < 30) {
+          canvasContext.beginPath()
+          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
+          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.stroke()
+        } else {
+          const waypointY = childPos.y - 40
+          canvasContext.beginPath()
+          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
+          canvasContext.lineTo(parentPos.x, waypointY)
+          canvasContext.lineTo(childPos.x, waypointY)
+          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.stroke()
+        }
       })
 
       canvasContext.restore()
@@ -1527,6 +1812,18 @@ export default {
         this.treeLayoutData = null
       }
 
+      // Build parent lookup for collapsed network detection
+      const deviceParentNetwork = {}
+      if (isTreeLayout && this.layoutParentChild) {
+        const { childToParent } = this.layoutParentChild
+        Object.keys(childToParent).forEach(childId => {
+          const parentId = childToParent[childId]
+          if (parentId && parentId.startsWith('bacnet://network/')) {
+            deviceParentNetwork[childId] = parentId
+          }
+        })
+      }
+
       const data = {
         nodes: this.nodes.map(node => {
           const baseNode = {
@@ -1535,6 +1832,23 @@ export default {
               ? this.getCompareConfig(node.id, node.data, file1, file2)
               : this.getNodeConfig(node.id, node.data)),
           }
+
+          // Handle collapsed networks in tree mode
+          if (isTreeLayout) {
+            // Check if this is a device under a collapsed network
+            const parentNetworkId = deviceParentNetwork[node.id]
+            if (parentNetworkId && this.collapsedNetworks.has(parentNetworkId)) {
+              // Hide this device - its network is collapsed
+              baseNode.hidden = true
+            }
+
+            // Update label for collapsed network nodes
+            if (node.id.startsWith('bacnet://network/') && this.collapsedNetworks.has(node.id)) {
+              const deviceCount = this.networkDeviceCounts[node.id] || 0
+              baseNode.label = `${baseNode.label} [▶ ${deviceCount}]`
+            }
+          }
+
           // Apply custom tree layout positions
           if (isTreeLayout && treePositions && treePositions[node.id]) {
             baseNode.x = treePositions[node.id].x
@@ -1681,6 +1995,19 @@ export default {
       this.network.on('blurNode', () => {
         this.$refs.networkContainer.style.cursor = 'default'
       })
+
+      // Double-click on network nodes to toggle collapse (tree mode only)
+      if (isTreeLayout) {
+        this.network.on('doubleClick', params => {
+          if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0]
+            // Only toggle collapse for network nodes
+            if (nodeId.startsWith('bacnet://network/')) {
+              this.toggleNetworkCollapse(nodeId)
+            }
+          }
+        })
+      }
 
       this.network.on('click', params => {
         if (!params.nodes.length) {
