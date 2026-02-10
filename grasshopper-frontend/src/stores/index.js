@@ -81,7 +81,6 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     currentTask: null,
     legendEnabled: false,
     showBdtEdges: false,
-    layoutMode: 'force', // 'force' or 'tree'
     selectedNode: null,
     showNoteCard: false,
     isAuthenticated: false,
@@ -145,6 +144,8 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     objectCard: false,
     objectCardData: null,
     nodeLabel: null,
+    treeLayout: false,
+    minimapToggled: true,
   }),
   getters: {
     isTimeRangeValid: state =>
@@ -243,11 +244,11 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     setBdtEdges(enabled) {
       this.showBdtEdges = enabled
     },
-    setLayoutMode(mode) {
-      this.layoutMode = mode
+    setTreeLayout(mode) {
+      this.treeLayout = mode
     },
-    toggleLayoutMode() {
-      this.layoutMode = this.layoutMode === 'force' ? 'tree' : 'force'
+    toggleTreeLayout() {
+      this.treeLayout = !this.treeLayout
     },
     setSelectedNode(node) {
       this.selectedNode = node
@@ -358,6 +359,9 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     },
     setNodeLabel(label) {
       this.nodeLabel = label
+    },
+    setMinimapToggled(value) {
+      this.minimapToggled = value
     },
     matchGatewayToSite(gateway) {
       if (!this.gatewayInfo) return null

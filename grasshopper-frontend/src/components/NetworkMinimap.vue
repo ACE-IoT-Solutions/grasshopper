@@ -1,50 +1,63 @@
 <template>
-  <div
-    class="minimap-container"
-    :class="{ collapsed: isCollapsed }"
-    @mousedown.stop
-  >
-    <div class="minimap-header" @click="toggleCollapse">
-      <span v-if="!isCollapsed">Minimap</span>
-      <v-icon size="small">{{ isCollapsed ? 'mdi-map' : 'mdi-chevron-down' }}</v-icon>
+  <div class="minimap-container" @mousedown.stop ref="treeMinimap">
+    <div class="minimap-header">
+      <h4 class="title">MINIMAP</h4>
+      <v-btn
+        @click="closeCard()"
+        variant="plain"
+        :ripple="false"
+        density="compact"
+        icon=""
+        size="small"
+        id="no-background-hover"
+      >
+        <v-icon>mdi-minus</v-icon>
+      </v-btn>
     </div>
-    <div v-show="!isCollapsed" class="minimap-content">
+    <div class="minimap-content">
       <canvas
         ref="minimapCanvas"
         :width="canvasWidth"
         :height="canvasHeight"
-        @mousedown="handleMouseDown"
-        @mousemove="handleMouseMove"
-        @mouseup="handleMouseUp"
+        @mousedown.stop="handleMouseDown"
+        @mousemove.stop="handleMouseMove"
+        @mouseup.stop="handleMouseUp"
         @mouseleave="handleMouseUp"
+        @contextmenu.prevent="() => {}"
       ></canvas>
     </div>
   </div>
 </template>
 
 <script>
+import { gsap } from 'gsap'
 export default {
   name: 'NetworkMinimap',
   props: {
     network: {
       type: Object,
-      required: true
+      required: true,
     },
     treePositions: {
       type: Object,
-      default: null
-    }
+      default: null,
+    },
+    store: {
+      type: Object,
+      required: true,
+    },
   },
   data() {
     return {
-      isCollapsed: false,
+      // isCollapsed: false,
       canvasWidth: 200,
       canvasHeight: 150,
       isDragging: false,
+      isPanning: false, // Track if we're currently panning to prevent conflicts
       scale: 1,
       offsetX: 0,
       offsetY: 0,
-      bounds: null
+      bounds: null,
     }
   },
   mounted() {
@@ -53,6 +66,13 @@ export default {
     if (this.network) {
       this.network.on('afterDrawing', this.updateMinimap)
     }
+    gsap.from('.minimap-container', {
+      duration: 0.25,
+      opacity: 0,
+      y: 50,
+      x: -50,
+      ease: 'power2.out',
+    })
   },
   beforeUnmount() {
     if (this.network) {
@@ -64,8 +84,8 @@ export default {
       handler() {
         this.$nextTick(() => this.updateMinimap())
       },
-      deep: true
-    }
+      deep: true,
+    },
   },
   methods: {
     toggleCollapse() {
@@ -89,8 +109,10 @@ export default {
       if (!positions || Object.keys(positions).length === 0) return
 
       // Calculate bounds of all nodes
-      let minX = Infinity, maxX = -Infinity
-      let minY = Infinity, maxY = -Infinity
+      let minX = Infinity,
+        maxX = -Infinity
+      let minY = Infinity,
+        maxY = -Infinity
 
       Object.values(positions).forEach(pos => {
         minX = Math.min(minX, pos.x)
@@ -111,7 +133,7 @@ export default {
       const networkHeight = maxY - minY
       this.scale = Math.min(
         (this.canvasWidth - 20) / networkWidth,
-        (this.canvasHeight - 20) / networkHeight
+        (this.canvasHeight - 20) / networkHeight,
       )
       this.offsetX = -minX
       this.offsetY = -minY
@@ -128,7 +150,10 @@ export default {
           ctx.fillStyle = 'rgba(255, 215, 0, 0.8)' // Gold for networks
         } else if (nodeId.startsWith('bacnet://subnet/')) {
           ctx.fillStyle = 'rgba(100, 200, 100, 0.8)' // Green for subnets
-        } else if (nodeId.includes('BBMD') || nodeId.startsWith('bacnet://') && nodeId.split('/').length === 3) {
+        } else if (
+          nodeId.includes('BBMD') ||
+          (nodeId.startsWith('bacnet://') && nodeId.split('/').length === 3)
+        ) {
           ctx.fillStyle = 'rgba(200, 100, 200, 0.8)' // Purple for BBMDs
         } else {
           ctx.fillStyle = 'rgba(100, 150, 255, 0.6)' // Blue for devices
@@ -154,8 +179,10 @@ export default {
       const canvasViewHeight = container.clientHeight / scale
 
       // Calculate viewport rectangle in minimap coordinates
-      const viewX = (viewBounds.x - canvasViewWidth / 2 + this.offsetX) * this.scale + 10
-      const viewY = (viewBounds.y - canvasViewHeight / 2 + this.offsetY) * this.scale + 10
+      const viewX =
+        (viewBounds.x - canvasViewWidth / 2 + this.offsetX) * this.scale + 10
+      const viewY =
+        (viewBounds.y - canvasViewHeight / 2 + this.offsetY) * this.scale + 10
       const viewWidth = canvasViewWidth * this.scale
       const viewHeight = canvasViewHeight * this.scale
 
@@ -169,19 +196,29 @@ export default {
       ctx.fillRect(viewX, viewY, viewWidth, viewHeight)
     },
     handleMouseDown(event) {
+      event.preventDefault()
+      event.stopPropagation()
       this.isDragging = true
       this.panToPosition(event)
     },
     handleMouseMove(event) {
+      event.preventDefault()
+      event.stopPropagation()
       if (this.isDragging) {
         this.panToPosition(event)
       }
     },
-    handleMouseUp() {
+    handleMouseUp(event) {
+      if (event) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
       this.isDragging = false
     },
     panToPosition(event) {
-      if (!this.bounds || !this.network) return
+      if (!this.bounds || !this.network || this.isPanning) return
+
+      this.isPanning = true
 
       const canvas = this.$refs.minimapCanvas
       const rect = canvas.getBoundingClientRect()
@@ -197,29 +234,53 @@ export default {
         position: { x: networkX, y: networkY },
         animation: {
           duration: 200,
-          easingFunction: 'easeOutQuad'
-        }
+          easingFunction: 'easeOutQuad',
+        },
       })
-    }
-  }
+
+      // Ensure interactions remain enabled and reset panning state after animation
+      setTimeout(() => {
+        this.isPanning = false
+        if (this.network) {
+          this.network.setOptions({
+            interaction: {
+              dragNodes: true,
+              dragView: true,
+              zoomView: true,
+              hideEdgesOnDrag: false,
+              hideNodesOnDrag: false,
+              hover: true,
+            },
+          })
+        }
+      }, 250) // Slightly longer than animation duration
+    },
+    closeCard() {
+      gsap.to('.minimap-container', {
+        duration: 0.25,
+        opacity: 0,
+        y: 50,
+        x: -50,
+        ease: 'power2.in',
+        onComplete: () => {
+          this.store.setMinimapToggled(false)
+        },
+      })
+    },
+  },
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .minimap-container {
   position: absolute;
-  bottom: 60px;
-  right: 10px;
-  background-color: rgba(33, 33, 33, 0.95);
+  bottom: 1%;
+  left: 1%;
+  background-color: #212121;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   z-index: 998;
   overflow: hidden;
-  transition: all 0.2s ease;
-}
-
-.minimap-container.collapsed {
-  width: auto;
 }
 
 .minimap-header {
@@ -227,23 +288,25 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background-color: rgba(50, 50, 50, 0.9);
-  cursor: pointer;
+  background-color: #363636;
   font-size: 12px;
   color: #ccc;
   gap: 8px;
 }
 
-.minimap-header:hover {
-  background-color: rgba(70, 70, 70, 0.9);
-}
-
 .minimap-content {
-  padding: 5px;
+  padding: 10px;
 }
 
 .minimap-content canvas {
   border-radius: 4px;
   cursor: crosshair;
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.title {
+  color: #cdcdcd;
 }
 </style>
