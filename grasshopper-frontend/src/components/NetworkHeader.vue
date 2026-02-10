@@ -34,7 +34,7 @@
           size="small"
           @click="store.setControlMenu(true, 'delete', 'DELETE')"
           @mouseenter="
-            (() => store.fetchGraphs(),() => store.fetchCompareGraphs())
+            (() => store.fetchGraphs(), () => store.fetchCompareGraphs())
           "
           >Delete</v-btn
         >
@@ -52,7 +52,7 @@
         >
           <v-tooltip text="Legend" bottom delay="1000">
             <template v-slot:activator="{ props }">
-              <v-icon v-bind="props">mdi-map-legend</v-icon>
+              <v-icon v-bind="props">mdi-compass</v-icon>
             </template>
           </v-tooltip>
         </v-btn>

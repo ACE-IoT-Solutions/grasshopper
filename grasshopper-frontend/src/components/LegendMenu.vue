@@ -1,7 +1,9 @@
 <template>
   <div class="legend-menu">
     <div class="header">
-      <v-icon size="small" color="#FDFD94" class="legend-icon">mdi-map-legend</v-icon>
+      <v-icon size="small" color="#FDFD94" class="legend-icon"
+        >mdi-compass</v-icon
+      >
       <v-btn
         variant="plain"
         :ripple="false"
@@ -43,7 +45,10 @@ export default {
   props: ['store'],
   mounted() {
     if (this.store.compareMode) {
-      this.items.push({ title: 'Removed', image: removedSvg }, { title: 'Added', image: addedSvg })
+      this.items.push(
+        { title: 'Removed', image: removedSvg },
+        { title: 'Added', image: addedSvg },
+      )
     }
     gsap.registerPlugin(Draggable)
 
@@ -91,12 +96,12 @@ export default {
 
 <style lang="scss" scoped>
 .legend-menu {
-  background-color: rgba(33, 33, 33, 0.7);
+  background-color: rgba(33, 33, 33, 0.9);
   border-radius: 15px;
   position: absolute;
   bottom: 3%;
   right: 2%;
-  box-shadow: 1px 0px 16px -5px rgba(0,0,0,0.75);
+  box-shadow: 1px 0px 16px -5px rgba(0, 0, 0, 0.75);
   cursor: move;
 }
 .header {
@@ -132,7 +137,7 @@ export default {
   object-fit: contain;
 }
 .title {
-  color: #CDCDCD;
+  color: #cdcdcd;
   font-size: 12px;
   font-weight: bold;
 }
