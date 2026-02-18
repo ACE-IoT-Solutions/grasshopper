@@ -11,8 +11,10 @@ import netifaces
 import gevent
 import rdflib
 from bacpypes3.app import Application
-from bacpypes3.argparse import SimpleArgumentParser
+from bacpypes3.apdu import AbortPDU, AbortReason, ErrorRejectAbortNack, Error
+from bacpypes3.argparse import SimpleArgumentParser  
 from bacpypes3.comm import ApplicationServiceElement, bind
+from bacpypes3.errors import ExecutionError, PropertyError
 from bacpypes3.local.device import DeviceObject
 from bacpypes3.primitivedata import ObjectType
 from bacpypes3.vendor import VendorInfo
@@ -310,6 +312,36 @@ class bacpypes3_scanner:
         self.scavenge_max_range = scavenge_max_range
         self.scavenge_gap_threshold = scavenge_gap_threshold
         self.scavenge_gap_max_range = scavenge_gap_max_range
+
+    def _extract_ip_from_address(self, address: Address) -> Union[ipaddress.IPv4Address, ipaddress.IPv6Address]:
+        """
+        Extract IP address from BACpypes3 Address object.
+        
+        This handles Address objects that may include port numbers, which cannot be
+        directly passed to ipaddress.ip_address(). The method tries multiple approaches
+        to extract just the IP portion.
+        
+        Args:
+            address: BACpypes3 Address object
+            
+        Returns:
+            IPv4Address or IPv6Address object containing just the IP portion
+            
+        Raises:
+            ValueError: If the IP address cannot be extracted or parsed
+        """
+        try:
+            # First attempt: use addrTuple if available (most reliable)
+            if hasattr(address, 'addrTuple') and address.addrTuple:
+                return ipaddress.ip_address(address.addrTuple[0])
+            
+            # Fallback: convert to string and parse
+            addr_str = str(address)
+            # Remove port (after ':') and network prefix (after '/')
+            ip_str = addr_str.split(':')[0].split('/')[0]
+            return ipaddress.ip_address(ip_str)
+        except (ValueError, AttributeError, IndexError) as e:
+            raise ValueError(f"Failed to extract IP address from {address}: {e}")
 
     def _get_system_interfaces(self) -> List[Dict[str, Any]]:
         """
@@ -639,7 +671,8 @@ class bacpypes3_scanner:
                     f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}"
                 )
                 router_pdu_source = i_am_router_to_network.pduSource
-                ip = ipaddress.ip_address(router_pdu_source)
+                # Extract IP address from Address object (removing port if present)
+                ip = self._extract_ip_from_address(router_pdu_source)
                 
                 # Check if we already have a device at this IP address
                 existing_device = self.scanned_device_ips.get(ip)
@@ -721,7 +754,8 @@ class bacpypes3_scanner:
         _log.debug("bacpypes3_scanner: check_if_device_is_bbmd")
         try:
             bdt = await ase.read_broadcast_distribution_table(device_address)
-            ip = ipaddress.ip_address(device_address)
+            # Extract IP address from Address object (removing port if present)
+            ip = self._extract_ip_from_address(device_address)
             if bdt is not None and isinstance(ip, ipaddress.IPv4Address):
                 self.scanned_bbmds_bdt[ip] = [
                     ipaddr
@@ -852,10 +886,42 @@ class bacpypes3_scanner:
                 _log.debug(
                     f"Timeout reading {bacnet_prop} from device {device_identifier[1]}"
                 )
-            except Exception as e:
+            except PropertyError as e:
+                # Handle specific BACnet property errors (like unknown-property)
                 _log.debug(
-                    f"Could not read {bacnet_prop} from device {device_identifier[1]}: {e}"
+                    f"BACnet property error reading '{bacnet_prop}' from device {device_identifier[1]}: {e.errorCode}"
                 )
+            except ExecutionError as e:
+                # Handle other BACnet execution errors
+                _log.debug(
+                    f"BACnet execution error reading '{bacnet_prop}' from device {device_identifier[1]}: {e.errorClass}.{e.errorCode}"
+                )
+            except Error as e:
+                # Handle BACnet Error PDUs
+                _log.debug(
+                    f"BACnet Error PDU reading '{bacnet_prop}' from device {device_identifier[1]}: {e}"
+                )
+            except Exception as e:
+                _log.error(e)
+                # Comprehensive BACnet error handling without imports
+                error_str = str(e)
+                error_type = type(e).__name__
+                error_module = getattr(type(e), '__module__', '')
+                
+                # Check if this is a BACnet property error (like "unknown-property")
+                if 'unknown-property' in error_str or 'property' in error_str.lower():
+                    _log.debug(
+                        f"BACnet property not supported: {bacnet_prop} on device {device_identifier[1]} - {error_str}"
+                    )
+                elif 'bacpypes3' in error_module:
+                    _log.debug(
+                        f"BACnet error reading {bacnet_prop} from device {device_identifier[1]}: {error_type} - {error_str}"
+                    )
+                else:
+                    _log.debug(
+                        f"Error reading {bacnet_prop} from device {device_identifier[1]}: {error_type} ({error_module}) - {error_str}"
+                    )
+            
 
     async def read_device_object_signature(
         self,
@@ -878,65 +944,144 @@ class bacpypes3_scanner:
             device_identifier: The device's object identifier
         """
         device_obj_id = ObjectIdentifier(("device", device_identifier[1]))
+        object_list = None
 
         try:
-            # Read the object-list property
+            # Try to read the entire object-list property at once
             object_list = await asyncio.wait_for(
                 app.read_property(device_address, device_obj_id, "object-list"),
                 timeout=30.0,  # Longer timeout for potentially large lists
             )
-
-            if object_list is None:
+        except (asyncio.TimeoutError, ErrorRejectAbortNack, AbortPDU) as err:
+            if hasattr(err, 'apduAbortRejectReason') and err.apduAbortRejectReason in (
+                AbortReason.bufferOverflow,
+                AbortReason.segmentationNotSupported,
+            ):
                 _log.debug(
-                    f"No object-list returned from device {device_identifier[1]}"
+                    f"Buffer overflow reading object-list from device {device_identifier[1]}, "
+                    f"falling back to reading individual elements: {err}"
+                )
+                # Fall back to reading the length and each element one at a time
+                try:
+                    # Read the array length (index 0)
+                    object_list_length = await asyncio.wait_for(
+                        app.read_property(
+                            device_address,
+                            device_obj_id,
+                            "object-list",
+                            array_index=0,
+                        ),
+                        timeout=10.0,
+                    )
+                    
+                    # Read each element individually
+                    object_list = []
+                    for i in range(object_list_length):
+                        try:
+                            obj_id = await asyncio.wait_for(
+                                app.read_property(
+                                    device_address,
+                                    device_obj_id,
+                                    "object-list",
+                                    array_index=i + 1,
+                                ),
+                                timeout=5.0,
+                            )
+                            object_list.append(obj_id)
+                        except (asyncio.TimeoutError, ErrorRejectAbortNack, AbortPDU, PropertyError, ExecutionError, Error) as e:
+                            _log.debug(
+                                f"Error reading object-list[{i+1}] from device {device_identifier[1]}: {e}"
+                            )
+                            # Continue with next object, don't fail the entire operation
+                            continue
+                            
+                    _log.debug(
+                        f"Successfully read {len(object_list)} objects individually from device {device_identifier[1]}"
+                    )
+                        
+                except (asyncio.TimeoutError, ErrorRejectAbortNack, AbortPDU, PropertyError, ExecutionError, Error) as e:
+                    _log.debug(
+                        f"Failed to read object-list length from device {device_identifier[1]}: {e}"
+                    )
+                    return
+            else:
+                _log.debug(
+                    f"AbortPDU error reading object-list from device {device_identifier[1]}: {err}"
                 )
                 return
-
-            # Count objects by type
-            type_counts: Dict[str, int] = {}
-            for obj_id in object_list:
-                # obj_id is an ObjectIdentifier tuple (type, instance)
-                obj_type = obj_id[0]
-                # Convert to string representation (e.g., "analog-input")
-                if hasattr(obj_type, 'attr'):
-                    # It's an ObjectType enum, get the string name
-                    type_name = str(obj_type.attr)
-                elif isinstance(obj_type, str):
-                    type_name = obj_type
-                else:
-                    type_name = str(obj_type)
-
-                type_counts[type_name] = type_counts.get(type_name, 0) + 1
-
-            # Add total object count
-            total_count = len(object_list)
-            device.add_connection(
-                BACnetNS["object-count"], Literal(total_count)
-            )
+        except ErrorRejectAbortNack as err:
             _log.debug(
-                f"Device {device_identifier[1]} has {total_count} total objects"
+                f"Error/reject reading object-list from device {device_identifier[1]}: {err}"
             )
-
-            object_dict = {}
-            # Add count for each object type
-            for type_name, count in type_counts.items():
-                # Create property name like "analog-input-count"
-                prop_name = f"{type_name}-count"
-                # device.add_connection(BACnetNS[prop_name], Literal(count))
-                object_dict[prop_name] = count
-                _log.debug(
-                    f"Device {device_identifier[1]}: {type_name}={count}"
-                )
-            device.add_connection(BACnetNS["total-objects"], Literal(str(object_dict)))
-
+            return
+        except PropertyError as err:
+            _log.debug(
+                f"BACnet property error reading object-list from device {device_identifier[1]}: {err.errorCode}"
+            )
+            return
+        except ExecutionError as err:
+            _log.debug(
+                f"BACnet execution error reading object-list from device {device_identifier[1]}: {err.errorClass}.{err.errorCode}"
+            )
+            return
+        except Error as err:
+            _log.debug(
+                f"BACnet Error PDU reading object-list from device {device_identifier[1]}: {err}"
+            )
+            return
         except asyncio.TimeoutError:
             _log.debug(
                 f"Timeout reading object-list from device {device_identifier[1]}"
             )
+            return
         except Exception as e:
             _log.debug(
                 f"Could not read object-list from device {device_identifier[1]}: {e}"
             )
+            return
+
+        if object_list is None or len(object_list) == 0:
+            _log.debug(
+                f"No object-list returned from device {device_identifier[1]}"
+            )
+            return
+
+        # Count objects by type
+        type_counts: Dict[str, int] = {}
+        for obj_id in object_list:
+            # obj_id is an ObjectIdentifier tuple (type, instance)
+            obj_type = obj_id[0]
+            # Convert to string representation (e.g., "analog-input")
+            if hasattr(obj_type, 'attr'):
+                # It's an ObjectType enum, get the string name
+                type_name = str(obj_type.attr)
+            elif isinstance(obj_type, str):
+                type_name = obj_type
+            else:
+                type_name = str(obj_type)
+
+            type_counts[type_name] = type_counts.get(type_name, 0) + 1
+
+        # Add total object count
+        total_count = len(object_list)
+        device.add_connection(
+            BACnetNS["object-count"], Literal(total_count)
+        )
+        _log.debug(
+            f"Device {device_identifier[1]} has {total_count} total objects"
+        )
+
+        object_dict = {}
+        # Add count for each object type
+        for type_name, count in type_counts.items():
+            # Create property name like "analog-input-count"
+            prop_name = f"{type_name}-count"
+            # device.add_connection(BACnetNS[prop_name], Literal(count))
+            object_dict[prop_name] = count
+            _log.debug(
+                f"Device {device_identifier[1]}: {type_name}={count}"
+            )
+        device.add_connection(BACnetNS["total-objects"], Literal(str(object_dict)))
 
     async def get_device_objects(
         self, app: Application, ase: BVLLServiceElement, graph: Graph
@@ -1011,9 +1156,8 @@ class bacpypes3_scanner:
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_iri = BACnetURI["//" + str(device_identifier[1])]
                 try:
-                    ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(
-                        device_address
-                    )
+                    # Extract IP address from Address object (removing port if present)
+                    ip: Union[IPv4Address, IPv6Address] = self._extract_ip_from_address(device_address)
                     device: Union[BBMDNode, DeviceNode]
                     if (
                         await self.check_if_device_is_bbmd(ase, device_address)
@@ -1262,7 +1406,8 @@ class bacpypes3_scanner:
                         device_iri = BACnetURI["//" + str(device_identifier[1])]
                         
                         try:
-                            ip: Union[IPv4Address, IPv6Address] = ipaddress.ip_address(device_address)
+                            # Extract IP address from Address object (removing port if present)
+                            ip: Union[IPv4Address, IPv6Address] = self._extract_ip_from_address(device_address)
                             
                             # Skip if device already processed
                             if ip in self.scanned_device_ips:
