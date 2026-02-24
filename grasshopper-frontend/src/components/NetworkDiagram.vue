@@ -139,7 +139,7 @@
           variant="plain"
           size="small">Issues Found</v-btn> -->
         <v-btn
-          v-if="showHiddenMenuButton"
+          v-if="!store.treeLayout && showHiddenMenuButton"
           @click="(store.setHiddenMenu(true), store.setNodeCard(false))"
           variant="plain"
           >Hidden Items
@@ -224,7 +224,67 @@ export default {
       // Regenerate the graph when layout mode changes
       if (this.network) {
         this.store.setMinimapToggled(false)
+
+        // Save hidden node IDs before regenerating (generate() creates a fresh network)
+        const savedHiddenNetworkIds = [...this.hiddenNetworkIds]
+        const savedHiddenRouterIds = [...this.hiddenRouterIds]
+        const savedHiddenDeviceIds = [...this.hiddenDeviceIds]
+        const savedHiddenBbmdIds = [...this.hiddenBbmdIds]
+        const savedHiddenSubnetIds = [...this.hiddenSubnetIds]
+
         this.generate()
+
+        // When returning to normal graph, re-apply the saved hidden state
+        if (!this.store.treeLayout) {
+          // Clear stale visibility data from the old network instance
+          this.networkVisibility = {}
+          this.routerVisibility = {}
+          this.deviceVisibility = {}
+          this.bbmdVisibility = {}
+          this.subnetVisibility = {}
+          this.hiddenNetworkIds = []
+          this.hiddenRouterIds = []
+          this.hiddenDeviceIds = []
+          this.hiddenBbmdIds = []
+          this.hiddenSubnetIds = []
+
+          // Re-hide all previously hidden nodes in the new network
+          savedHiddenNetworkIds.forEach(id =>
+            this.hideSet(
+              this.networkVisibility,
+              id,
+              this.hiddenNetworkIds,
+              'network',
+            ),
+          )
+          savedHiddenRouterIds.forEach(id =>
+            this.hideSet(
+              this.routerVisibility,
+              id,
+              this.hiddenRouterIds,
+              'router',
+            ),
+          )
+          savedHiddenBbmdIds.forEach(id =>
+            this.hideSet(this.bbmdVisibility, id, this.hiddenBbmdIds, 'bbmd'),
+          )
+          savedHiddenSubnetIds.forEach(id =>
+            this.hideSet(
+              this.subnetVisibility,
+              id,
+              this.hiddenSubnetIds,
+              'subnet',
+            ),
+          )
+
+          // Re-hide devices (hideDevice reads this.selectedNode)
+          const prevSelectedNode = this.selectedNode
+          savedHiddenDeviceIds.forEach(id => {
+            this.selectedNode = id
+            this.hideDevice()
+          })
+          this.selectedNode = prevSelectedNode
+        }
       }
     },
   },
