@@ -305,16 +305,41 @@ def get_file_path(
     Raises:
         FileNotFoundError: If the specified folder doesn't exist
     """
+
+    if not file_name:
+        return None
+
+    # Disallow absolute paths
+    if os.path.isabs(file_name):
+        return None
+
+    # Normalize the filename and ensure it does not contain any directory separators
+    normalized_name = os.path.normpath(file_name)
+
+    # If normalization changes the basename, or any path separator is present,
+    # treat this as an invalid filename to avoid directory traversal.
+    if os.path.basename(normalized_name) != normalized_name:
+        return None
+    if os.sep in normalized_name or (os.altsep and os.altsep in normalized_name):
+        return None
+    
     agent_data_path = get_agent_data_path(request)
     folder_path = os.path.join(agent_data_path, folder)
     if not os.path.exists(folder_path):
         raise FileNotFoundError(
             f"The folder '{folder}' does not exist in the current directory."
         )
+    
+    # Use realpath for robust prefix checking
+    base_folder_real = os.path.realpath(folder_path)
 
     for root, dirs, files in os.walk(folder_path):
-        if file_name in files:
-            return os.path.join(root, file_name)
+        if normalized_name in files:
+            candidate_path = os.path.join(root, normalized_name)
+            candidate_real = os.path.realpath(candidate_path)
+            # Ensure the discovered file is still under the expected base folder
+            if os.path.commonpath([base_folder_real, candidate_real]) == base_folder_real:
+                return candidate_real
 
     return None
 
