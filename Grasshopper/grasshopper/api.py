@@ -118,8 +118,24 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue, f
             print(
                 f"task ttl1 get {task.get('ttl_1')} and task ttl2 get {task.get('ttl_2')}"
             )
-            ttl_filepath_1 = os.path.join(agent_data_path, f"ttl/{ttl_filename_1}")
-            ttl_filepath_2 = os.path.join(agent_data_path, f"ttl/{ttl_filename_2}")
+
+            # Validate filenames to prevent path traversal before constructing paths
+            for fname in (ttl_filename_1, ttl_filename_2):
+                if not fname or os.path.isabs(fname):
+                    raise ValueError(f"Invalid TTL filename: {fname!r}")
+                normalized = os.path.normpath(fname)
+                if os.path.basename(normalized) != normalized:
+                    raise ValueError(f"Invalid TTL filename: {fname!r}")
+
+            ttl_base = os.path.realpath(os.path.join(agent_data_path, "ttl"))
+            ttl_filepath_1 = os.path.realpath(os.path.join(agent_data_path, "ttl", ttl_filename_1))
+            ttl_filepath_2 = os.path.realpath(os.path.join(agent_data_path, "ttl", ttl_filename_2))
+
+            if os.path.commonpath([ttl_base, ttl_filepath_1]) != ttl_base:
+                raise ValueError(f"Path traversal detected for ttl_1: {ttl_filename_1!r}")
+            if os.path.commonpath([ttl_base, ttl_filepath_2]) != ttl_base:
+                raise ValueError(f"Path traversal detected for ttl_2: {ttl_filename_2!r}")
+
             if not os.path.exists(ttl_filepath_1):
                 raise FileNotFoundError(
                     f"The file '{ttl_filename_1}' does not exist in the current directory."
@@ -166,8 +182,11 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue, f
 
             # Save the combined graph
             compare_folder_path = os.path.join(agent_data_path, "compare")
+            compare_base = os.path.realpath(compare_folder_path)
             combined_filename = f"{ttl_filename_1.replace('.ttl', '')}_vs_{ttl_filename_2.replace('.ttl', '')}.ttl"
-            combined_filepath = os.path.join(compare_folder_path, combined_filename)
+            combined_filepath = os.path.realpath(os.path.join(compare_folder_path, combined_filename))
+            if os.path.commonpath([compare_base, combined_filepath]) != compare_base:
+                raise ValueError(f"Invalid combined output path: {combined_filename!r}")
             combined_graph.serialize(destination=combined_filepath, format="ttl")
 
             # Mark task as complete and move to finished queue
