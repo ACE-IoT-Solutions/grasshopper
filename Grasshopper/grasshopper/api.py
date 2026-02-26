@@ -363,12 +363,15 @@ def get_file_path(
     base_folder_real = os.path.realpath(folder_path)
 
     for root, dirs, files in os.walk(folder_path):
-        if normalized_name in files:
-            candidate_path = os.path.join(root, normalized_name)
-            candidate_real = os.path.realpath(candidate_path)
-            # Ensure the discovered file is still under the expected base folder
-            if os.path.commonpath([base_folder_real, candidate_real]) == base_folder_real:
-                return candidate_real
+        for f in files:
+            if f == normalized_name:
+                # Construct the path from the filesystem-derived name (f), not from
+                # user input, so the returned path is untainted by user-controlled data.
+                candidate_path = os.path.join(root, f)
+                candidate_real = os.path.realpath(candidate_path)
+                # Ensure the discovered file is still under the expected base folder
+                if os.path.commonpath([base_folder_real, candidate_real]) == base_folder_real:
+                    return candidate_real
 
     return None
 
@@ -723,7 +726,7 @@ async def download_ttl_file(ttl_filename: str, request: Request):
         )
 
     try:
-        return FileResponse(ttl_filepath, filename=ttl_filename)
+        return FileResponse(ttl_filepath, filename=os.path.basename(ttl_filepath))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -1479,7 +1482,7 @@ async def download_ttl_compare_file(ttl_filename: str, request: Request):
         )
 
     try:
-        return FileResponse(ttl_filepath, filename=ttl_filename)
+        return FileResponse(ttl_filepath, filename=os.path.basename(ttl_filepath))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
