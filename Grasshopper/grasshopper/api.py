@@ -29,6 +29,7 @@ from .serializers import (
     IPAddressList,
     MessageResponse,
 )
+import re
 
 DEVICE_STATE_CONFIG: str = "device_config.json"
 
@@ -322,6 +323,15 @@ def get_file_path(
         return None
     if os.sep in normalized_name or (os.altsep and os.altsep in normalized_name):
         return None
+    
+    # When accessing comparison TTL files, enforce a strict filename policy:
+    #   - must end with ".ttl"
+    #   - may contain only alphanumerics, underscore, dash, and dot
+    if folder == "compare":
+        if not normalized_name.lower().endswith(".ttl"):
+            return None
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", normalized_name):
+            return None
     
     agent_data_path = get_agent_data_path(request)
     folder_path = os.path.join(agent_data_path, folder)
