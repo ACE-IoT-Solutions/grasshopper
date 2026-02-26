@@ -526,7 +526,10 @@ class Grasshopper(Agent):
                 graph.parse(base_rdf_path, format="ttl")
                 _log.debug(f"Base graph loaded with {len(graph)} triples")
 
-            if recent_ttl_file:
+            if self.ttl_post_to_cloud.get("enabled"):
+                _log.info("Cloud upload enabled - fetching previous graph from cloud API")
+                prev_graph = self._fetch_prev_graph_from_cloud()
+            elif recent_ttl_file:
                 recent_ttl_path = os.path.join(ttl_directory, recent_ttl_file)
                 _log.info(f"Loading previous graph from: {recent_ttl_path}")
                 try:
@@ -727,6 +730,92 @@ class Grasshopper(Agent):
                 self.http_server_process.terminate()
                 self.http_server_process.join(timeout=2)
         _log.debug("Running _stop_server complete")
+
+    def _fetch_prev_graph_from_cloud(self) -> Graph:
+        """
+        Fetch the most recent TTL graph from the cloud API for use as prev_graph.
+
+        Makes a GET request to the configured cloud URL to retrieve the list of
+        available graphs, then downloads the most recent one for use in scavenge
+        scanning.
+
+        Returns:
+            Graph: The parsed RDF graph from the latest cloud TTL, or an empty
+                   Graph if the fetch fails or no graphs are available.
+        """
+        prev_graph: Graph = Graph()
+        url = self.ttl_post_to_cloud.get("url")
+        jwt = self.ttl_post_to_cloud.get("jwt")
+
+        if not url or not jwt:
+            _log.warning("Cloud URL or JWT not configured, skipping cloud graph fetch")
+            return prev_graph
+
+        headers = {"Authorization": f"Bearer {jwt}"}
+
+        try:
+            # Fetch the first page to learn the total page count
+            list_request = grequests.get(url, headers=headers)
+            list_response = grequests.map(
+                [list_request], exception_handler=self._grequests_exception_handler
+            )[0]
+
+            if list_response is None or list_response.status_code != 200:
+                _log.error(
+                    "Failed to fetch graph list from cloud API: %s",
+                    list_response.status_code if list_response else "no response",
+                )
+                return prev_graph
+
+            data = list_response.json()
+            pages = data.get("pages", 1)
+
+            # Fetch the last page to get the most recent filenames
+            if pages > 1:
+                last_page_request = grequests.get(
+                    f"{url}?page={pages}", headers=headers
+                )
+                last_page_response = grequests.map(
+                    [last_page_request],
+                    exception_handler=self._grequests_exception_handler,
+                )[0]
+                if last_page_response and last_page_response.status_code == 200:
+                    data = last_page_response.json()
+
+            items = data.get("items", [])
+            if not items:
+                _log.warning("No graphs found in cloud API response")
+                return prev_graph
+
+            # Filenames are datetime-formatted; lexicographic max = most recent
+            latest_filename = max(items)
+            _log.info("Fetching latest cloud graph: %s", latest_filename)
+
+            # Download the TTL content
+            ttl_request = grequests.get(f"{url}/{latest_filename}", headers=headers)
+            ttl_response = grequests.map(
+                [ttl_request], exception_handler=self._grequests_exception_handler
+            )[0]
+
+            if ttl_response is None or ttl_response.status_code != 200:
+                _log.error(
+                    "Failed to download TTL file %s from cloud: %s",
+                    latest_filename,
+                    ttl_response.status_code if ttl_response else "no response",
+                )
+                return prev_graph
+
+            prev_graph.parse(data=ttl_response.text, format="ttl")
+            _log.info(
+                "Loaded previous graph from cloud: %s (%d triples)",
+                latest_filename,
+                len(prev_graph),
+            )
+
+        except Exception as e:  # pylint: disable=broad-except
+            _log.error("Error fetching previous graph from cloud: %s", e)
+
+        return prev_graph
 
     def upload_to_api(self) -> None:
         """
