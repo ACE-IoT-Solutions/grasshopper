@@ -1429,8 +1429,18 @@ class bacpypes3_scanner:
                                 vendor_id=i_am.vendorID,
                             )
 
+                            # Read additional device properties (model_name, firmware_revision, device_name)
+                            await self.read_device_properties(
+                                app, device, device_address, device_identifier
+                            )
+
+                            # Read device object signature (object types and counts)
+                            await self.read_device_object_signature(
+                                app, device, device_address, device_identifier
+                            )
+
                             device_subnet = await self.add_subnet_to_device(device, device_address)
-                            
+
                             # Track device by IP address for router merging
                             self.scanned_device_ips[ip] = device
 
@@ -1438,7 +1448,7 @@ class bacpypes3_scanner:
                                 self.bbmd_in_subnet[device_subnet] = device_iri
                                 self.scanned_bbmds.append(device)
                                 self.scanned_ipaddress_bbmd[ip] = device
-                                
+
                         except ValueError:
                             device = DeviceNode(graph, device_iri)
                             device.add_properties(
@@ -1448,6 +1458,17 @@ class bacpypes3_scanner:
                                 vendor_id=i_am.vendorID,
                                 network_id=device_address.addrNet,
                             )
+
+                            # Read additional device properties (model_name, firmware_revision, device_name)
+                            await self.read_device_properties(
+                                app, device, device_address, device_identifier
+                            )
+
+                            # Read device object signature (object types and counts)
+                            await self.read_device_object_signature(
+                                app, device, device_address, device_identifier
+                            )
+
                             self.scanned_networks.add(device_address.addrNet)
 
                 except Exception as e:
