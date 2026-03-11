@@ -304,8 +304,12 @@ class NetworkComponent(BaseBACnetComponent):
 class AttachDeviceComponent(BaseBACnetComponent):
     """Component for attaching devices to a network/another device."""
 
+    def __init__(self, edge_type: BACnetEdgeType, kwarg_name: str = "device_iri"):
+        super().__init__(edge_type)
+        self.kwarg_name = kwarg_name
+
     def add_properties(self, device: BaseNode, **kwargs):
-        device_iri = kwargs.get("device_iri")
+        device_iri = kwargs.get(self.kwarg_name)
         if device_iri:
             device.add_connection(BACnetNS[self.edge_type.value], device_iri)
 
@@ -352,8 +356,8 @@ class BBMDNode(BACnetNode):
 
     def __init__(self, graph, device_iri):
         components = [
-            AttachDeviceComponent(BACnetEdgeType.BDT_ENTRY),
-            # AttachDeviceComponent(BACnetEdgeType.FDR_ENTRY),
+            AttachDeviceComponent(BACnetEdgeType.BDT_ENTRY, kwarg_name="bdt_device_iri"),
+            AttachDeviceComponent(BACnetEdgeType.FDR_ENTRY, kwarg_name="fdt_device_iri"),
             # NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
             SubnetComponent(BACnetEdgeType.BBMD_BROADCAST_DOMAIN),
         ]
@@ -386,7 +390,7 @@ class RouterNode(BACnetNode):
     def __init__(self, graph, device_iri):
         components = [
             NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
-            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
+            SubnetComponent(BACnetEdgeType.BACNET_ROUTER_ON_SUBNET),
         ]
         super().__init__(graph, device_iri, RouterTypeHandler(), components)
 
@@ -397,6 +401,6 @@ class DeviceRouterNode(BACnetNode):
     def __init__(self, graph, device_iri):
         components = [
             NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
-            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
+            SubnetComponent(BACnetEdgeType.BACNET_ROUTER_ON_SUBNET),
         ]
         super().__init__(graph, device_iri, DeviceRouterTypeHandler(), components)

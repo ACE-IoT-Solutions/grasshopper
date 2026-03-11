@@ -414,11 +414,50 @@ export default {
       networkDeviceCounts: {}, // Cache device counts per network for labels
       deviceRowMap: {}, // Track which row each device is in
       selectedBbmdForTree: null, // Track selected BBMD for BDT edge highlighting in tree mode
+      drawnEdgeGeometry: [], // Store edge geometry for click detection in tree mode
 
       // showNoteCard: false,
     }
   },
   methods: {
+    toggleLayout() {
+      this.store.toggleLayoutMode()
+    },
+    // Helper to calculate distance from point to line segment
+    pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1
+      const dy = y2 - y1
+      const lengthSquared = dx * dx + dy * dy
+
+      if (lengthSquared === 0) {
+        // Segment is a point
+        return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2)
+      }
+
+      // Project point onto line, clamped to segment
+      let t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared))
+      const projX = x1 + t * dx
+      const projY = y1 + t * dy
+
+      return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2)
+    },
+    // Find edge at canvas point for tree mode click detection
+    findEdgeAtPoint(canvasX, canvasY, threshold = 8) {
+      if (!this.drawnEdgeGeometry || this.drawnEdgeGeometry.length === 0) return null
+
+      for (const edgeGeo of this.drawnEdgeGeometry) {
+        // Check each segment of the edge path
+        for (let i = 0; i < edgeGeo.points.length - 1; i++) {
+          const p1 = edgeGeo.points[i]
+          const p2 = edgeGeo.points[i + 1]
+          const dist = this.pointToSegmentDistance(canvasX, canvasY, p1.x, p1.y, p2.x, p2.y)
+          if (dist < threshold) {
+            return edgeGeo.edge
+          }
+        }
+      }
+      return null
+    },
     toggleNetworkCollapse(networkId) {
       // Toggle collapse state for a network node
       if (this.collapsedNetworks.has(networkId)) {
@@ -990,12 +1029,53 @@ export default {
       }
 
       canvasContext.save()
-      canvasContext.strokeStyle = 'rgba(140, 140, 140, 0.7)'
-      canvasContext.lineWidth = 1
+
+      // Clear and prepare to store edge geometry for click detection
+      this.drawnEdgeGeometry = []
 
       const deviceRowHeight = 110 // Must match layout constant
       const levelHeight = 100 // Must match layout constant
       const busGapAboveDevices = 55
+
+      // Helper to store edge geometry for click detection
+      const storeEdgeGeometry = (edge, points) => {
+        this.drawnEdgeGeometry.push({ edge, points })
+      }
+
+      // Helper to get edge style based on edge type
+      // Use consistent width (2) for all colored edges to match bus thickness
+      const getEdgeStyle = (edgeLabel) => {
+        if (!edgeLabel) return { color: 'rgba(140, 140, 140, 0.7)', width: 2, dash: [] }
+
+        if (edgeLabel.includes('bbmd-broadcast-domain')) {
+          return { color: 'rgb(200, 100, 200)', width: 2, dash: [] } // Purple for BBMD→Subnet
+        }
+        if (edgeLabel.includes('bacnet-router-on-subnet')) {
+          return { color: 'rgb(220, 80, 80)', width: 2, dash: [] } // Red for Router→Subnet
+        }
+        if (edgeLabel.includes('device-on-subnet')) {
+          return { color: 'rgb(100, 180, 100)', width: 2, dash: [] } // Green for Device→Subnet
+        }
+        if (edgeLabel.includes('device-on-network')) {
+          return { color: 'rgba(140, 140, 140, 0.7)', width: 2, dash: [] } // Grey for Device→Network (drops to bus)
+        }
+        if (edgeLabel.includes('bdt-entry')) {
+          return { color: 'rgb(255, 165, 0)', width: 2, dash: [5, 5] } // Orange dashed for BDT
+        }
+        if (edgeLabel.includes('fdr-entry')) {
+          return { color: 'rgb(0, 200, 255)', width: 2, dash: [5, 5] } // Cyan dashed for FDT
+        }
+        return { color: 'rgba(140, 140, 140, 0.7)', width: 2, dash: [] } // Default grey
+      }
+
+      // Find edge label for a given parent-child pair
+      const findEdgeLabel = (fromId, toId) => {
+        const edge = edges.find(e =>
+          (e.from === fromId && e.to === toId) ||
+          (e.from === toId && e.to === fromId)
+        )
+        return edge?.label || ''
+      }
 
       // Draw device connections
       Object.keys(childToParent).forEach(childId => {
@@ -1016,6 +1096,19 @@ export default {
 
         const parentLevel = getEffectiveLevel(parentId)
         const childLevel = getEffectiveLevel(childId)
+
+        // Get edge style based on edge type
+        const edgeLabel = findEdgeLabel(parentId, childId)
+        const style = getEdgeStyle(edgeLabel)
+        canvasContext.strokeStyle = style.color
+        canvasContext.lineWidth = style.width
+        canvasContext.setLineDash(style.dash)
+
+        // Find the actual edge object for storing geometry
+        const edgeObj = edges.find(e =>
+          (e.from === parentId && e.to === childId) ||
+          (e.from === childId && e.to === parentId)
+        )
 
         // Device to Network connections (level 3 -> 4)
         // Each device connects to the bus directly above it (no overlap)
@@ -1038,10 +1131,15 @@ export default {
           }
 
           // Simple vertical drop from device to its row's bus
+          const points = [
+            { x: childPos.x, y: childPos.y - 15 },
+            { x: childPos.x, y: busY }
+          ]
           canvasContext.beginPath()
-          canvasContext.moveTo(childPos.x, childPos.y - 15)
-          canvasContext.lineTo(childPos.x, busY)
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
           canvasContext.stroke()
+          if (edgeObj) storeEdgeGeometry(edgeObj, points)
           return
         }
 
@@ -1050,20 +1148,32 @@ export default {
 
         if (horizontalOffset < 30) {
           // Nearly aligned - draw simple vertical line
+          const points = [
+            { x: parentPos.x, y: parentPos.y + 20 },
+            { x: childPos.x, y: childPos.y - 20 }
+          ]
           canvasContext.beginPath()
-          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
-          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
           canvasContext.stroke()
+          if (edgeObj) storeEdgeGeometry(edgeObj, points)
         } else {
           // Offset - draw orthogonal with waypoint closer to child
           const waypointY = childPos.y - 40
+          const points = [
+            { x: parentPos.x, y: parentPos.y + 20 },
+            { x: parentPos.x, y: waypointY },
+            { x: childPos.x, y: waypointY },
+            { x: childPos.x, y: childPos.y - 20 }
+          ]
 
           canvasContext.beginPath()
-          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
-          canvasContext.lineTo(parentPos.x, waypointY)
-          canvasContext.lineTo(childPos.x, waypointY)
-          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
+          canvasContext.lineTo(points[2].x, points[2].y)
+          canvasContext.lineTo(points[3].x, points[3].y)
           canvasContext.stroke()
+          if (edgeObj) storeEdgeGeometry(edgeObj, points)
         }
       })
 
@@ -1086,11 +1196,21 @@ export default {
 
         if (!grasshopperPos || !subnetPos) return
 
+        // Grasshopper connections in teal/cyan
+        canvasContext.strokeStyle = 'rgba(0, 180, 180, 0.9)'
+        canvasContext.lineWidth = 2
+        canvasContext.setLineDash([])
+
         // Draw horizontal line connecting Grasshopper to subnet at same level
+        const points = [
+          { x: grasshopperPos.x, y: grasshopperPos.y },
+          { x: subnetPos.x, y: subnetPos.y }
+        ]
         canvasContext.beginPath()
-        canvasContext.moveTo(grasshopperPos.x, grasshopperPos.y)
-        canvasContext.lineTo(subnetPos.x, subnetPos.y)
+        canvasContext.moveTo(points[0].x, points[0].y)
+        canvasContext.lineTo(points[1].x, points[1].y)
         canvasContext.stroke()
+        storeEdgeGeometry(edge, points)
       })
 
       // Draw any edges not covered by childToParent (same-level connections, etc.)
@@ -1106,8 +1226,8 @@ export default {
         // Skip if already drawn via childToParent
         if (drawnEdges.has(`${edge.from}-${edge.to}`)) return
 
-        // Skip BDT entries (BBMD-to-BBMD) - handled separately
-        if (edge.label && edge.label.includes('bdt-entry')) return
+        // Skip BDT/FDT entries (BBMD connections) - handled separately when BBMD selected
+        if (edge.label && (edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry'))) return
 
         // Skip device-on-network edges (handled by bus drawing)
         if (edge.label && edge.label.includes('device-on-network')) return
@@ -1116,6 +1236,12 @@ export default {
         const toPos = networkInstance.getPosition(edge.to)
 
         if (!fromPos || !toPos) return
+
+        // Apply edge-type-based styling
+        const style = getEdgeStyle(edge.label)
+        canvasContext.strokeStyle = style.color
+        canvasContext.lineWidth = style.width
+        canvasContext.setLineDash(style.dash)
 
         const fromLevel = getEffectiveLevel(edge.from)
         const toLevel = getEffectiveLevel(edge.to)
@@ -1130,10 +1256,15 @@ export default {
           childPos = fromPos
         } else {
           // Same level - draw simple line
+          const points = [
+            { x: fromPos.x, y: fromPos.y },
+            { x: toPos.x, y: toPos.y }
+          ]
           canvasContext.beginPath()
-          canvasContext.moveTo(fromPos.x, fromPos.y)
-          canvasContext.lineTo(toPos.x, toPos.y)
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
           canvasContext.stroke()
+          storeEdgeGeometry(edge, points)
           return
         }
 
@@ -1141,37 +1272,43 @@ export default {
         const horizontalOffset = Math.abs(parentPos.x - childPos.x)
 
         if (horizontalOffset < 30) {
+          const points = [
+            { x: parentPos.x, y: parentPos.y + 20 },
+            { x: childPos.x, y: childPos.y - 20 }
+          ]
           canvasContext.beginPath()
-          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
-          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
           canvasContext.stroke()
+          storeEdgeGeometry(edge, points)
         } else {
           const waypointY = childPos.y - 40
+          const points = [
+            { x: parentPos.x, y: parentPos.y + 20 },
+            { x: parentPos.x, y: waypointY },
+            { x: childPos.x, y: waypointY },
+            { x: childPos.x, y: childPos.y - 20 }
+          ]
           canvasContext.beginPath()
-          canvasContext.moveTo(parentPos.x, parentPos.y + 20)
-          canvasContext.lineTo(parentPos.x, waypointY)
-          canvasContext.lineTo(childPos.x, waypointY)
-          canvasContext.lineTo(childPos.x, childPos.y - 20)
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
+          canvasContext.lineTo(points[2].x, points[2].y)
+          canvasContext.lineTo(points[3].x, points[3].y)
           canvasContext.stroke()
+          storeEdgeGeometry(edge, points)
         }
       })
 
       // Draw BDT/FDT edges for selected BBMD in tree mode
       if (this.selectedBbmdForTree) {
-        canvasContext.strokeStyle = 'rgba(255, 165, 0, 0.9)' // Orange for BDT connections
-        canvasContext.lineWidth = 2
-        canvasContext.setLineDash([6, 4]) // Dashed line for BDT
-
         const selectedBbmdLabel = nodeMap[this.selectedBbmdForTree]?.label
 
         edges.forEach(edge => {
           // Only draw BDT/FDT edges
           if (!edge.label) return
-          if (
-            !edge.label.includes('bdt-entry') &&
-            !edge.label.includes('fdr-entry')
-          )
-            return
+          const isBdt = edge.label.includes('bdt-entry')
+          const isFdt = edge.label.includes('fdr-entry')
+          if (!isBdt && !isFdt) return
 
           // Check if this edge connects to the selected BBMD
           const fromLabel = nodeMap[edge.from]?.label
@@ -1185,14 +1322,37 @@ export default {
 
           if (!fromPos || !toPos) return
 
-          // Draw orthogonal connection between BBMDs
-          const midY = Math.min(fromPos.y, toPos.y) - 40 // Route above the nodes
+          // Different styles for BDT vs FDT
+          if (isBdt) {
+            canvasContext.strokeStyle = 'rgba(255, 165, 0, 0.9)' // Orange for BDT
+            canvasContext.setLineDash([6, 4]) // Dashed
+          } else {
+            canvasContext.strokeStyle = 'rgba(0, 200, 255, 0.9)' // Cyan for FDT
+            canvasContext.setLineDash([4, 2]) // Shorter dash
+          }
+          canvasContext.lineWidth = 2
+
+          // Determine routing based on relative positions
+          const topNode = fromPos.y < toPos.y ? fromPos : toPos
+          const bottomNode = fromPos.y < toPos.y ? toPos : fromPos
 
           canvasContext.beginPath()
-          canvasContext.moveTo(fromPos.x, fromPos.y - 20)
-          canvasContext.lineTo(fromPos.x, midY)
-          canvasContext.lineTo(toPos.x, midY)
-          canvasContext.lineTo(toPos.x, toPos.y - 20)
+          if (isBdt || Math.abs(fromPos.y - toPos.y) < 50) {
+            // BDT or same-level: route above both nodes
+            const midY = Math.min(fromPos.y, toPos.y) - 40
+            canvasContext.moveTo(fromPos.x, fromPos.y - 20)
+            canvasContext.lineTo(fromPos.x, midY)
+            canvasContext.lineTo(toPos.x, midY)
+            canvasContext.lineTo(toPos.x, toPos.y - 20)
+          } else {
+            // FDT with level difference: route from BBMD down to device
+            // Go down from top node, across, then to bottom node
+            const midY = topNode.y + 40
+            canvasContext.moveTo(topNode.x, topNode.y + 20)
+            canvasContext.lineTo(topNode.x, midY)
+            canvasContext.lineTo(bottomNode.x, midY)
+            canvasContext.lineTo(bottomNode.x, bottomNode.y - 20)
+          }
           canvasContext.stroke()
         })
 
@@ -1864,7 +2024,7 @@ export default {
           this.onBbmds.push(edge.from)
           return false
         } else if (
-          edge.label.includes('bdt-entry') &&
+          (edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry')) &&
           edge.from !== closestBbmd &&
           edge.to !== closestBbmd
         ) {
@@ -1875,10 +2035,17 @@ export default {
     },
     toggleBdtEdges(bdtEdges, visible) {
       bdtEdges.forEach(edge => {
-        if (
-          edge.label.includes('bdt-entry') &&
+        const isBdtOrFdt = edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry')
+        // For BDT edges, both endpoints should be BBMDs
+        // For FDT edges, only one endpoint (the BBMD with the FDT) needs to be a BBMD
+        const isBdtBetweenBbmds = edge.label.includes('bdt-entry') &&
           this.allBbmds.includes(edge.from) &&
-          this.allBbmds.includes(edge.to) &&
+          this.allBbmds.includes(edge.to)
+        const isFdtFromBbmd = edge.label.includes('fdr-entry') &&
+          (this.allBbmds.includes(edge.from) || this.allBbmds.includes(edge.to))
+
+        if (
+          (isBdtBetweenBbmds || isFdtFromBbmd) &&
           edge.from !== this.closestBbmd &&
           edge.to !== this.closestBbmd
         ) {
@@ -2049,8 +2216,32 @@ export default {
           return baseNode
         }),
         edges: processedEdges.map(edge => {
+          // Get edge color based on type
+          const getEdgeColor = (label, from, to) => {
+            // Check for Grasshopper connections first (by node ID)
+            const isGrasshopperEdge = from?.startsWith('bacnet://Grasshopper') || to?.startsWith('bacnet://Grasshopper')
+            if (isGrasshopperEdge) return 'rgb(0, 180, 180)'
+
+            if (!label) return 'rgba(140, 140, 140, 0.7)'
+            if (label.includes('bbmd-broadcast-domain')) return 'rgb(200, 100, 200)'
+            if (label.includes('bacnet-router-on-subnet')) return 'rgb(220, 80, 80)'
+            if (label.includes('device-on-subnet')) return 'rgb(100, 180, 100)'
+            if (label.includes('device-on-network')) return 'rgb(140, 140, 140)'
+            if (label.includes('bdt-entry')) return 'rgb(255, 165, 0)'
+            if (label.includes('fdr-entry')) return 'rgb(0, 200, 255)'
+            return 'rgba(140, 140, 140, 0.7)'
+          }
+
+          const edgeColor = getEdgeColor(edge.label, edge.from, edge.to)
+          const isBdtOrFdt = edge.label?.includes('bdt-entry') || edge.label?.includes('fdr-entry')
+
           const base = {
             ...edge,
+            color: {
+              color: edgeColor,
+              highlight: edgeColor,
+              hover: edgeColor,
+            },
             ...(this.store.compareMode
               ? this.getCompareEdgeColor(edge.data, file1, file2)
               : {}),
@@ -2064,18 +2255,42 @@ export default {
             }
           }
 
+          // Handle BDT edges (BBMD-to-BBMD connections) - control visibility
           if (
             edge.label.includes('bdt-entry') &&
             this.allBbmds.includes(edge.from) &&
             this.allBbmds.includes(edge.to)
           ) {
+            const isConnectedToClosest = edge.from === closestBbmd || edge.to === closestBbmd
             return {
               ...base,
+              dashes: true,
               color: {
-                opacity:
-                  edge.from === closestBbmd || edge.to === closestBbmd ? 1 : 0,
+                color: edgeColor,
+                highlight: edgeColor,
+                hover: edgeColor,
+                opacity: isConnectedToClosest ? 1 : 0,
               },
-              physics: edge.from === closestBbmd || edge.to === closestBbmd,
+              physics: isConnectedToClosest,
+            }
+          }
+
+          // Handle FDT edges (BBMD to foreign device connections) - control visibility
+          if (
+            edge.label.includes('fdr-entry') &&
+            (this.allBbmds.includes(edge.from) || this.allBbmds.includes(edge.to))
+          ) {
+            const isConnectedToClosest = edge.from === closestBbmd || edge.to === closestBbmd
+            return {
+              ...base,
+              dashes: true,
+              color: {
+                color: edgeColor,
+                highlight: edgeColor,
+                hover: edgeColor,
+                opacity: isConnectedToClosest ? 1 : 0,
+              },
+              physics: isConnectedToClosest,
             }
           }
 
@@ -2091,7 +2306,7 @@ export default {
         },
         edges: {
           color: {
-            inherit: true,
+            inherit: false,
           },
           smooth: isTreeLayout
             ? {
@@ -2212,6 +2427,32 @@ export default {
       }
 
       this.network.on('click', params => {
+        // Tree mode edge click detection (edges are drawn on canvas, not vis-network)
+        if (this.store.layoutMode === 'tree' && params.nodes.length === 0) {
+          // Convert DOM coordinates to canvas coordinates
+          const canvasPos = this.network.DOMtoCanvas({ x: params.pointer.DOM.x, y: params.pointer.DOM.y })
+          const clickedEdge = this.findEdgeAtPoint(canvasPos.x, canvasPos.y)
+
+          if (clickedEdge) {
+            // Show edge card like physics mode
+            const cleanedLabel = clickedEdge.label?.replace(
+              'http://data.ashrae.org/bacnet/2020#',
+              '',
+            ) || 'unknown'
+
+            this.selectedEdge = clickedEdge.id
+            this.edgeInfo = {
+              type: cleanedLabel,
+              from: clickedEdge.from,
+              to: clickedEdge.to,
+            }
+            this.edgeOptions = [] // Simplified for now
+            this.store.setNodeCard(false)
+            this.store.setEdgeMenu(true)
+            return
+          }
+        }
+
         if (!params.nodes.length) {
           this.unhighlightNode()
 

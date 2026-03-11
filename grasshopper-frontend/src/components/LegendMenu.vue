@@ -16,12 +16,24 @@
       </v-btn>
     </div>
     <div class="content">
+      <div class="section-title">Nodes</div>
       <div class="legend">
         <div class="legend-item" v-for="(item, index) in items" :key="index">
           <div class="title">{{ item.title }}</div>
           <div class="icon">
             <img :src="item.image" alt="" />
           </div>
+        </div>
+      </div>
+      <div class="section-title">Edges</div>
+      <div class="edge-legend">
+        <div class="edge-item" v-for="(edge, index) in edgeTypes" :key="'edge-' + index">
+          <div
+            class="edge-line"
+            :class="{ 'dashed': edge.dash }"
+            :style="{ borderColor: edge.color }"
+          ></div>
+          <div class="edge-label">{{ edge.title }}</div>
         </div>
       </div>
     </div>
@@ -76,6 +88,14 @@ export default {
         { title: 'Router', image: routerSvg },
         { title: 'BBMD (ON)', image: bbmdOnSvg },
         { title: 'BBMD (OFF)', image: bbmdOffSvg },
+      ],
+      edgeTypes: [
+        { title: 'BBMD → Subnet', color: 'rgb(200, 100, 200)', dash: false },
+        { title: 'Router → Subnet', color: 'rgb(220, 80, 80)', dash: false },
+        { title: 'Device → Subnet', color: 'rgb(100, 180, 100)', dash: false },
+        { title: 'Grasshopper', color: 'rgb(0, 180, 180)', dash: false },
+        { title: 'BDT Entry', color: 'rgb(255, 165, 0)', dash: true },
+        { title: 'FDT Entry', color: 'rgb(0, 200, 255)', dash: true },
       ],
     }
   },
@@ -143,5 +163,36 @@ export default {
 }
 .legend-icon {
   padding-left: 20px;
+}
+.section-title {
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  margin-top: 5px;
+  letter-spacing: 0.5px;
+}
+.edge-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-start;
+}
+.edge-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.edge-line {
+  width: 28px;
+  height: 0;
+  border-top: 3px solid;
+}
+.edge-line.dashed {
+  border-top-style: dashed;
+}
+.edge-label {
+  color: #cdcdcd;
+  font-size: 11px;
 }
 </style>

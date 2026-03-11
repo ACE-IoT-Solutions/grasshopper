@@ -24,9 +24,9 @@
       </thead>
       <tbody>
         <tr>
-          <td>{{ edgeInfo.type }}</td>
-          <td>{{ edgeInfo.to }}</td>
-          <td>{{ edgeInfo.from }}</td>
+          <td>{{ formatEdgeType(edgeInfo.type) }}</td>
+          <td>{{ formatNodeId(edgeInfo.to) }}</td>
+          <td>{{ formatNodeId(edgeInfo.from) }}</td>
         </tr>
       </tbody>
     </v-table>
@@ -77,6 +77,56 @@ export default {
           this.store.setEdgeMenu(false)
         },
       })
+    },
+    formatEdgeType(type) {
+      if (!type) return 'Unknown'
+
+      // Extract the fragment from full URI if present
+      let edgeType = type
+      if (type.includes('#')) {
+        edgeType = type.split('#').pop()
+      }
+
+      // Map edge type identifiers to human-readable names
+      const edgeTypeMap = {
+        'device-on-network': 'Device → Network',
+        'device-on-subnet': 'Device → Subnet',
+        'bbmd-broadcast-domain': 'BBMD → Subnet',
+        'bacnet-router-on-subnet': 'Router → Subnet',
+        'bdt-entry': 'BDT Entry',
+        'fdr-entry': 'FDT Entry',
+        'router-for-subnet': 'Router → Subnet',
+      }
+
+      return edgeTypeMap[edgeType] || edgeType
+    },
+    formatNodeId(nodeId) {
+      if (!nodeId) return 'Unknown'
+
+      // Remove bacnet:// prefix
+      let id = nodeId.replace('bacnet://', '')
+
+      // Handle different node types
+      if (id.startsWith('subnet/')) {
+        return 'Subnet ' + id.replace('subnet/', '')
+      }
+      if (id.startsWith('network/')) {
+        return 'Network ' + id.replace('network/', '')
+      }
+      if (id.startsWith('vendor/')) {
+        return 'Vendor ' + id.replace('vendor/', '')
+      }
+      if (id.startsWith('Grasshopper/')) {
+        return 'Grasshopper ' + id.replace('Grasshopper/', '')
+      }
+
+      // For device IDs (just numbers), prefix with "Device"
+      if (/^\d+$/.test(id)) {
+        return 'Device ' + id
+      }
+
+      // Return as-is if no pattern matches
+      return id
     },
   },
 }

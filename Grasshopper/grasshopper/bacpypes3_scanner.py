@@ -20,12 +20,15 @@ from bacpypes3.primitivedata import ObjectType
 from bacpypes3.vendor import VendorInfo
 from bacpypes3.ipv4.bvll import (
     LPDU,
+    ForwardedNPDU,
     ReadBroadcastDistributionTable,
     ReadBroadcastDistributionTableAck,
     ReadForeignDeviceTable,
     ReadForeignDeviceTableAck,
+    Result,
 )
 from bacpypes3.ipv4.service import BVLLServiceAccessPoint
+from bacpypes3.apdu import ErrorRejectAbortNack
 from bacpypes3.pdu import Address, IPv4Address, IPv6Address
 from bacpypes3.primitivedata import ObjectIdentifier
 from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
@@ -79,6 +82,8 @@ class BVLLServiceElement(ApplicationServiceElement):
         """
         self.read_bdt_future = {}  # Maps addresses to futures for BDT responses
         self.read_fdt_future = {}  # Maps addresses to futures for FDT responses
+        # IPs observed as ForwardedNPDU sources — these are BBMDs
+        self.forwarded_npdu_sources: set = set()
 
     async def confirmation(self, pdu: LPDU):
         """
@@ -99,6 +104,21 @@ class BVLLServiceElement(ApplicationServiceElement):
             if self.read_fdt_future.get(pdu.pduSource):
                 self.read_fdt_future[pdu.pduSource].set_result(pdu.bvlciFDT)
                 del self.read_fdt_future[pdu.pduSource]
+
+        elif isinstance(pdu, Result):
+            # Handle NAK/Result responses from non-BBMD devices.
+            # Result code 0x0020 = ReadBDT-NAK, 0x0040 = ReadFDT-NAK
+            # Resolve the future with None so callers don't wait for timeout.
+            source = pdu.pduSource
+            code = getattr(pdu, 'bvlciResultCode', None)
+            if code == 0x0020 and self.read_bdt_future.get(source):
+                _log.debug(f"ReadBDT NAK from {source}")
+                self.read_bdt_future[source].set_result(None)
+                del self.read_bdt_future[source]
+            elif code == 0x0040 and self.read_fdt_future.get(source):
+                _log.debug(f"ReadFDT NAK from {source}")
+                self.read_fdt_future[source].set_result(None)
+                del self.read_fdt_future[source]
 
     def create_future_request(
         self, destination: Address, request_class
@@ -149,6 +169,9 @@ class BVLLServiceElement(ApplicationServiceElement):
             _log.error(
                 f"Timeout while waiting for {request_class.__name__} response from {destination}"
             )
+            return None
+        except ErrorRejectAbortNack as e:
+            _log.error(f"BACnet error in {request_class.__name__} request: {e}")
             return None
         except Exception as e:
             _log.error(f"Error in {request_class.__name__} request: {e}")
@@ -536,7 +559,7 @@ class bacpypes3_scanner:
                 try:
                     ip = ipaddress.ip_address(t2[2].value)
                     bbmd_ips.add(ip)
-                except:
+                except (ValueError, TypeError, AttributeError):
                     pass
         return bbmd_ips
 
@@ -551,7 +574,7 @@ class bacpypes3_scanner:
                 try:
                     ip = ipaddress.ip_address(t2[2].value)
                     device_ips.add(ip)
-                except:
+                except (ValueError, TypeError, AttributeError):
                     pass
         return device_ips
 
@@ -610,6 +633,368 @@ class bacpypes3_scanner:
         await self.add_subnet_to_device(scanner_node, scanner_ip)
         self.scanner_node = scanner_node
 
+    @staticmethod
+    def _to_bacpypes3_address(
+        ip: ipaddress.IPv4Address, port: int = 47808
+    ) -> IPv4Address:
+        """
+        Convert a Python ipaddress.IPv4Address to a bacpypes3 IPv4Address.
+
+        This is necessary because bacpypes3 IPv4Address and Python ipaddress.IPv4Address
+        have different hash functions, so they cannot be used interchangeably as dict keys.
+        BVLL operations (ReadBDT, ReadFDT) register futures keyed by address, and the
+        response lookup uses bacpypes3 addresses from pduSource.
+
+        Args:
+            ip: A Python ipaddress.IPv4Address
+            port: BACnet port (default 47808/0xBAC0)
+
+        Returns:
+            A bacpypes3 IPv4Address suitable for BVLL operations
+        """
+        return IPv4Address(f"{ip}:{port}")
+
+    def _extract_ip_from_remote_station(
+        self, device_address: Address
+    ) -> Optional[ipaddress.IPv4Address]:
+        """
+        Extract the IPv4 address from a RemoteStation BACnet address.
+
+        For BACnet/IP devices behind a BACnet router, the RemoteStation address
+        encodes the IP (4 bytes) + port (2 bytes) in the address octets.
+        This method extracts the IP from such 6-byte addresses.
+
+        Args:
+            device_address: A BACnet Address (typically a RemoteStation)
+
+        Returns:
+            The extracted IPv4Address, or None if extraction fails
+        """
+        try:
+            addr_bytes = device_address.addrAddr
+            if addr_bytes and len(addr_bytes) == 6:
+                # BACnet/IP encoding: 4 bytes IP + 2 bytes port
+                ip = ipaddress.IPv4Address(addr_bytes[:4])
+                if not ip.is_loopback and not ip.is_unspecified:
+                    return ip
+        except (AttributeError, ValueError, TypeError):
+            pass
+        return None
+
+    async def discover_bbmds(
+        self, ase: BVLLServiceElement, graph: Graph
+    ) -> None:
+        """
+        Discover BBMDs by probing known IPs with ReadBDT.
+
+        BBMDs may not have BACnet device objects and thus won't respond to Who-Is.
+        This method probes all known device IPs, router IPs, and follows BDT entries
+        to snowball-discover BBMDs across subnets.
+
+        Args:
+            ase: The BVLL service element for sending ReadBDT
+            graph: The RDF graph to update with discovered BBMDs
+        """
+        _log.info("bacpypes3_scanner: discover_bbmds")
+
+        # Collect all candidate IPs to probe for BBMD status
+        candidate_ips: set[ipaddress.IPv4Address] = set()
+
+        # 1. HIGHEST PRIORITY: IPs observed as ForwardedNPDU sources during Who-Is.
+        #    Any IP that forwards a broadcast IS a BBMD by definition.
+        if ase.forwarded_npdu_sources:
+            _log.info(
+                f"Observed {len(ase.forwarded_npdu_sources)} ForwardedNPDU sources "
+                f"(confirmed BBMDs): {ase.forwarded_npdu_sources}"
+            )
+            candidate_ips.update(ase.forwarded_npdu_sources)
+
+        # 2. All known device IPs from scan
+        for ip in self.scanned_device_ips:
+            if isinstance(ip, ipaddress.IPv4Address):
+                candidate_ips.add(ip)
+
+        # 3. Infrastructure IPs on each known subnet (gateway, .1, .2, .3)
+        for subnet in self.subnets:
+            if isinstance(subnet, ipaddress.IPv4Network):
+                for offset in [1, 2, 3]:
+                    try:
+                        infra_ip = subnet.network_address + offset
+                        if infra_ip in subnet:
+                            candidate_ips.add(infra_ip)
+                    except (ValueError, OverflowError):
+                        pass
+
+        # 4. Configured BBMDs
+        for bbmd_ip in self.bbmds:
+            if isinstance(bbmd_ip, ipaddress.IPv4Address):
+                candidate_ips.add(bbmd_ip)
+
+        # Remove already-identified BBMDs and our own IP
+        scanner_ip_str = self.bacpypes_settings.get("address", "").split(":")[0].split("/")[0]
+        try:
+            scanner_ip = ipaddress.IPv4Address(scanner_ip_str)
+            candidate_ips.discard(scanner_ip)
+        except ValueError:
+            pass
+        for ip in list(self.scanned_ipaddress_bbmd.keys()):
+            candidate_ips.discard(ip)
+
+        _log.info(f"Probing {len(candidate_ips)} candidate IPs for BBMD status")
+
+        # Probe each candidate - use short timeout since most won't be BBMDs
+        discovered_bbmd_ips: set[ipaddress.IPv4Address] = set()
+        for ip in candidate_ips:
+            try:
+                bbmd_addr = self._to_bacpypes3_address(ip)
+                bdt = await ase.read_broadcast_distribution_table(bbmd_addr, timeout=2)
+                if bdt is not None:
+                    _log.info(f"Discovered BBMD at {ip} with {len(bdt)} BDT entries")
+                    self.scanned_bbmds_bdt[ip] = [
+                        ipaddr
+                        for bdt_entry in bdt
+                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
+                        if isinstance(ipaddr, ipaddress.IPv4Address)
+                    ]
+                    discovered_bbmd_ips.add(ip)
+            except (Exception, ErrorRejectAbortNack) as e:
+                _log.debug(f"IP {ip} is not a BBMD: {e}")
+
+        # Follow BDT entries to discover BBMDs on other subnets (snowball)
+        bdt_ips_to_probe = set()
+        for bbmd_ip in discovered_bbmd_ips:
+            for bdt_entry_ip in self.scanned_bbmds_bdt.get(bbmd_ip, []):
+                if (
+                    bdt_entry_ip not in discovered_bbmd_ips
+                    and bdt_entry_ip not in self.scanned_ipaddress_bbmd
+                ):
+                    bdt_ips_to_probe.add(bdt_entry_ip)
+
+        if bdt_ips_to_probe:
+            _log.info(f"Following BDT entries to probe {len(bdt_ips_to_probe)} additional IPs")
+
+        for ip in bdt_ips_to_probe:
+            try:
+                bbmd_addr = self._to_bacpypes3_address(ip)
+                bdt = await ase.read_broadcast_distribution_table(bbmd_addr, timeout=2)
+                if bdt is not None:
+                    _log.info(f"Discovered BBMD at {ip} via BDT snowball")
+                    self.scanned_bbmds_bdt[ip] = [
+                        ipaddr
+                        for bdt_entry in bdt
+                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
+                        if isinstance(ipaddr, ipaddress.IPv4Address)
+                    ]
+                    discovered_bbmd_ips.add(ip)
+            except (Exception, ErrorRejectAbortNack) as e:
+                _log.debug(f"BDT entry IP {ip} is not a BBMD: {e}")
+
+        # Create BBMDNodes for discovered BBMDs
+        for bbmd_ip in discovered_bbmd_ips:
+            if bbmd_ip in self.scanned_ipaddress_bbmd:
+                continue
+
+            # Check if this IP matches an existing discovered device
+            existing_device = self.scanned_device_ips.get(bbmd_ip)
+
+            if existing_device and not isinstance(existing_device, BBMDNode):
+                # Convert existing device to BBMDNode
+                _log.info(
+                    f"Converting device at {bbmd_ip} from "
+                    f"{type(existing_device).__name__} to BBMDNode"
+                )
+                old_iri = existing_device.node_iri
+                stored_properties = [
+                    (p, o) for p, o in graph.predicate_objects(old_iri)
+                    if p != RDF.type
+                ]
+                graph.remove((old_iri, None, None))
+                bbmd_node = BBMDNode(graph, old_iri)
+                for predicate, obj in stored_properties:
+                    bbmd_node.add_connection(predicate, obj)
+
+                self.scanned_bbmds.append(bbmd_node)
+                self.scanned_ipaddress_bbmd[bbmd_ip] = bbmd_node
+                for ip_key, dev in list(self.scanned_device_ips.items()):
+                    if dev is existing_device:
+                        self.scanned_device_ips[ip_key] = bbmd_node
+                for subnet in self.subnets:
+                    if bbmd_ip in subnet:
+                        self.bbmd_in_subnet[subnet] = old_iri
+                        break
+            elif existing_device is None:
+                # BBMD not discovered via Who-Is — create new BBMDNode
+                _log.info(f"Creating BBMDNode for infrastructure BBMD at {bbmd_ip}")
+                bbmd_iri = BACnetURI["//bbmd/" + str(bbmd_ip)]
+                bbmd_node = BBMDNode(graph, bbmd_iri)
+                bbmd_node.add_properties(
+                    label=bbmd_iri,
+                    device_address=str(bbmd_ip),
+                )
+                self.scanned_bbmds.append(bbmd_node)
+                self.scanned_ipaddress_bbmd[bbmd_ip] = bbmd_node
+                self.scanned_device_ips[bbmd_ip] = bbmd_node
+                for subnet in self.subnets:
+                    if bbmd_ip in subnet:
+                        bbmd_node.add_properties(subnet=subnet)
+                        self.bbmd_in_subnet[subnet] = bbmd_iri
+                        break
+
+        _log.info(
+            f"BBMD discovery complete: found {len(discovered_bbmd_ips)} BBMDs, "
+            f"total tracked: {len(self.scanned_ipaddress_bbmd)}"
+        )
+
+    async def reconcile_configured_bbmds(
+        self, ase: BVLLServiceElement, graph: Graph
+    ) -> None:
+        """
+        Ensure configured BBMDs are properly represented as BBMDNodes in the graph.
+
+        BBMDs on remote subnets respond to Who-Is as RemoteStations, so the
+        scanner creates them as plain DeviceNodes during get_device_objects.
+        This method sends ReadBDT directly to each configured BBMD IP (BVLL-layer,
+        no BACnet routing needed), finds the matching discovered device, and
+        converts it to a BBMDNode.
+
+        Args:
+            ase: The BVLL service element for sending ReadBDT/ReadFDT
+            graph: The RDF graph to update
+        """
+        _log.debug("bacpypes3_scanner: reconcile_configured_bbmds")
+
+        # Build a reverse lookup: IP -> (device_address, device_node) for
+        # RemoteStation devices where we can extract the IP
+        remote_ip_to_device: dict[ipaddress.IPv4Address, tuple] = {}
+        for ip, device_node in self.scanned_device_ips.items():
+            remote_ip_to_device[ip] = device_node
+
+        for bbmd_ip in self.bbmds:
+            if bbmd_ip in self.scanned_ipaddress_bbmd:
+                _log.debug(f"BBMD {bbmd_ip} already identified, skipping")
+                continue
+
+            _log.info(f"Reconciling configured BBMD {bbmd_ip}")
+
+            # Convert Python ipaddress to bacpypes3 Address for BVLL operations.
+            # bacpypes3 IPv4Address and Python ipaddress.IPv4Address have different
+            # hash functions, so dict key lookups fail if types are mixed.
+            bbmd_bacpypes_addr = self._to_bacpypes3_address(bbmd_ip)
+
+            # Try ReadBDT directly to the BBMD's IP address (BVLL-layer)
+            try:
+                bdt = await ase.read_broadcast_distribution_table(bbmd_bacpypes_addr)
+                if bdt is not None:
+                    self.scanned_bbmds_bdt[bbmd_ip] = [
+                        ipaddr
+                        for bdt_entry in bdt
+                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
+                        if isinstance(ipaddr, ipaddress.IPv4Address)
+                    ]
+                    _log.info(
+                        f"Successfully read BDT from configured BBMD {bbmd_ip}: "
+                        f"{len(self.scanned_bbmds_bdt[bbmd_ip])} entries"
+                    )
+                else:
+                    _log.warning(f"ReadBDT to {bbmd_ip} returned None")
+                    continue
+            except (Exception, ErrorRejectAbortNack) as e:
+                _log.warning(f"ReadBDT to configured BBMD {bbmd_ip} failed: {e}")
+                continue
+
+            # Find the matching discovered device - check direct IP first
+            existing_device = remote_ip_to_device.get(bbmd_ip)
+
+            # If not found by direct IP, scan RemoteStation addresses
+            if existing_device is None:
+                for scanned_ip, device_node in self.scanned_device_ips.items():
+                    if scanned_ip == bbmd_ip:
+                        existing_device = device_node
+                        break
+
+            # Also check all devices for RemoteStation IP extraction
+            if existing_device is None:
+                for s, p, o in graph.triples((None, BACnetNS["address"], None)):
+                    try:
+                        addr_str = str(o)
+                        # Try to parse as a direct IP
+                        if ipaddress.ip_address(addr_str) == bbmd_ip:
+                            # Find the device node for this IRI
+                            for ip, dev in self.scanned_device_ips.items():
+                                if dev.node_iri == s:
+                                    existing_device = dev
+                                    break
+                            if existing_device:
+                                break
+                    except ValueError:
+                        pass
+
+            if existing_device and not isinstance(existing_device, BBMDNode):
+                # Convert the existing device to a BBMDNode
+                _log.info(
+                    f"Converting device at {bbmd_ip} from "
+                    f"{type(existing_device).__name__} to BBMDNode"
+                )
+                old_iri = existing_device.node_iri
+
+                # Store all existing properties (except type)
+                stored_properties = []
+                for predicate, obj in graph.predicate_objects(old_iri):
+                    if predicate != RDF.type:
+                        stored_properties.append((predicate, obj))
+
+                # Remove old triples
+                graph.remove((old_iri, None, None))
+
+                # Create BBMDNode with same IRI
+                bbmd_node = BBMDNode(graph, old_iri)
+
+                # Restore properties
+                for predicate, obj in stored_properties:
+                    bbmd_node.add_connection(predicate, obj)
+
+                # Update tracking dicts
+                self.scanned_bbmds.append(bbmd_node)
+                self.scanned_ipaddress_bbmd[bbmd_ip] = bbmd_node
+
+                # Update scanned_device_ips - find and replace the entry
+                for ip, dev in list(self.scanned_device_ips.items()):
+                    if dev is existing_device:
+                        self.scanned_device_ips[ip] = bbmd_node
+
+                # Track BBMD in its subnet
+                for subnet in self.subnets:
+                    if bbmd_ip in subnet:
+                        self.bbmd_in_subnet[subnet] = old_iri
+                        break
+
+            elif existing_device is None:
+                # BBMD not discovered via Who-Is at all - create a new BBMDNode
+                _log.info(f"Creating new BBMDNode for undiscovered BBMD {bbmd_ip}")
+                bbmd_iri = BACnetURI["//bbmd/" + str(bbmd_ip)]
+                bbmd_node = BBMDNode(graph, bbmd_iri)
+                bbmd_node.add_properties(
+                    label=bbmd_iri,
+                    device_address=str(bbmd_ip),
+                )
+
+                self.scanned_bbmds.append(bbmd_node)
+                self.scanned_ipaddress_bbmd[bbmd_ip] = bbmd_node
+                self.scanned_device_ips[bbmd_ip] = bbmd_node
+
+                # Associate with subnet
+                for subnet in self.subnets:
+                    if bbmd_ip in subnet:
+                        bbmd_node.add_properties(subnet=subnet)
+                        self.bbmd_in_subnet[subnet] = bbmd_iri
+                        break
+
+            else:
+                _log.debug(f"BBMD {bbmd_ip} already a BBMDNode, updating tracking")
+                self.scanned_ipaddress_bbmd[bbmd_ip] = existing_device
+
+        _log.debug("reconcile_configured_bbmds Completed")
+
     async def get_device_and_router(self, graph: Graph) -> None:
         """
         Main scanning method that discovers devices and routers on the BACnet network.
@@ -630,18 +1015,47 @@ class bacpypes3_scanner:
         """
         _log.debug("Running Async for Who Is and Router to network")
         app = await self.set_application(graph)
-        local_adapter = app.nsap.local_adapter
-        sap = local_adapter.clientPeer
-        assert isinstance(sap, BVLLServiceAccessPoint)
-        ase = BVLLServiceElement()
-        bind(ase, sap)
-        await self.set_scanner_node(graph)
-        await self.get_device_objects(app, ase, graph)
-        await self.get_router_networks(app, graph)
-        for bbmd in self.bbmds:
-            await self.read_bbmd_fdt(ase, bbmd)
-        await self.set_subnet_network(graph)
-        app.close()
+        try:
+            # local_adapter is a NetworkAdapter; its clientPeer is the
+            # NormalLinkLayer which IS the BVLLServiceAccessPoint.
+            # BVLL management requests (ReadBDT, ReadFDT) go via
+            # sap_indication → Client.request → BVLLCodec → UDP.
+            local_adapter = app.nsap.local_adapter
+            sap = local_adapter.clientPeer
+            if not isinstance(sap, BVLLServiceAccessPoint):
+                _log.error("Expected BVLLServiceAccessPoint but got %s", type(sap).__name__)
+                return
+            ase = BVLLServiceElement()
+            bind(ase, sap)
+
+            # Wrap BIPNormal.confirmation to observe ForwardedNPDU sources.
+            # When a BBMD forwards a broadcast, the UDP source is the BBMD's IP.
+            # BIPNormal.confirmation receives ForwardedNPDU with pduSource = BBMD IP
+            # but replaces it with bvlciAddress (original device) before sending upstream.
+            # We intercept here to record BBMD IPs passively during normal traffic.
+            _original_sap_confirmation = sap.confirmation
+
+            async def _observing_confirmation(lpdu):
+                if isinstance(lpdu, ForwardedNPDU) and lpdu.pduSource:
+                    try:
+                        bbmd_ip = ipaddress.ip_address(lpdu.pduSource)
+                        ase.forwarded_npdu_sources.add(bbmd_ip)
+                    except (ValueError, TypeError):
+                        pass
+                return await _original_sap_confirmation(lpdu)
+
+            sap.confirmation = _observing_confirmation
+
+            await self.set_scanner_node(graph)
+            await self.get_device_objects(app, ase, graph)
+            await self.get_router_networks(app, graph)
+            await self.discover_bbmds(ase, graph)
+            # Read FDT from all discovered BBMDs
+            for bbmd_ip in list(self.scanned_ipaddress_bbmd.keys()):
+                await self.read_bbmd_fdt(ase, self._to_bacpypes3_address(bbmd_ip))
+            await self.set_subnet_network(graph)
+        finally:
+            app.close()
 
     async def get_router_networks(self, app: Application, graph: Graph) -> None:
         """
@@ -664,6 +1078,7 @@ class bacpypes3_scanner:
         """
         _log.debug("bacpypes3_scanner: get_router_networks")
         for network_id in self.scanned_networks:
+          try:
             _log.debug(f"Currently Processing network {network_id}")
             routers = await app.nse.who_is_router_to_network(network=network_id)
             for adapter, i_am_router_to_network in routers:
@@ -732,7 +1147,10 @@ class bacpypes3_scanner:
                         router_node.add_properties(subnet=subnet)
                 if not_in_network:
                     self.scanner_node.add_properties(device_iri=router_node.node_iri)
-                
+          except (Exception, ErrorRejectAbortNack) as e:
+            _log.error(f"Error processing network {network_id}: {e}")
+            continue
+
         _log.debug("get_router_networks Completed")
 
     async def check_if_device_is_bbmd(
@@ -764,8 +1182,8 @@ class bacpypes3_scanner:
                     if isinstance(ipaddr, ipaddress.IPv4Address)
                 ]
                 return True
-        except Exception as e:
-            pass
+        except (Exception, ErrorRejectAbortNack) as e:
+            _log.debug(f"Device {device_address} is not a BBMD or check failed: {e}")
         _log.debug("check_if_device_is_bbmd Completed")
         return False
 
@@ -788,11 +1206,15 @@ class bacpypes3_scanner:
         """
         _log.debug("bacpypes3_scanner: read_bbmd_fdt")
         try:
-            fdt = await ase.read_broadcast_distribution_table(device_address)
+            fdt = await ase.read_foreign_device_table(device_address)
             if fdt is not None:
-                self.scanned_bbmds_fdt[device_address] = fdt
-        except Exception as e:
-            pass
+                # Store keyed by Python ipaddress for consistent lookup with
+                # scanned_ipaddress_bbmd (also keyed by Python ipaddress)
+                ip_key = ipaddress.ip_address(device_address)
+                self.scanned_bbmds_fdt[ip_key] = fdt
+                _log.debug(f"FDT entries for {device_address}: {fdt}")
+        except (Exception, ErrorRejectAbortNack) as e:
+            _log.debug(f"Failed to read FDT from {device_address}: {e}")
 
     async def add_subnet_to_device(
         self, device: BACnetNode, ip: Address
@@ -885,6 +1307,10 @@ class bacpypes3_scanner:
             except asyncio.TimeoutError:
                 _log.debug(
                     f"Timeout reading {bacnet_prop} from device {device_identifier[1]}"
+                )
+            except ErrorRejectAbortNack as e:
+                _log.debug(
+                    f"BACnet error reading {bacnet_prop} from device {device_identifier[1]}: {e}"
                 )
             except PropertyError as e:
                 # Handle specific BACnet property errors (like unknown-property)
@@ -1034,6 +1460,11 @@ class bacpypes3_scanner:
                 f"Timeout reading object-list from device {device_identifier[1]}"
             )
             return
+        except ErrorRejectAbortNack as e:
+            _log.debug(
+                f"BACnet error reading object-list from device {device_identifier[1]}: {e}"
+            )
+            return
         except Exception as e:
             _log.debug(
                 f"Could not read object-list from device {device_identifier[1]}: {e}"
@@ -1144,7 +1575,7 @@ class bacpypes3_scanner:
 
             try:
                 i_ams = await app.who_is(track_lower, track_upper)
-            except Exception as e:
+            except (Exception, ErrorRejectAbortNack) as e:
                 _log.error(f"Error in Who Is: {e}")
                 track_lower = track_upper + 1
                 continue
@@ -1196,7 +1627,32 @@ class bacpypes3_scanner:
                         self.scanned_bbmds.append(device)
                         self.scanned_ipaddress_bbmd[ip] = device
                 except ValueError:
-                    device = DeviceNode(graph, device_iri)
+                    # RemoteStation device — try to extract its real IP
+                    # For BACnet/IP devices behind a router, the 6-byte address
+                    # encodes IP (4 bytes) + port (2 bytes)
+                    extracted_ip = self._extract_ip_from_remote_station(device_address)
+                    is_bbmd = False
+
+                    if extracted_ip:
+                        _log.debug(
+                            f"Extracted IP {extracted_ip} from RemoteStation "
+                            f"{device_address} for device {device_identifier[1]}"
+                        )
+                        # Try ReadBDT directly to the extracted IP (BVLL-layer)
+                        bbmd_addr = self._to_bacpypes3_address(extracted_ip)
+                        is_bbmd = await self.check_if_device_is_bbmd(
+                            ase, bbmd_addr
+                        )
+
+                    if is_bbmd:
+                        device = BBMDNode(graph, device_iri)
+                        _log.info(
+                            f"Remote device {device_identifier[1]} at "
+                            f"{extracted_ip} identified as BBMD"
+                        )
+                    else:
+                        device = DeviceNode(graph, device_iri)
+
                     device.add_properties(
                         label=device_iri,
                         device_identifier=device_identifier[1],
@@ -1204,16 +1660,29 @@ class bacpypes3_scanner:
                         vendor_id=i_am.vendorID,
                         network_id=device_address.addrNet,
                     )
-                    # Read additional device properties (model_name, firmware_revision, device_name)
-                    await self.read_device_properties(
-                        app, device, device_address, device_identifier
-                    )
-
-                    # Read device object signature (object types and counts)
-                    await self.read_device_object_signature(
-                        app, device, device_address, device_identifier
-                    )
+                    try:
+                        await self.read_device_properties(
+                            app, device, device_address, device_identifier
+                        )
+                        await self.read_device_object_signature(
+                            app, device, device_address, device_identifier
+                        )
+                    except (Exception, ErrorRejectAbortNack) as e:
+                        _log.debug(
+                            f"Could not read properties for remote device {device_identifier[1]}: {e}"
+                        )
                     self.scanned_networks.add(device_address.addrNet)
+
+                    if extracted_ip:
+                        self.scanned_device_ips[extracted_ip] = device
+                        if isinstance(device, BBMDNode):
+                            # Track BBMD in subnet and lookup dicts
+                            device_subnet = await self.add_subnet_to_device(
+                                device, bbmd_addr
+                            )
+                            self.bbmd_in_subnet[device_subnet] = device_iri
+                            self.scanned_bbmds.append(device)
+                            self.scanned_ipaddress_bbmd[extracted_ip] = device
 
             track_lower = track_upper + 1
         _log.debug("get_device_objects Completed")
@@ -1248,6 +1717,7 @@ class bacpypes3_scanner:
             _log.debug(f"adding router_iri: {router_iri} to network: {net}")
             network_node.add_properties(network=net, router_iri=router_num)
 
+        # Process BDT entries - create edges between BBMDs in same BDT
         try:
             for bbmd_ipaddress, bdt in self.scanned_bbmds_bdt.items():
                 bbmd: BBMDNode = self.scanned_ipaddress_bbmd[bbmd_ipaddress]
@@ -1256,10 +1726,36 @@ class bacpypes3_scanner:
                         bdt_entry_bbmd: BBMDNode = self.scanned_ipaddress_bbmd[
                             bdt_entry
                         ]
-                        bbmd.add_properties(device_iri=bdt_entry_bbmd.node_iri)
-        except Exception as e:
-            _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
+                        bbmd.add_properties(bdt_device_iri=bdt_entry_bbmd.node_iri)
+        except (Exception, ErrorRejectAbortNack) as e:
             _log.error(f"Error in setting BDT: {e}")
+
+        # Process FDT entries - create edges from BBMD to registered foreign devices
+        try:
+            for bbmd_ipaddress, fdt in self.scanned_bbmds_fdt.items():
+                if bbmd_ipaddress not in self.scanned_ipaddress_bbmd:
+                    continue
+                bbmd: BBMDNode = self.scanned_ipaddress_bbmd[bbmd_ipaddress]
+                for fdt_entry in fdt:
+                    # FDT entries have fdAddress attribute (IPv4Address)
+                    fd_address = fdt_entry.fdAddress
+                    # Convert to ipaddress for lookup
+                    fd_ip = ipaddress.IPv4Address(fd_address.addrTuple[0])
+
+                    # Check if foreign device is a known BBMD
+                    if fd_ip in self.scanned_ipaddress_bbmd:
+                        fd_node = self.scanned_ipaddress_bbmd[fd_ip]
+                        bbmd.add_properties(fdt_device_iri=fd_node.node_iri)
+                        _log.debug(f"Added FDT edge: {bbmd_ipaddress} -> {fd_ip} (BBMD)")
+                    # Check if foreign device is a known device
+                    elif fd_ip in self.scanned_device_ips:
+                        fd_node = self.scanned_device_ips[fd_ip]
+                        bbmd.add_properties(fdt_device_iri=fd_node.node_iri)
+                        _log.debug(f"Added FDT edge: {bbmd_ipaddress} -> {fd_ip} (Device)")
+                    else:
+                        _log.debug(f"FDT entry {fd_ip} not found in scanned devices")
+        except (Exception, ErrorRejectAbortNack) as e:
+            _log.error(f"Error in setting FDT: {e}")
 
         _log.debug(f"scanned_bbmds_bdt: {self.scanned_bbmds_bdt}")
         _log.debug(f"scanned_bbmds_fdt: {self.scanned_bbmds_fdt}")
@@ -1308,9 +1804,27 @@ class bacpypes3_scanner:
         app = await self.set_application(graph)
         local_adapter = app.nsap.local_adapter
         sap = local_adapter.clientPeer
-        assert isinstance(sap, BVLLServiceAccessPoint)
+        if not isinstance(sap, BVLLServiceAccessPoint):
+            _log.error("Expected BVLLServiceAccessPoint but got %s", type(sap).__name__)
+            app.close()
+            return
         ase = BVLLServiceElement()
         bind(ase, sap)
+
+        # Wrap BIPNormal.confirmation to observe ForwardedNPDU sources (BBMD IPs)
+        _original_sap_confirmation = sap.confirmation
+
+        async def _observing_confirmation(lpdu):
+            if isinstance(lpdu, ForwardedNPDU) and lpdu.pduSource:
+                try:
+                    bbmd_ip = ipaddress.ip_address(lpdu.pduSource)
+                    ase.forwarded_npdu_sources.add(bbmd_ip)
+                except (ValueError, TypeError):
+                    pass
+            return await _original_sap_confirmation(lpdu)
+
+        sap.confirmation = _observing_confirmation
+
         await self.set_scanner_node(graph)
 
         try:
@@ -1450,7 +1964,28 @@ class bacpypes3_scanner:
                                 self.scanned_ipaddress_bbmd[ip] = device
 
                         except ValueError:
-                            device = DeviceNode(graph, device_iri)
+                            extracted_ip = self._extract_ip_from_remote_station(device_address)
+                            is_bbmd = False
+
+                            if extracted_ip:
+                                _log.debug(
+                                    f"Extracted IP {extracted_ip} from RemoteStation "
+                                    f"{device_address} for device {device_identifier[1]}"
+                                )
+                                bbmd_addr = self._to_bacpypes3_address(extracted_ip)
+                                is_bbmd = await self.check_if_device_is_bbmd(
+                                    ase, bbmd_addr
+                                )
+
+                            if is_bbmd:
+                                device = BBMDNode(graph, device_iri)
+                                _log.info(
+                                    f"Remote device {device_identifier[1]} at "
+                                    f"{extracted_ip} identified as BBMD"
+                                )
+                            else:
+                                device = DeviceNode(graph, device_iri)
+
                             device.add_properties(
                                 label=device_iri,
                                 device_identifier=device_identifier[1],
@@ -1471,13 +2006,25 @@ class bacpypes3_scanner:
 
                             self.scanned_networks.add(device_address.addrNet)
 
-                except Exception as e:
+                            if extracted_ip:
+                                self.scanned_device_ips[extracted_ip] = device
+                                if isinstance(device, BBMDNode):
+                                    device_subnet = await self.add_subnet_to_device(
+                                        device, bbmd_addr
+                                    )
+                                    self.bbmd_in_subnet[device_subnet] = device_iri
+                                    self.scanned_bbmds.append(device)
+                                    self.scanned_ipaddress_bbmd[extracted_ip] = device
+
+                except (Exception, ErrorRejectAbortNack) as e:
                     _log.error(f"Error during scavenge scan {i}: {e}")
 
             # Discover routers and complete the scan
             await self.get_router_networks(app, graph)
-            for bbmd in self.bbmds:
-                await self.read_bbmd_fdt(ase, bbmd)
+            await self.discover_bbmds(ase, graph)
+            # Read FDT from all discovered BBMDs
+            for bbmd_ip in list(self.scanned_ipaddress_bbmd.keys()):
+                await self.read_bbmd_fdt(ase, self._to_bacpypes3_address(bbmd_ip))
             await self.set_subnet_network(graph)
 
             _log.info("Scavenge scan completed successfully")
