@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List, Optional, Union
 
-from bacpypes3.rdf.core import BACnetNS, BACnetURI
+from bacpypes3.rdf.core import BACNET, BACnetURI
 from rdflib import RDF, Graph, Literal, Namespace, URIRef  # type: ignore
 from rdflib.namespace import RDFS
 
@@ -78,7 +78,7 @@ class DeviceTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Device)
+        device.add_connection(RDF.type, BACNET.Device)
 
 
 class BBMDTypeHandler(BaseTypeHandler):
@@ -90,7 +90,7 @@ class BBMDTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.BBMD)
+        device.add_connection(RDF.type, BACNET.BBMD)
 
 class GrasshopperTypeHandler(BaseTypeHandler):
     """
@@ -101,7 +101,7 @@ class GrasshopperTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Grasshopper)
+        device.add_connection(RDF.type, BACNET.Grasshopper)
 
 class RouterTypeHandler(BaseTypeHandler):
     """
@@ -112,7 +112,7 @@ class RouterTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Router)
+        device.add_connection(RDF.type, BACNET.Router)
 
 
 class DeviceRouterTypeHandler(BaseTypeHandler):
@@ -124,7 +124,7 @@ class DeviceRouterTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Router)
+        device.add_connection(RDF.type, BACNET.Router)
 
 
 class SubnetTypeHandler(BaseTypeHandler):
@@ -136,7 +136,7 @@ class SubnetTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Subnet)
+        device.add_connection(RDF.type, BACNET.Subnet)
 
 
 class NetworkTypeHandler(BaseTypeHandler):
@@ -148,7 +148,7 @@ class NetworkTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Network)
+        device.add_connection(RDF.type, BACNET.Network)
 
 
 class BaseNode:
@@ -235,12 +235,12 @@ class SubnetNode(BaseNode):
         """Add properties to the subnet node."""
         super().add_properties(**kwargs)
         if subnet_cidr:
-            self.add_connection(BACnetNS["subnet-cidr"], Literal(str(subnet_cidr)))
+            self.add_connection(BACNET["subnet-cidr"], Literal(str(subnet_cidr)))
         if bbmd_iri:
             # Store BBMD as a literal to avoid edge-to-node conversion in build_networkx_graph
             # which would incorrectly remove the BBMD node from the visualization
             bbmd_id = str(bbmd_iri).replace("bacnet://", "")
-            self.add_connection(BACnetNS["bbmd"], Literal(bbmd_id))
+            self.add_connection(BACNET["bbmd"], Literal(bbmd_id))
 
 
 class NetworkNode(BaseNode):
@@ -258,12 +258,12 @@ class NetworkNode(BaseNode):
         """Add properties to the network node."""
         super().add_properties(**kwargs)
         if network_number is not None:
-            self.add_connection(BACnetNS["network-number"], Literal(network_number))
+            self.add_connection(BACNET["network-number"], Literal(network_number))
         if router_iri:
             # Store router as a literal to avoid edge-to-node conversion in build_networkx_graph
             # which would incorrectly remove the router node from the visualization
             router_id = str(router_iri).replace("bacnet://", "")
-            self.add_connection(BACnetNS["router"], Literal(router_id))
+            self.add_connection(BACNET["router"], Literal(router_id))
 
 
 class BaseBACnetComponent(ABC):
@@ -285,7 +285,7 @@ class SubnetComponent(BaseBACnetComponent):
         subnet = kwargs.get("subnet")
         if subnet:
             device.add_connection(
-                BACnetNS[self.edge_type.value], BACnetURI["//subnet/" + str(subnet)]
+                BACNET[self.edge_type.value], BACnetURI["//subnet/" + str(subnet)]
             )
 
 
@@ -296,7 +296,7 @@ class NetworkComponent(BaseBACnetComponent):
         network_id = kwargs.get("network_id")
         if network_id:
             device.add_connection(
-                BACnetNS[self.edge_type.value],
+                BACNET[self.edge_type.value],
                 BACnetURI["//network/" + str(network_id)],
             )
 
@@ -311,7 +311,7 @@ class AttachDeviceComponent(BaseBACnetComponent):
     def add_properties(self, device: BaseNode, **kwargs):
         device_iri = kwargs.get(self.kwarg_name)
         if device_iri:
-            device.add_connection(BACnetNS[self.edge_type.value], device_iri)
+            device.add_connection(BACNET[self.edge_type.value], device_iri)
 
 
 class BACnetNode(BaseNode):
@@ -339,12 +339,12 @@ class BACnetNode(BaseNode):
         """Add properties common to all devices."""
         super().add_properties(label=label, **kwargs)
         if device_identifier:
-            self.add_connection(BACnetNS["device-instance"], Literal(device_identifier))
+            self.add_connection(BACNET["device-instance"], Literal(device_identifier))
         if device_address:
-            self.add_connection(BACnetNS["address"], Literal(str(device_address)))
+            self.add_connection(BACNET["address"], Literal(str(device_address)))
         if vendor_id:
             self.add_connection(
-                BACnetNS["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)]
+                BACNET["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)]
             )
 
         for component in self.components:

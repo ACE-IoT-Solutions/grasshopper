@@ -31,7 +31,7 @@ from bacpypes3.ipv4.service import BVLLServiceAccessPoint
 from bacpypes3.apdu import ErrorRejectAbortNack
 from bacpypes3.pdu import Address, IPv4Address, IPv6Address
 from bacpypes3.primitivedata import ObjectIdentifier
-from bacpypes3.rdf.core import BACnetGraph, BACnetNS, BACnetURI
+from bacpypes3.rdf.core import BACnetGraph, BACNET, BACnetURI
 from rdflib import RDF, Graph, Literal, Namespace  # type: ignore
 from rdflib.compare import graph_diff, to_isomorphic
 from rdflib.extras.external_graph_libs import (
@@ -544,7 +544,7 @@ class bacpypes3_scanner:
         """Return a set of network numbers from the graph"""
         _log.debug("bacpypes3_scanner: get_networks_from_graph")
         networks = set()
-        for t in g.triples((None, RDF.type, BACnetNS["Network"])):
+        for t in g.triples((None, RDF.type, BACNET["Network"])):
             networks.add(int(t[0].split("/")[-1]))
         return networks
 
@@ -554,8 +554,8 @@ class bacpypes3_scanner:
         """Return a set of BBMD IPs from the graph"""
         _log.debug("bacpypes3_scanner: get_bbmd_ips")
         bbmd_ips = set()
-        for t in g.triples((None, RDF.type, BACnetNS["BBMD"])):
-            for t2 in g.triples((t[0], BACnetNS["device-address"], None)):
+        for t in g.triples((None, RDF.type, BACNET["BBMD"])):
+            for t2 in g.triples((t[0], BACNET["device-address"], None)):
                 try:
                     ip = ipaddress.ip_address(t2[2].value)
                     bbmd_ips.add(ip)
@@ -569,8 +569,8 @@ class bacpypes3_scanner:
         """Return a set of device IPs from the graph"""
         _log.debug("bacpypes3_scanner: get_device_ips")
         device_ips = set()
-        for t in g.triples((None, RDF.type, BACnetNS["Device"])):
-            for t2 in g.triples((t[0], BACnetNS["device-address"], None)):
+        for t in g.triples((None, RDF.type, BACNET["Device"])):
+            for t2 in g.triples((t[0], BACNET["device-address"], None)):
                 try:
                     ip = ipaddress.ip_address(t2[2].value)
                     device_ips.add(ip)
@@ -914,7 +914,7 @@ class bacpypes3_scanner:
 
             # Also check all devices for RemoteStation IP extraction
             if existing_device is None:
-                for s, p, o in graph.triples((None, BACnetNS["address"], None)):
+                for s, p, o in graph.triples((None, BACNET["address"], None)):
                     try:
                         addr_str = str(o)
                         # Try to parse as a direct IP
@@ -1100,7 +1100,7 @@ class bacpypes3_scanner:
                     device_iri = existing_device.node_iri
                     
                     # Extract device instance before removing triples from graph
-                    device_instance = graph.value(subject=device_iri, predicate=BACnetNS["device-instance"])
+                    device_instance = graph.value(subject=device_iri, predicate=BACNET["device-instance"])
                     
                     # Store all existing properties from the old device node
                     stored_properties = []
@@ -1300,7 +1300,7 @@ class bacpypes3_scanner:
                     timeout=10.0,
                 )
                 if value is not None:
-                    device.add_connection(BACnetNS[rdf_prop], Literal(str(value)))
+                    device.add_connection(BACNET[rdf_prop], Literal(str(value)))
                     _log.debug(
                         f"Read {bacnet_prop}={value} from device {device_identifier[1]}"
                     )
@@ -1496,7 +1496,7 @@ class bacpypes3_scanner:
         # Add total object count
         total_count = len(object_list)
         device.add_connection(
-            BACnetNS["object-count"], Literal(total_count)
+            BACNET["object-count"], Literal(total_count)
         )
         _log.debug(
             f"Device {device_identifier[1]} has {total_count} total objects"
@@ -1507,12 +1507,12 @@ class bacpypes3_scanner:
         for type_name, count in type_counts.items():
             # Create property name like "analog-input-count"
             prop_name = f"{type_name}-count"
-            # device.add_connection(BACnetNS[prop_name], Literal(count))
+            # device.add_connection(BACNET[prop_name], Literal(count))
             object_dict[prop_name] = count
             _log.debug(
                 f"Device {device_identifier[1]}: {type_name}={count}"
             )
-        device.add_connection(BACnetNS["total-objects"], Literal(str(object_dict)))
+        device.add_connection(BACNET["total-objects"], Literal(str(object_dict)))
 
     async def get_device_objects(
         self, app: Application, ase: BVLLServiceElement, graph: Graph
@@ -1782,7 +1782,7 @@ class bacpypes3_scanner:
         
         # Extract known device IDs from previous graph
         prev_device_ids = []
-        for triple in self.prev_graph.triples((None, BACnetNS["device-instance"], None)):
+        for triple in self.prev_graph.triples((None, BACNET["device-instance"], None)):
             try:
                 device_id = int(triple[2])
                 prev_device_ids.append(device_id)

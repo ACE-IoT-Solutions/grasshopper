@@ -11,7 +11,7 @@ from multiprocessing import Queue
 from typing import Any, Dict, List, Optional, Union, cast
 
 import gevent
-from bacpypes3.rdf.core import BACnetNS
+from bacpypes3.rdf.core import BACNET
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Response
 from pyvis.network import Network
@@ -165,7 +165,7 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue, f
                 combined_graph.add((s, p, o))
                 triple_id = Literal(f"{s} {p} {o}")
                 combined_graph.add(
-                    (triple_id, BACnetNS["rdf_diff_source"], Literal(ttl_filename_1))
+                    (triple_id, BACNET["rdf_diff_source"], Literal(ttl_filename_1))
                 )
 
             # Add triples from second graph with source marker
@@ -173,7 +173,7 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue, f
                 combined_graph.add((s, p, o))
                 triple_id = Literal(f"{s} {p} {o}")
                 combined_graph.add(
-                    (triple_id, BACnetNS["rdf_diff_source"], Literal(ttl_filename_2))
+                    (triple_id, BACNET["rdf_diff_source"], Literal(ttl_filename_2))
                 )
 
             # Add triples present in both graphs
