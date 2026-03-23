@@ -179,13 +179,9 @@ class BVLLServiceElement(ApplicationServiceElement):
             _log.error(f"Error in {request_class.__name__} request: {e}")
             return None
         finally:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
-
+            # Don't cancel the send task — cancelling it mid-flight through bacpypes3's
+            # transport layer causes "Exception in callback" errors. UDP sends complete
+            # near-instantly, so the task will finish on its own without needing cleanup.
             if destination in request_registry:
                 del request_registry[destination]
 
@@ -1587,6 +1583,9 @@ class bacpypes3_scanner:
                 device_address: Address = i_am.pduSource
                 device_identifier: ObjectIdentifier = i_am.iAmDeviceIdentifier
                 device_iri = BACnetURI["//" + str(device_identifier[1])]
+                _log.info(
+                    f"Device found: instance={device_identifier[1]} address={device_address} vendor={i_am.vendorID}"
+                )
                 try:
                     # Extract IP address from Address object (removing port if present)
                     ip: Union[IPv4Address, IPv6Address] = self._extract_ip_from_address(device_address)
