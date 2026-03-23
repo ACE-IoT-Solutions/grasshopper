@@ -162,7 +162,9 @@ class BVLLServiceElement(ApplicationServiceElement):
         request_registry[destination] = result_future
         task = self.create_future_request(destination, request_class)
         try:
-            await asyncio.wait_for(task, timeout)
+            # Only timeout on the response future; the send (UDP datagram) is near-instantaneous
+            # and cancelling the send task mid-flight leaves bacpypes3 transport callbacks in a
+            # broken state (causes asyncio "Exception in callback" errors on subsequent probes).
             result = await asyncio.wait_for(result_future, timeout)
             return result
         except asyncio.TimeoutError:
@@ -179,11 +181,10 @@ class BVLLServiceElement(ApplicationServiceElement):
         finally:
             if not task.done():
                 task.cancel()
-            else:
                 try:
-                    task.exception()
-                except (asyncio.CancelledError, asyncio.InvalidStateError) as e:
-                    _log.error(f"Task was cancelled or invalid state: {task}: {e}")
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
             if destination in request_registry:
                 del request_registry[destination]
