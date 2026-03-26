@@ -170,6 +170,11 @@ class BVLLServiceElement(ApplicationServiceElement):
                 f"Timeout while waiting for {request_class.__name__} response from {destination}"
             )
             return None
+        except asyncio.CancelledError:
+            _log.warning(
+                f"Request cancelled for {request_class.__name__} to {destination} (transport may be in broken state)"
+            )
+            return None
         except ErrorRejectAbortNack as e:
             _log.error(f"BACnet error in {request_class.__name__} request: {e}")
             return None
@@ -757,6 +762,8 @@ class bacpypes3_scanner:
                         if isinstance(ipaddr, ipaddress.IPv4Address)
                     ]
                     discovered_bbmd_ips.add(ip)
+            except asyncio.CancelledError:
+                _log.debug(f"IP {ip} is not a BBMD: transport cancelled")
             except (Exception, ErrorRejectAbortNack) as e:
                 _log.debug(f"IP {ip} is not a BBMD: {e}")
 
