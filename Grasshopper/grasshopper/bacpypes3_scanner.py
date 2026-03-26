@@ -4,6 +4,8 @@ File contains the bacpypes3_scanner class which is used to scan the network for 
 import asyncio
 import ipaddress
 import logging
+import os
+import socket
 from typing import Any, Dict, List, Optional, Set, Union
 
 import netifaces
@@ -513,13 +515,32 @@ class bacpypes3_scanner:
             _log.warning(f"Failed to determine local subnet from '{address}': {e}")
             return None
 
+    def _create_reuse_socket(self, address: str, port: int) -> socket.socket:
+        """
+        Create a UDP socket with SO_REUSEPORT so multiple BACnet applications
+        can share the same broadcast address on a bare-metal host.
+        """
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT") and "nt" not in os.name:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.bind((address, port))
+        sock.setblocking(False)
+        _log.info(f"Created reuse socket bound to {address}:{port}")
+        return sock
+
     async def set_application(self, graph: Graph) -> Application:
         """
-        Set the application address for the BACnet analysis
+        Set the application address for the BACnet analysis.
+        Creates a UDP socket with SO_REUSEPORT to allow multiple BACnet
+        applications to coexist on the same port on bare-metal hosts.
+
+        Builds the Application stack manually (rather than using from_args)
+        so we can pass a pre-bound socket to the IPv4 link layer.
         """
         _log.debug("bacpypes3_scanner: set_application")
         settings = self.bacpypes_settings.copy()
-        bbmd_ips = self.get_bbmd_ips(graph)
         settings["bbmd"] = self.bacpypes_settings.get("bbmd", None)
 
         # Register VendorInfo before creating Application (required for non-999 vendor IDs)
@@ -527,23 +548,80 @@ class bacpypes3_scanner:
         if vendorid != 999:
             try:
                 vendor_info = VendorInfo(vendorid)
-                # Register standard object classes so device has proper defaults
                 vendor_info.register_object_class(ObjectType.device, DeviceObject)
                 _log.debug(f"Registered VendorInfo for vendor ID {vendorid}")
             except RuntimeError as e:
-                # Vendor ID may already be registered
                 _log.debug(f"VendorInfo for vendor ID {vendorid} already registered: {e}")
 
         # Use SimpleArgumentParser to get proper bacpypes3 defaults
         parser = SimpleArgumentParser()
-        args = parser.parse_args([])  # Parse empty args to get all defaults
-
-        # Override defaults with our config values
+        args = parser.parse_args([])
         for key, value in settings.items():
             setattr(args, key, value)
 
+        # Parse address for socket binding
+        addr_str = settings.get("address", "")
+        bind_ip = addr_str.split("/")[0].split(":")[0] if addr_str else "0.0.0.0"
+        bind_port = int(addr_str.split(":")[-1]) if ":" in addr_str else 47808
+
+        # Create socket with SO_REUSEPORT for bare-metal coexistence
+        bind_sock = self._create_reuse_socket(bind_ip, bind_port)
+
+        # Build the Application stack manually to pass bind_socket through.
+        # This mirrors what Application.from_args + from_object_list + add_object
+        # does, but gives us control over the link layer socket.
+        from bacpypes3.vendor import get_vendor_info
+        from bacpypes3.local.networkport import NetworkPortObject
+        from bacpypes3.ipv4.link import NormalLinkLayer as NormalLinkLayer_ipv4
+        from bacpypes3.netservice import NetworkServiceAccessPoint, NetworkServiceElement
+        from bacpypes3.appservice import ApplicationServiceAccessPoint
+
+        vi = get_vendor_info(vendorid)
+        device_object_class = vi.get_object_class(ObjectType.device)
+        device_object = device_object_class(
+            objectIdentifier=("device", int(args.instance)),
+            objectName=args.name,
+        )
+
+        # Create the application
+        app = Application(device_info_cache=None)
+        app.asap = ApplicationServiceAccessPoint(device_object, app.device_info_cache)
+        app.nsap = NetworkServiceAccessPoint()
+        app.nse = NetworkServiceElement()
+        bind(app.nse, app.nsap)
+        bind(app, app.asap, app.nsap)
+        app.add_object(device_object)
+
+        # Build the network port object (but don't add_object it — we'll
+        # wire the link layer manually with our socket)
+        network_port_class = vi.get_object_class(ObjectType.networkPort)
+        address = args.address if args.address else "host"
+        network_port_object = network_port_class(
+            address,
+            objectIdentifier=("network-port", 1),
+            objectName="NetworkPort-1",
+            networkNumber=args.network,
+            networkNumberQuality="configured" if args.network else "unknown",
+        )
+
+        link_address = network_port_object.address
+        _log.info(f"Creating link layer with SO_REUSEPORT socket on {bind_ip}:{bind_port}")
+        link_layer = NormalLinkLayer_ipv4(link_address, bind_socket=bind_sock)
+
+        app.link_layers[network_port_object.objectIdentifier] = link_layer
+        if args.network and args.network != 0:
+            app.nsap.bind(link_layer, net=args.network, address=link_address)
+        else:
+            app.nsap.bind(link_layer, address=link_address)
+
+        # Register the network port object directly in the app's dictionaries
+        # without calling add_object, which would create a second link layer
+        app.objectName[network_port_object.objectName] = network_port_object
+        app.objectIdentifier[network_port_object.objectIdentifier] = network_port_object
+        network_port_object._app = app
+
         _log.debug(f"Application config: {args}")
-        return Application.from_args(args)
+        return app
 
     def get_networks_from_graph(self, g: rdflib.Graph) -> Set[int]:
         """Return a set of network numbers from the graph"""
