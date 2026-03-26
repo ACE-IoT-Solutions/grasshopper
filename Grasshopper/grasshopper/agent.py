@@ -582,6 +582,13 @@ class Grasshopper(Agent):
             os.makedirs(os.path.dirname(rdf_path), exist_ok=True)
             graph.serialize(destination=rdf_path, format="turtle")
 
+        except OSError as e:
+            _log.error(
+                "Cannot scan BACnet network: %s — check that no other process is "
+                "using this address/port and that the network interface is available.",
+                e,
+            )
+            return
         except Exception as e:  # pylint: disable=broad-except
             # We need to catch any exception during broadcast to prevent crash
             _log.error("Error in who_is_broadcast: %s", e)

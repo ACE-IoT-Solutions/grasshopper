@@ -543,7 +543,14 @@ class bacpypes3_scanner:
             setattr(args, key, value)
 
         _log.debug(f"Application config: {args}")
-        return Application.from_args(args)
+        try:
+            return Application.from_args(args)
+        except OSError as e:
+            address = settings.get("address", "unknown")
+            raise OSError(
+                f"Failed to bind BACnet application to address '{address}': {e}. "
+                "The address may already be in use by another process."
+            ) from e
 
     def get_networks_from_graph(self, g: rdflib.Graph) -> Set[int]:
         """Return a set of network numbers from the graph"""
