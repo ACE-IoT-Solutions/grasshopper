@@ -11,7 +11,7 @@ readme = "README.md"
 requires-python = ">=3.12,<=3.13"
 dependencies = [
     "rdflib>=7.0.0",
-    "bacpypes3>=0.0.103",
+    "bacpypes3>=0.0.106",
     "pydantic>=2.6.4",
     "pyvis>=0.3.2",
     "fastapi>=0.110.0",
