@@ -197,6 +197,13 @@ def process_compare_rdf_queue(task_queue: Queue, processing_task_queue: Queue, f
             print(f"Error processing task: {e}")
 
 
+def _local_name(uri: str) -> str:
+    """Extract the local name from a URI, handling both '#' and '/' separators."""
+    if "#" in uri:
+        return uri.split("#")[-1]
+    return uri.split("/")[-1]
+
+
 def build_networkx_graph(g: Graph):
     """
     Build a networkx graph from the BACnet RDF graph.
@@ -234,8 +241,8 @@ def build_networkx_graph(g: Graph):
             if "rdf_diff_source" in edge_label:
                 rdf_diff_list.append((u, v, edge_label))
             elif all(edge.value not in edge_label for edge in BACnetEdgeType):
-                label = edge_label.split("#")[-1]
-                val = str(v).split("#")[-1]
+                label = _local_name(str(edge_label))
+                val = _local_name(str(v))
                 if str(u) in node_data:
                     node_data[str(u)][label] = val
                 else:
