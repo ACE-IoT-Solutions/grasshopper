@@ -1,5 +1,5 @@
 rdflib == 7.0.0
-bacpypes3@git+https://github.com/JoelBender/BACpypes3.git@main
+bacpypes3 >= 0.0.106
 pyvis == 0.3.2
 pydantic == 2.6.4
 fastapi == 0.112.0
