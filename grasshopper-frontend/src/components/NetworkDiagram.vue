@@ -1364,64 +1364,61 @@ export default {
         }
       })
 
-      // Draw BDT/FDT edges for selected BBMD in tree mode
-      if (this.selectedBbmdForTree) {
-        const selectedBbmdLabel = nodeMap[this.selectedBbmdForTree]?.label
+      // Draw BDT/FDT edges in tree mode
+      // Always show these connections; highlight edges for selected BBMD
+      {
+        const selectedBbmdLabel = this.selectedBbmdForTree
+          ? nodeMap[this.selectedBbmdForTree]?.label
+          : null
 
         edges.forEach(edge => {
-          // Only draw BDT/FDT edges
           if (!edge.label) return
           const isBdt = edge.label.includes('bdt-entry')
           const isFdt = edge.label.includes('fdr-entry')
           if (!isBdt && !isFdt) return
-
-          // Check if this edge connects to the selected BBMD
-          const fromLabel = nodeMap[edge.from]?.label
-          const toLabel = nodeMap[edge.to]?.label
-
-          if (fromLabel !== selectedBbmdLabel && toLabel !== selectedBbmdLabel)
-            return
 
           const fromPos = networkInstance.getPosition(edge.from)
           const toPos = networkInstance.getPosition(edge.to)
 
           if (!fromPos || !toPos) return
 
+          // Determine if this edge connects to the selected BBMD (for highlighting)
+          const fromLabel = nodeMap[edge.from]?.label
+          const toLabel = nodeMap[edge.to]?.label
+          const isHighlighted = selectedBbmdLabel &&
+            (fromLabel === selectedBbmdLabel || toLabel === selectedBbmdLabel)
+
+          const opacity = isHighlighted ? 0.9 : 0.5
+
           // Different styles for BDT vs FDT
           if (isBdt) {
-            canvasContext.strokeStyle = 'rgba(255, 165, 0, 0.9)' // Orange for BDT
-            canvasContext.setLineDash([6, 4]) // Dashed
+            canvasContext.strokeStyle = `rgba(255, 165, 0, ${opacity})` // Orange for BDT
+            canvasContext.setLineDash([6, 4])
           } else {
-            canvasContext.strokeStyle = 'rgba(0, 200, 255, 0.9)' // Cyan for FDT
-            canvasContext.setLineDash([4, 2]) // Shorter dash
+            canvasContext.strokeStyle = `rgba(0, 200, 255, ${opacity})` // Cyan for FDT
+            canvasContext.setLineDash([4, 2])
           }
           canvasContext.lineWidth = 2
 
-          // Determine routing based on relative positions
-          const topNode = fromPos.y < toPos.y ? fromPos : toPos
-          const bottomNode = fromPos.y < toPos.y ? toPos : fromPos
+          // Route above both nodes with orthogonal path
+          const midY = Math.min(fromPos.y, toPos.y) - 40
+          const points = [
+            { x: fromPos.x, y: fromPos.y - 20 },
+            { x: fromPos.x, y: midY },
+            { x: toPos.x, y: midY },
+            { x: toPos.x, y: toPos.y - 20 }
+          ]
 
           canvasContext.beginPath()
-          if (isBdt || Math.abs(fromPos.y - toPos.y) < 50) {
-            // BDT or same-level: route above both nodes
-            const midY = Math.min(fromPos.y, toPos.y) - 40
-            canvasContext.moveTo(fromPos.x, fromPos.y - 20)
-            canvasContext.lineTo(fromPos.x, midY)
-            canvasContext.lineTo(toPos.x, midY)
-            canvasContext.lineTo(toPos.x, toPos.y - 20)
-          } else {
-            // FDT with level difference: route from BBMD down to device
-            // Go down from top node, across, then to bottom node
-            const midY = topNode.y + 40
-            canvasContext.moveTo(topNode.x, topNode.y + 20)
-            canvasContext.lineTo(topNode.x, midY)
-            canvasContext.lineTo(bottomNode.x, midY)
-            canvasContext.lineTo(bottomNode.x, bottomNode.y - 20)
-          }
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
+          canvasContext.lineTo(points[2].x, points[2].y)
+          canvasContext.lineTo(points[3].x, points[3].y)
           canvasContext.stroke()
+          storeEdgeGeometry(edge, points)
         })
 
-        canvasContext.setLineDash([]) // Reset line dash
+        canvasContext.setLineDash([])
       }
 
       canvasContext.restore()
