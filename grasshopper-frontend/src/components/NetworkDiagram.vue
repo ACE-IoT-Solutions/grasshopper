@@ -845,6 +845,48 @@ export default {
         }
       })
 
+      // Step 5: Position Grasshopper next to its primary (nearest connected) subnet
+      // rather than as an isolated orphan at the far edge of the layout
+      const grasshopperNodes = nodes.filter(n => n.id.startsWith('bacnet://Grasshopper'))
+      grasshopperNodes.forEach(ghNode => {
+        // Find subnets connected to this Grasshopper node
+        const connectedSubnets = edges
+          .filter(e => e.from === ghNode.id || e.to === ghNode.id)
+          .map(e => e.from === ghNode.id ? e.to : e.from)
+          .filter(id => id.startsWith('bacnet://subnet/') && positions[id])
+
+        if (connectedSubnets.length > 0 && positions[ghNode.id]) {
+          // Find the nearest connected subnet by current position
+          let nearestSubnet = connectedSubnets[0]
+          let nearestDist = Infinity
+          connectedSubnets.forEach(subnetId => {
+            const dist = Math.abs(positions[ghNode.id].x - positions[subnetId].x)
+            if (dist < nearestDist) {
+              nearestDist = dist
+              nearestSubnet = subnetId
+            }
+          })
+
+          // Find the rightmost node in the subnet's subtree to place Grasshopper after it
+          const subnetChildren = parentToChildren[nearestSubnet] || []
+          let maxSubtreeX = positions[nearestSubnet].x
+          const getAllDescendantPositions = (nodeId) => {
+            if (positions[nodeId]) {
+              maxSubtreeX = Math.max(maxSubtreeX, positions[nodeId].x)
+            }
+            const children = parentToChildren[nodeId] || []
+            children.forEach(cid => getAllDescendantPositions(cid))
+          }
+          subnetChildren.forEach(cid => getAllDescendantPositions(cid))
+
+          // Place Grasshopper to the right of the subnet's subtree at the subnet level
+          positions[ghNode.id] = {
+            x: maxSubtreeX + nodeSpacing * 1.5,
+            y: positions[nearestSubnet].y,
+          }
+        }
+      })
+
       // Store the parent-child relationships and adjusted levels for edge drawing
       this.layoutParentChild = {
         childToParent,
@@ -1177,44 +1219,7 @@ export default {
         }
       })
 
-      // Special handling for Grasshopper node - draw its subnet connection
-      // Grasshopper is at level 1 (same as subnet) so it gets skipped by parent-child logic
-      edges.forEach(edge => {
-        const fromIsGrasshopper = edge.from.startsWith('bacnet://Grasshopper')
-        const toIsGrasshopper = edge.to.startsWith('bacnet://Grasshopper')
-
-        if (!fromIsGrasshopper && !toIsGrasshopper) return
-
-        const grasshopperId = fromIsGrasshopper ? edge.from : edge.to
-        const otherId = fromIsGrasshopper ? edge.to : edge.from
-
-        // Only draw subnet connections (same level)
-        if (!otherId.startsWith('bacnet://subnet/')) return
-
-        const grasshopperPos = networkInstance.getPosition(grasshopperId)
-        const subnetPos = networkInstance.getPosition(otherId)
-
-        if (!grasshopperPos || !subnetPos) return
-
-        // Grasshopper connections in teal/cyan
-        canvasContext.strokeStyle = 'rgba(0, 180, 180, 0.9)'
-        canvasContext.lineWidth = 2
-        canvasContext.setLineDash([])
-
-        // Draw horizontal line connecting Grasshopper to subnet at same level
-        const points = [
-          { x: grasshopperPos.x, y: grasshopperPos.y },
-          { x: subnetPos.x, y: subnetPos.y }
-        ]
-        canvasContext.beginPath()
-        canvasContext.moveTo(points[0].x, points[0].y)
-        canvasContext.lineTo(points[1].x, points[1].y)
-        canvasContext.stroke()
-        storeEdgeGeometry(edge, points)
-      })
-
-      // Draw any edges not covered by childToParent (same-level connections, etc.)
-      // This catches edges between nodes at the same level or edges missed by the hierarchy
+      // Track drawn edges to avoid double-drawing in the catch-all section below
       const drawnEdges = new Set()
       Object.keys(childToParent).forEach(childId => {
         const parentId = childToParent[childId]
@@ -1222,8 +1227,68 @@ export default {
         drawnEdges.add(`${childId}-${parentId}`)
       })
 
+      // Special handling for Grasshopper node - draw its subnet connection
+      // Grasshopper is at level 1 (same as subnet) so it gets skipped by parent-child logic
+      // Only draw to the nearest subnet (the one Grasshopper is directly on).
+      // Connectivity to other subnets is via BDT entries shown through BBMD edges.
+      const grasshopperSubnetEdges = edges.filter(edge => {
+        const fromIsGrasshopper = edge.from.startsWith('bacnet://Grasshopper')
+        const toIsGrasshopper = edge.to.startsWith('bacnet://Grasshopper')
+        if (!fromIsGrasshopper && !toIsGrasshopper) return false
+        const otherId = fromIsGrasshopper ? edge.to : edge.from
+        return otherId.startsWith('bacnet://subnet/')
+      })
+
+      // Find the nearest subnet to Grasshopper (the one it's physically on)
+      let nearestSubnetEdge = null
+      let nearestDist = Infinity
+      grasshopperSubnetEdges.forEach(edge => {
+        const fromIsGrasshopper = edge.from.startsWith('bacnet://Grasshopper')
+        const grasshopperId = fromIsGrasshopper ? edge.from : edge.to
+        const subnetId = fromIsGrasshopper ? edge.to : edge.from
+        const grasshopperPos = networkInstance.getPosition(grasshopperId)
+        const subnetPos = networkInstance.getPosition(subnetId)
+        if (!grasshopperPos || !subnetPos) return
+        const dist = Math.abs(grasshopperPos.x - subnetPos.x) + Math.abs(grasshopperPos.y - subnetPos.y)
+        if (dist < nearestDist) {
+          nearestDist = dist
+          nearestSubnetEdge = edge
+        }
+        // Track ALL Grasshopper-subnet edges as drawn so catch-all skips them
+        drawnEdges.add(`${edge.from}-${edge.to}`)
+        drawnEdges.add(`${edge.to}-${edge.from}`)
+      })
+
+      if (nearestSubnetEdge) {
+        const fromIsGrasshopper = nearestSubnetEdge.from.startsWith('bacnet://Grasshopper')
+        const grasshopperId = fromIsGrasshopper ? nearestSubnetEdge.from : nearestSubnetEdge.to
+        const subnetId = fromIsGrasshopper ? nearestSubnetEdge.to : nearestSubnetEdge.from
+        const grasshopperPos = networkInstance.getPosition(grasshopperId)
+        const subnetPos = networkInstance.getPosition(subnetId)
+
+        if (grasshopperPos && subnetPos) {
+          // Grasshopper connections in teal/cyan
+          canvasContext.strokeStyle = 'rgba(0, 180, 180, 0.9)'
+          canvasContext.lineWidth = 2
+          canvasContext.setLineDash([])
+
+          // Draw horizontal line connecting Grasshopper to its nearest subnet
+          const points = [
+            { x: grasshopperPos.x, y: grasshopperPos.y },
+            { x: subnetPos.x, y: subnetPos.y }
+          ]
+          canvasContext.beginPath()
+          canvasContext.moveTo(points[0].x, points[0].y)
+          canvasContext.lineTo(points[1].x, points[1].y)
+          canvasContext.stroke()
+          storeEdgeGeometry(nearestSubnetEdge, points)
+        }
+      }
+
+      // Draw any edges not covered by childToParent or Grasshopper handler
+      // This catches edges between nodes at the same level or edges missed by the hierarchy
       edges.forEach(edge => {
-        // Skip if already drawn via childToParent
+        // Skip if already drawn via childToParent or Grasshopper handler
         if (drawnEdges.has(`${edge.from}-${edge.to}`)) return
 
         // Skip BDT/FDT entries (BBMD connections) - handled separately when BBMD selected
