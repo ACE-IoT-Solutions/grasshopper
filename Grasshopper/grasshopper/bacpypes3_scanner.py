@@ -1162,10 +1162,80 @@ class bacpypes3_scanner:
             None
         """
         _log.debug("bacpypes3_scanner: get_router_networks")
-        for network_id in self.scanned_networks:
+
+        # First, send a global Who-Is-Router-To-Network (no specific network)
+        # to discover all routers on the local network. This is the standard
+        # BACnet approach — all routers respond with their full network list.
+        # The 2-second timeout in bacpypes3 collects all responses.
+        try:
+            _log.info("Sending global Who-Is-Router-To-Network broadcast")
+            global_routers = await app.nse.who_is_router_to_network()
+            _log.info(f"Global Who-Is-Router-To-Network returned {len(global_routers)} response(s)")
+            for adapter, i_am_router_to_network in global_routers:
+                _log.info(
+                    f"Router {i_am_router_to_network.pduSource} serves networks: "
+                    f"{list(i_am_router_to_network.iartnNetworkList)}"
+                )
+                router_pdu_source = i_am_router_to_network.pduSource
+                ip = self._extract_ip_from_address(router_pdu_source)
+
+                existing_device = self.scanned_device_ips.get(ip)
+
+                if existing_device and isinstance(existing_device, DeviceNode):
+                    _log.debug(f"Merging device at {ip} into router (from global query)")
+                    device_iri = existing_device.node_iri
+                    device_instance = graph.value(subject=device_iri, predicate=BACNET["device-instance"])
+                    stored_properties = []
+                    for predicate, obj in graph.predicate_objects(device_iri):
+                        if predicate != RDF.type:
+                            stored_properties.append((predicate, obj))
+                    graph.remove((device_iri, None, None))
+                    router_device_iri = BACnetURI["//router/" + str(device_instance)]
+                    router_node = DeviceRouterNode(graph, router_device_iri)
+                    for predicate, obj in stored_properties:
+                        router_node.device.add_connection(predicate, obj)
+                    self.scanned_device_ips[ip] = router_node
+                elif existing_device and isinstance(existing_device, (RouterNode, DeviceRouterNode)):
+                    router_node = existing_device
+                else:
+                    router_iri = BACnetURI["//router/" + str(router_pdu_source)]
+                    router_node = RouterNode(graph, router_iri)
+                    self.scanned_device_ips[ip] = router_node
+
+                for net in i_am_router_to_network.iartnNetworkList:
+                    router_node.add_properties(network_id=net)
+                    if net not in self.network_to_routers:
+                        self.network_to_routers[net] = []
+                    if router_node.node_iri not in self.network_to_routers[net]:
+                        self.network_to_routers[net].append(router_node.node_iri)
+                    # Also add newly discovered networks to scanned_networks
+                    self.scanned_networks.add(net)
+
+                not_in_network = True
+                for subnet in self.subnets:
+                    if ip in subnet:
+                        not_in_network = False
+                        router_node.add_properties(subnet=subnet)
+                if not_in_network:
+                    self.scanner_node.add_properties(device_iri=router_node.node_iri)
+        except (Exception, ErrorRejectAbortNack) as e:
+            _log.error(f"Global Who-Is-Router-To-Network failed: {e}")
+
+        # Then send directed queries for any remaining networks not yet covered
+        networks_with_routers = set()
+        for net, rlist in self.network_to_routers.items():
+            if rlist:
+                networks_with_routers.add(net)
+
+        networks_to_query = self.scanned_networks - networks_with_routers
+        if networks_to_query:
+            _log.info(f"Sending directed Who-Is-Router-To-Network for {len(networks_to_query)} network(s) without routers: {sorted(networks_to_query)}")
+
+        for network_id in networks_to_query:
           try:
             _log.debug(f"Currently Processing network {network_id}")
             routers = await app.nse.who_is_router_to_network(network=network_id)
+            _log.info(f"Directed Who-Is-Router-To-Network for network {network_id} returned {len(routers)} response(s)")
             for adapter, i_am_router_to_network in routers:
                 _log.debug(
                     f"adapter: {adapter} i_am_router_to_network: {i_am_router_to_network}"
@@ -1236,7 +1306,13 @@ class bacpypes3_scanner:
             _log.error(f"Error processing network {network_id}: {e}")
             continue
 
-        _log.debug("get_router_networks Completed")
+        networks_without_routers = sorted(self.scanned_networks - set(n for n, r in self.network_to_routers.items() if r))
+        if networks_without_routers:
+            _log.warning(f"get_router_networks completed: {len(self.network_to_routers)} network(s) have routers, "
+                         f"{len(networks_without_routers)} network(s) still without routers: {networks_without_routers}")
+        else:
+            _log.info(f"get_router_networks completed: all {len(self.scanned_networks)} network(s) have routers assigned")
+        _log.debug(f"network_to_routers: {dict(self.network_to_routers)}")
 
     async def check_if_device_is_bbmd(
         self, ase: BVLLServiceElement, device_address: Address
@@ -1799,7 +1875,10 @@ class bacpypes3_scanner:
             # Add the first router as the primary router attribute
             router_iri = routers[0] if routers else None
             router_num = router_iri.split("bacnet://router/")[-1] if router_iri else None
-            _log.debug(f"adding router_iri: {router_iri} to network: {net}")
+            if router_iri:
+                _log.info(f"Network {net}: assigned router {router_iri}")
+            else:
+                _log.warning(f"Network {net}: no router discovered (Who-Is-Router-To-Network returned no results for this network)")
             network_node.add_properties(network=net, router_iri=router_num)
 
         # Process BDT entries - create edges between BBMDs in same BDT
