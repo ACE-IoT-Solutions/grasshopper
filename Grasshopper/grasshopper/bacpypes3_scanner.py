@@ -5,7 +5,6 @@ import asyncio
 import ipaddress
 import logging
 import os
-import socket
 from typing import Any, Dict, List, Optional, Set, Union
 
 import netifaces
@@ -515,29 +514,12 @@ class bacpypes3_scanner:
             _log.warning(f"Failed to determine local subnet from '{address}': {e}")
             return None
 
-    def _create_reuse_socket(self, address: str, port: int) -> socket.socket:
-        """
-        Create a UDP socket with SO_REUSEPORT so multiple BACnet applications
-        can share the same broadcast address on a bare-metal host.
-        """
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if hasattr(socket, "SO_REUSEPORT") and "nt" not in os.name:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.bind((address, port))
-        sock.setblocking(False)
-        _log.info(f"Created reuse socket bound to {address}:{port}")
-        return sock
-
     async def set_application(self, graph: Graph) -> Application:
         """
         Set the application address for the BACnet analysis.
-        Creates a UDP socket with SO_REUSEPORT to allow multiple BACnet
-        applications to coexist on the same port on bare-metal hosts.
 
         Builds the Application stack manually (rather than using from_args)
-        so we can pass a pre-bound socket to the IPv4 link layer.
+        so we can wire the link layer with our network port object directly.
         """
         _log.debug("bacpypes3_scanner: set_application")
         settings = self.bacpypes_settings.copy()
@@ -559,17 +541,16 @@ class bacpypes3_scanner:
         for key, value in settings.items():
             setattr(args, key, value)
 
-        # Parse address for socket binding
-        addr_str = settings.get("address", "")
-        bind_ip = addr_str.split("/")[0].split(":")[0] if addr_str else "0.0.0.0"
-        bind_port = int(addr_str.split(":")[-1]) if ":" in addr_str else 47808
-
-        # Create socket with SO_REUSEPORT for bare-metal coexistence
-        bind_sock = self._create_reuse_socket(bind_ip, bind_port)
-
-        # Build the Application stack manually to pass bind_socket through.
-        # This mirrors what Application.from_args + from_object_list + add_object
-        # does, but gives us control over the link layer socket.
+        # Build the Application stack manually to mirror what Application.from_args
+        # + from_object_list + add_object does.
+        # NOTE: We do NOT pre-create a socket. bacpypes3's IPv4DatagramServer already
+        # passes reuse_port=True to create_datagram_endpoint, which sets SO_REUSEPORT
+        # for bare-metal coexistence. Passing a custom bind_socket breaks broadcast
+        # reception: IPv4DatagramServer tries to reuse the same socket for both the
+        # unicast and broadcast endpoints; the second create_datagram_endpoint(sock=...)
+        # call raises RuntimeError (not OSError) and the broadcast listener is never
+        # created, so all IARTN responses (sent to the subnet broadcast address) are
+        # silently dropped.
         from bacpypes3.vendor import get_vendor_info
         from bacpypes3.local.networkport import NetworkPortObject
         from bacpypes3.ipv4.link import NormalLinkLayer as NormalLinkLayer_ipv4
@@ -605,8 +586,8 @@ class bacpypes3_scanner:
         )
 
         link_address = network_port_object.address
-        _log.info(f"Creating link layer with SO_REUSEPORT socket on {bind_ip}:{bind_port}")
-        link_layer = NormalLinkLayer_ipv4(link_address, bind_socket=bind_sock)
+        _log.info(f"Creating link layer on {link_address}")
+        link_layer = NormalLinkLayer_ipv4(link_address)
 
         app.link_layers[network_port_object.objectIdentifier] = link_layer
         if args.network and args.network != 0:
