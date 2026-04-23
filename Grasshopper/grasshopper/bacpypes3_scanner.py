@@ -2,6 +2,7 @@
 File contains the bacpypes3_scanner class which is used to scan the network for devices and routers.
 """
 import asyncio
+import functools
 import ipaddress
 import logging
 import os
@@ -533,11 +534,11 @@ class bacpypes3_scanner:
     async def set_application(self, graph: Graph) -> Application:
         """
         Set the application address for the BACnet analysis.
-        Creates a UDP socket with SO_REUSEPORT to allow multiple BACnet
+        Creates UDP sockets with SO_REUSEPORT to allow multiple BACnet
         applications to coexist on the same port on bare-metal hosts.
 
         Builds the Application stack manually (rather than using from_args)
-        so we can pass a pre-bound socket to the IPv4 link layer.
+        so we can pass pre-bound sockets to the IPv4 link layer.
         """
         _log.debug("bacpypes3_scanner: set_application")
         settings = self.bacpypes_settings.copy()
@@ -567,9 +568,6 @@ class bacpypes3_scanner:
         # Create socket with SO_REUSEPORT for bare-metal coexistence
         bind_sock = self._create_reuse_socket(bind_ip, bind_port)
 
-        # Build the Application stack manually to pass bind_socket through.
-        # This mirrors what Application.from_args + from_object_list + add_object
-        # does, but gives us control over the link layer socket.
         from bacpypes3.vendor import get_vendor_info
         from bacpypes3.local.networkport import NetworkPortObject
         from bacpypes3.ipv4.link import NormalLinkLayer as NormalLinkLayer_ipv4
@@ -607,6 +605,25 @@ class bacpypes3_scanner:
         link_address = network_port_object.address
         _log.info(f"Creating link layer with SO_REUSEPORT socket on {bind_ip}:{bind_port}")
         link_layer = NormalLinkLayer_ipv4(link_address, bind_socket=bind_sock)
+
+        # On Python 3.12+, asyncio raises RuntimeError when the same socket fd is
+        # passed to create_datagram_endpoint twice. IPv4DatagramServer passes bind_sock
+        # to BOTH the unicast and broadcast endpoints. Detect this case and replace the
+        # broadcast endpoint task with one that uses a separate socket.
+        server = link_layer.server
+        if len(server._transport_tasks) > 1:
+            bcast_tuple = link_address.addrBroadcastTuple
+            bcast_sock = self._create_reuse_socket(bcast_tuple[0], bcast_tuple[1])
+            old_bcast_task = server._transport_tasks.pop()
+            old_bcast_task.cancel()
+            loop = asyncio.get_running_loop()
+            new_bcast_task = loop.create_task(
+                server.retrying_create_datagram_endpoint(loop, bcast_tuple, bind_socket=bcast_sock)
+            )
+            new_bcast_task.add_done_callback(
+                functools.partial(server.set_broadcast_transport_protocol, link_address)
+            )
+            server._transport_tasks.append(new_bcast_task)
 
         app.link_layers[network_port_object.objectIdentifier] = link_layer
         if args.network and args.network != 0:
