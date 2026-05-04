@@ -559,22 +559,30 @@ class bacpypes3_scanner:
         for key, value in settings.items():
             setattr(args, key, value)
 
-        # Parse address for socket binding
+        # Parse address for socket binding (used for normal/BBMD modes)
         addr_str = settings.get("address", "")
         bind_ip = addr_str.split("/")[0].split(":")[0] if addr_str else "0.0.0.0"
         bind_port = int(addr_str.split(":")[-1]) if ":" in addr_str else 47808
 
-        # Create socket with SO_REUSEPORT for bare-metal coexistence
-        bind_sock = self._create_reuse_socket(bind_ip, bind_port)
-
         # Build the Application stack manually to pass bind_socket through.
         # This mirrors what Application.from_args + from_object_list + add_object
-        # does, but gives us control over the link layer socket.
+        # does, but gives us control over the link layer socket and supports
+        # normal/foreign/BBMD modes.
         from bacpypes3.vendor import get_vendor_info
-        from bacpypes3.local.networkport import NetworkPortObject
-        from bacpypes3.ipv4.link import NormalLinkLayer as NormalLinkLayer_ipv4
-        from bacpypes3.netservice import NetworkServiceAccessPoint, NetworkServiceElement
+        from bacpypes3.ipv4.link import (
+            NormalLinkLayer as NormalLinkLayer_ipv4,
+            ForeignLinkLayer as ForeignLinkLayer_ipv4,
+            BBMDLinkLayer as BBMDLinkLayer_ipv4,
+        )
+        from bacpypes3.ipv4 import IPv4DatagramServer
+        from bacpypes3.ipv4.bvll import BVLLCodec
+        from bacpypes3.ipv4.service import UDPMultiplexer
+        from bacpypes3.netservice import (
+            NetworkServiceAccessPoint,
+            NetworkServiceElement,
+        )
         from bacpypes3.appservice import ApplicationServiceAccessPoint
+        from bacpypes3.basetypes import BDTEntry, HostNPort, IPMode
 
         vi = get_vendor_info(vendorid)
         device_object_class = vi.get_object_class(ObjectType.device)
@@ -592,8 +600,7 @@ class bacpypes3_scanner:
         bind(app, app.asap, app.nsap)
         app.add_object(device_object)
 
-        # Build the network port object (but don't add_object it — we'll
-        # wire the link layer manually with our socket)
+        # Build the network port object
         network_port_class = vi.get_object_class(ObjectType.networkPort)
         address = args.address if args.address else "host"
         network_port_object = network_port_class(
@@ -604,9 +611,64 @@ class bacpypes3_scanner:
             networkNumberQuality="configured" if args.network else "unknown",
         )
 
+        # Determine BACnet IP mode from settings
+        foreign_addr = settings.get("foreign", None)
+        bbmd_list = settings.get("bbmd", None)
+        ttl = settings.get("ttl", 30)
+
         link_address = network_port_object.address
-        _log.info(f"Creating link layer with SO_REUSEPORT socket on {bind_ip}:{bind_port}")
-        link_layer = NormalLinkLayer_ipv4(link_address, bind_socket=bind_sock)
+
+        if foreign_addr:
+            _log.info(
+                f"Creating Foreign link layer; local={link_address} "
+                f"BBMD={foreign_addr} TTL={ttl}"
+            )
+            # Foreign devices receive forwarded broadcasts as unicast from the
+            # BBMD, so we don't need a broadcast listener or SO_REUSEPORT.
+            link_layer = ForeignLinkLayer_ipv4(link_address)
+
+            # Configure the network port object so BACnet introspection is correct
+            network_port_object.bacnetIPMode = IPMode.foreign
+            network_port_object.fdBBMDAddress = HostNPort(foreign_addr)
+            network_port_object.fdSubscriptionLifetime = ttl
+
+            # Initiate foreign device registration with the BBMD
+            from bacpypes3.pdu import IPv4Address as BACpypesIPv4Address
+            link_layer.register(BACpypesIPv4Address(foreign_addr), ttl)
+
+        elif bbmd_list:
+            _log.info(
+                f"Creating BBMD link layer with SO_REUSEPORT socket "
+                f"({bind_ip}:{bind_port}); peers={bbmd_list}"
+            )
+            bind_sock = self._create_reuse_socket(bind_ip, bind_port)
+            link_layer = BBMDLinkLayer_ipv4.__new__(BBMDLinkLayer_ipv4)
+            from bacpypes3.ipv4.service import BIPBBMD
+            BIPBBMD.__init__(link_layer, link_address)
+            link_layer.codec = BVLLCodec()
+            link_layer.multiplexer = UDPMultiplexer()
+            link_layer.server = IPv4DatagramServer(
+                link_address, bind_socket=bind_sock
+            )
+            bind(link_layer, link_layer.codec, link_layer.multiplexer.annexJ)
+            bind(link_layer.multiplexer, link_layer.server)
+
+            network_port_object.bacnetIPMode = IPMode.bbmd
+            network_port_object.bbmdAcceptFDRegistrations = True
+            network_port_object.bbmdForeignDeviceTable = []
+            bdt = []
+            for peer in bbmd_list:
+                bdt_entry = BDTEntry(peer)
+                bdt.append(bdt_entry)
+                link_layer.add_peer(bdt_entry.address)
+            network_port_object.bbmdBroadcastDistributionTable = bdt
+        else:
+            _log.info(
+                f"Creating Normal link layer with SO_REUSEPORT socket "
+                f"({bind_ip}:{bind_port})"
+            )
+            bind_sock = self._create_reuse_socket(bind_ip, bind_port)
+            link_layer = NormalLinkLayer_ipv4(link_address, bind_socket=bind_sock)
 
         app.link_layers[network_port_object.objectIdentifier] = link_layer
         if args.network and args.network != 0:

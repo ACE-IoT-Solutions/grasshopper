@@ -1,6 +1,6 @@
 [project]
 name = "grasshopper"
-version = "0.1.0"
+version = "0.3.8"
 description = "Grasshopper is an open-source project designed to tackle the complex world of smart building networks."
 authors = [
     { name = "Justice Lee", email = "justice@aceiotsolutions.com" },
