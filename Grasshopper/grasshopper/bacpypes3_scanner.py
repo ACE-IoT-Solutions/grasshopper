@@ -576,13 +576,13 @@ class bacpypes3_scanner:
         )
         from bacpypes3.ipv4 import IPv4DatagramServer
         from bacpypes3.ipv4.bvll import BVLLCodec
-        from bacpypes3.ipv4.service import UDPMultiplexer, BDTEntry
+        from bacpypes3.ipv4.service import UDPMultiplexer
         from bacpypes3.netservice import (
             NetworkServiceAccessPoint,
             NetworkServiceElement,
         )
         from bacpypes3.appservice import ApplicationServiceAccessPoint
-        from bacpypes3.basetypes import HostNPort, IPMode
+        from bacpypes3.basetypes import BDTEntry, HostNPort, IPMode
 
         vi = get_vendor_info(vendorid)
         device_object_class = vi.get_object_class(ObjectType.device)
