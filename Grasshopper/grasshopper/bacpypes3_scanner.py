@@ -66,6 +66,8 @@ from .rdf_components import (
 _log = logging.getLogger(__name__)
 utils.setup_logging()
 
+_BBMD_PROBE_CONCURRENCY = 20
+
 
 class BVLLServiceElement(ApplicationServiceElement):
     """
@@ -825,54 +827,55 @@ class bacpypes3_scanner:
 
         _log.info(f"Probing {len(candidate_ips)} candidate IPs for BBMD status")
 
-        # Probe each candidate - use short timeout since most won't be BBMDs
+        semaphore = asyncio.Semaphore(_BBMD_PROBE_CONCURRENCY)
+
+        async def _probe(
+            ip: ipaddress.IPv4Address,
+        ) -> tuple[ipaddress.IPv4Address, list | None]:
+            async with semaphore:
+                return ip, await ase.read_broadcast_distribution_table(
+                    self._to_bacpypes3_address(ip), timeout=2
+                )
+
+        def _parse_bdt(bdt) -> list[ipaddress.IPv4Address]:
+            return [
+                addr for entry in bdt
+                if isinstance(addr := ipaddress.ip_address(entry), ipaddress.IPv4Address)
+            ]
+
         discovered_bbmd_ips: set[ipaddress.IPv4Address] = set()
-        for ip in candidate_ips:
-            try:
-                bbmd_addr = self._to_bacpypes3_address(ip)
-                bdt = await ase.read_broadcast_distribution_table(bbmd_addr, timeout=2)
-                if bdt is not None:
-                    _log.info(f"Discovered BBMD at {ip} with {len(bdt)} BDT entries")
-                    self.scanned_bbmds_bdt[ip] = [
-                        ipaddr
-                        for bdt_entry in bdt
-                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
-                        if isinstance(ipaddr, ipaddress.IPv4Address)
-                    ]
-                    discovered_bbmd_ips.add(ip)
-            except asyncio.CancelledError:
-                _log.debug(f"IP {ip} is not a BBMD: transport cancelled")
-            except (Exception, ErrorRejectAbortNack) as e:
-                _log.debug(f"IP {ip} is not a BBMD: {e}")
 
-        # Follow BDT entries to discover BBMDs on other subnets (snowball)
-        bdt_ips_to_probe = set()
-        for bbmd_ip in discovered_bbmd_ips:
-            for bdt_entry_ip in self.scanned_bbmds_bdt.get(bbmd_ip, []):
-                if (
-                    bdt_entry_ip not in discovered_bbmd_ips
-                    and bdt_entry_ip not in self.scanned_ipaddress_bbmd
-                ):
-                    bdt_ips_to_probe.add(bdt_entry_ip)
+        for result in await asyncio.gather(
+            *(_probe(ip) for ip in candidate_ips), return_exceptions=True
+        ):
+            if isinstance(result, BaseException):
+                continue
+            ip, bdt = result
+            if bdt is not None:
+                _log.info(f"Discovered BBMD at {ip} with {len(bdt)} BDT entries")
+                self.scanned_bbmds_bdt[ip] = _parse_bdt(bdt)
+                discovered_bbmd_ips.add(ip)
 
-        if bdt_ips_to_probe:
-            _log.info(f"Following BDT entries to probe {len(bdt_ips_to_probe)} additional IPs")
+        # Snowball: follow BDT peer entries to discover BBMDs on other subnets
+        snowball_ips = {
+            peer
+            for bbmd_ip in discovered_bbmd_ips
+            for peer in self.scanned_bbmds_bdt.get(bbmd_ip, [])
+            if peer not in discovered_bbmd_ips and peer not in self.scanned_ipaddress_bbmd
+        }
 
-        for ip in bdt_ips_to_probe:
-            try:
-                bbmd_addr = self._to_bacpypes3_address(ip)
-                bdt = await ase.read_broadcast_distribution_table(bbmd_addr, timeout=2)
+        if snowball_ips:
+            _log.info(f"Following BDT entries to probe {len(snowball_ips)} additional IPs")
+            for result in await asyncio.gather(
+                *(_probe(ip) for ip in snowball_ips), return_exceptions=True
+            ):
+                if isinstance(result, BaseException):
+                    continue
+                ip, bdt = result
                 if bdt is not None:
                     _log.info(f"Discovered BBMD at {ip} via BDT snowball")
-                    self.scanned_bbmds_bdt[ip] = [
-                        ipaddr
-                        for bdt_entry in bdt
-                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
-                        if isinstance(ipaddr, ipaddress.IPv4Address)
-                    ]
+                    self.scanned_bbmds_bdt[ip] = _parse_bdt(bdt)
                     discovered_bbmd_ips.add(ip)
-            except (Exception, ErrorRejectAbortNack) as e:
-                _log.debug(f"BDT entry IP {ip} is not a BBMD: {e}")
 
         # Create BBMDNodes for discovered BBMDs
         for bbmd_ip in discovered_bbmd_ips:
