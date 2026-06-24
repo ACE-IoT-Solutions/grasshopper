@@ -297,10 +297,13 @@ class Grasshopper(Agent):
 
                 vendorid: int = self.bacpypes_settings.get("vendoridentifier", 999)
                 if vendorid != 999:
-                    self.vendor_info = VendorInfo(vendorid)
-                    # Register standard object classes for this vendor
-                    self.vendor_info.register_object_class(ObjectType.device, DeviceObject)
-                    self.vendor_info.register_object_class(ObjectType.networkPort, NetworkPortObject)
+                    try:
+                        self.vendor_info = VendorInfo(vendorid)
+                        self.vendor_info.register_object_class(ObjectType.device, DeviceObject)
+                        self.vendor_info.register_object_class(ObjectType.networkPort, NetworkPortObject)
+                    except RuntimeError:
+                        from bacpypes3.vendor import get_vendor_info
+                        self.vendor_info = get_vendor_info(vendorid)
 
             except ValueError as exc:
                 _log.error("ValueError: ERROR PROCESSING CONFIGURATION: %s", exc)
@@ -731,6 +734,16 @@ class Grasshopper(Agent):
                 self.http_server_process.join(timeout=2)
         _log.debug("Running _stop_server complete")
 
+    def _get_jwt(self) -> Optional[str]:
+        """Get the ACE JWT from AceConfigAgent's config store via RPC, falling back to local config."""
+        try:
+            config = self.vip.rpc.call("ace.config_agent", "get_config_store", "config").get(timeout=5)
+            if config and config.get("jwt"):
+                return config["jwt"]
+        except (RemoteError, gevent.Timeout, Exception):
+            pass
+        return self.ttl_post_to_cloud.get("jwt")
+
     def _fetch_prev_graph_from_cloud(self) -> Graph:
         """
         Fetch the most recent TTL graph from the cloud API for use as prev_graph.
@@ -745,7 +758,7 @@ class Grasshopper(Agent):
         """
         prev_graph: Graph = Graph()
         url = self.ttl_post_to_cloud.get("url")
-        jwt = self.ttl_post_to_cloud.get("jwt")
+        jwt = self._get_jwt()
 
         if not url or not jwt:
             _log.warning("Cloud URL or JWT not configured, skipping cloud graph fetch")
@@ -848,7 +861,7 @@ class Grasshopper(Agent):
                 return False
 
         url = self.ttl_post_to_cloud.get("url")
-        jwt = self.ttl_post_to_cloud.get("jwt")
+        jwt = self._get_jwt()
         if not url or not jwt:
             _log.error("URL or JWT not configured for TTL upload. Skipping upload.")
             self.vip.health.set_status(
