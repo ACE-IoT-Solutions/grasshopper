@@ -4,8 +4,6 @@ File contains the bacpypes3_scanner class which is used to scan the network for 
 import asyncio
 import ipaddress
 import logging
-import os
-import socket
 from typing import Any, Dict, List, Optional, Set, Union
 
 import netifaces
@@ -65,6 +63,8 @@ from .rdf_components import (
 
 _log = logging.getLogger(__name__)
 utils.setup_logging()
+
+_BBMD_PROBE_CONCURRENCY = 20
 
 
 class BVLLServiceElement(ApplicationServiceElement):
@@ -515,29 +515,14 @@ class bacpypes3_scanner:
             _log.warning(f"Failed to determine local subnet from '{address}': {e}")
             return None
 
-    def _create_reuse_socket(self, address: str, port: int) -> socket.socket:
-        """
-        Create a UDP socket with SO_REUSEPORT so multiple BACnet applications
-        can share the same broadcast address on a bare-metal host.
-        """
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if hasattr(socket, "SO_REUSEPORT") and "nt" not in os.name:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.bind((address, port))
-        sock.setblocking(False)
-        _log.info(f"Created reuse socket bound to {address}:{port}")
-        return sock
-
     async def set_application(self, graph: Graph) -> Application:
         """
         Set the application address for the BACnet analysis.
-        Creates a UDP socket with SO_REUSEPORT to allow multiple BACnet
-        applications to coexist on the same port on bare-metal hosts.
 
         Builds the Application stack manually (rather than using from_args)
-        so we can pass a pre-bound socket to the IPv4 link layer.
+        so we can use NormalLinkLayerWithReusePort, which creates independent
+        unicast and broadcast sockets with SO_REUSEPORT for bare-metal
+        coexistence with other BACnet applications (e.g. Volttron bacnet_proxy).
         """
         _log.debug("bacpypes3_scanner: set_application")
         settings = self.bacpypes_settings.copy()
@@ -559,20 +544,12 @@ class bacpypes3_scanner:
         for key, value in settings.items():
             setattr(args, key, value)
 
-        # Parse address for socket binding
-        addr_str = settings.get("address", "")
-        bind_ip = addr_str.split("/")[0].split(":")[0] if addr_str else "0.0.0.0"
-        bind_port = int(addr_str.split(":")[-1]) if ":" in addr_str else 47808
-
-        # Create socket with SO_REUSEPORT for bare-metal coexistence
-        bind_sock = self._create_reuse_socket(bind_ip, bind_port)
-
-        # Build the Application stack manually to pass bind_socket through.
-        # This mirrors what Application.from_args + from_object_list + add_object
-        # does, but gives us control over the link layer socket.
+        # Build the Application stack manually, using NormalLinkLayerWithReusePort
+        # which internally creates independent sockets with SO_REUSEPORT for both
+        # unicast and broadcast endpoints.
         from bacpypes3.vendor import get_vendor_info
         from bacpypes3.local.networkport import NetworkPortObject
-        from bacpypes3.ipv4.link import NormalLinkLayer as NormalLinkLayer_ipv4
+        from grasshopper.ipv4_server import NormalLinkLayerWithReusePort
         from bacpypes3.netservice import NetworkServiceAccessPoint, NetworkServiceElement
         from bacpypes3.appservice import ApplicationServiceAccessPoint
 
@@ -605,8 +582,8 @@ class bacpypes3_scanner:
         )
 
         link_address = network_port_object.address
-        _log.info(f"Creating link layer with SO_REUSEPORT socket on {bind_ip}:{bind_port}")
-        link_layer = NormalLinkLayer_ipv4(link_address, bind_socket=bind_sock)
+        _log.info(f"Creating link layer with SO_REUSEPORT on {link_address}")
+        link_layer = NormalLinkLayerWithReusePort(link_address)
 
         app.link_layers[network_port_object.objectIdentifier] = link_layer
         if args.network and args.network != 0:
@@ -825,54 +802,55 @@ class bacpypes3_scanner:
 
         _log.info(f"Probing {len(candidate_ips)} candidate IPs for BBMD status")
 
-        # Probe each candidate - use short timeout since most won't be BBMDs
+        semaphore = asyncio.Semaphore(_BBMD_PROBE_CONCURRENCY)
+
+        async def _probe(
+            ip: ipaddress.IPv4Address,
+        ) -> tuple[ipaddress.IPv4Address, list | None]:
+            async with semaphore:
+                return ip, await ase.read_broadcast_distribution_table(
+                    self._to_bacpypes3_address(ip), timeout=2
+                )
+
+        def _parse_bdt(bdt) -> list[ipaddress.IPv4Address]:
+            return [
+                addr for entry in bdt
+                if isinstance(addr := ipaddress.ip_address(entry), ipaddress.IPv4Address)
+            ]
+
         discovered_bbmd_ips: set[ipaddress.IPv4Address] = set()
-        for ip in candidate_ips:
-            try:
-                bbmd_addr = self._to_bacpypes3_address(ip)
-                bdt = await ase.read_broadcast_distribution_table(bbmd_addr, timeout=2)
-                if bdt is not None:
-                    _log.info(f"Discovered BBMD at {ip} with {len(bdt)} BDT entries")
-                    self.scanned_bbmds_bdt[ip] = [
-                        ipaddr
-                        for bdt_entry in bdt
-                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
-                        if isinstance(ipaddr, ipaddress.IPv4Address)
-                    ]
-                    discovered_bbmd_ips.add(ip)
-            except asyncio.CancelledError:
-                _log.debug(f"IP {ip} is not a BBMD: transport cancelled")
-            except (Exception, ErrorRejectAbortNack) as e:
-                _log.debug(f"IP {ip} is not a BBMD: {e}")
 
-        # Follow BDT entries to discover BBMDs on other subnets (snowball)
-        bdt_ips_to_probe = set()
-        for bbmd_ip in discovered_bbmd_ips:
-            for bdt_entry_ip in self.scanned_bbmds_bdt.get(bbmd_ip, []):
-                if (
-                    bdt_entry_ip not in discovered_bbmd_ips
-                    and bdt_entry_ip not in self.scanned_ipaddress_bbmd
-                ):
-                    bdt_ips_to_probe.add(bdt_entry_ip)
+        for result in await asyncio.gather(
+            *(_probe(ip) for ip in candidate_ips), return_exceptions=True
+        ):
+            if isinstance(result, BaseException):
+                continue
+            ip, bdt = result
+            if bdt is not None:
+                _log.info(f"Discovered BBMD at {ip} with {len(bdt)} BDT entries")
+                self.scanned_bbmds_bdt[ip] = _parse_bdt(bdt)
+                discovered_bbmd_ips.add(ip)
 
-        if bdt_ips_to_probe:
-            _log.info(f"Following BDT entries to probe {len(bdt_ips_to_probe)} additional IPs")
+        # Snowball: follow BDT peer entries to discover BBMDs on other subnets
+        snowball_ips = {
+            peer
+            for bbmd_ip in discovered_bbmd_ips
+            for peer in self.scanned_bbmds_bdt.get(bbmd_ip, [])
+            if peer not in discovered_bbmd_ips and peer not in self.scanned_ipaddress_bbmd
+        }
 
-        for ip in bdt_ips_to_probe:
-            try:
-                bbmd_addr = self._to_bacpypes3_address(ip)
-                bdt = await ase.read_broadcast_distribution_table(bbmd_addr, timeout=2)
+        if snowball_ips:
+            _log.info(f"Following BDT entries to probe {len(snowball_ips)} additional IPs")
+            for result in await asyncio.gather(
+                *(_probe(ip) for ip in snowball_ips), return_exceptions=True
+            ):
+                if isinstance(result, BaseException):
+                    continue
+                ip, bdt = result
                 if bdt is not None:
                     _log.info(f"Discovered BBMD at {ip} via BDT snowball")
-                    self.scanned_bbmds_bdt[ip] = [
-                        ipaddr
-                        for bdt_entry in bdt
-                        for ipaddr in [ipaddress.ip_address(bdt_entry)]
-                        if isinstance(ipaddr, ipaddress.IPv4Address)
-                    ]
+                    self.scanned_bbmds_bdt[ip] = _parse_bdt(bdt)
                     discovered_bbmd_ips.add(ip)
-            except (Exception, ErrorRejectAbortNack) as e:
-                _log.debug(f"BDT entry IP {ip} is not a BBMD: {e}")
 
         # Create BBMDNodes for discovered BBMDs
         for bbmd_ip in discovered_bbmd_ips:

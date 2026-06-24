@@ -435,7 +435,10 @@ export default {
       }
 
       // Project point onto line, clamped to segment
-      let t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared))
+      let t = Math.max(
+        0,
+        Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lengthSquared),
+      )
       const projX = x1 + t * dx
       const projY = y1 + t * dy
 
@@ -443,14 +446,22 @@ export default {
     },
     // Find edge at canvas point for tree mode click detection
     findEdgeAtPoint(canvasX, canvasY, threshold = 8) {
-      if (!this.drawnEdgeGeometry || this.drawnEdgeGeometry.length === 0) return null
+      if (!this.drawnEdgeGeometry || this.drawnEdgeGeometry.length === 0)
+        return null
 
       for (const edgeGeo of this.drawnEdgeGeometry) {
         // Check each segment of the edge path
         for (let i = 0; i < edgeGeo.points.length - 1; i++) {
           const p1 = edgeGeo.points[i]
           const p2 = edgeGeo.points[i + 1]
-          const dist = this.pointToSegmentDistance(canvasX, canvasY, p1.x, p1.y, p2.x, p2.y)
+          const dist = this.pointToSegmentDistance(
+            canvasX,
+            canvasY,
+            p1.x,
+            p1.y,
+            p2.x,
+            p2.y,
+          )
           if (dist < threshold) {
             return edgeGeo.edge
           }
@@ -847,12 +858,14 @@ export default {
 
       // Step 5: Position Grasshopper next to its primary (nearest connected) subnet
       // rather than as an isolated orphan at the far edge of the layout
-      const grasshopperNodes = nodes.filter(n => n.id.startsWith('bacnet://Grasshopper'))
+      const grasshopperNodes = nodes.filter(n =>
+        n.id.startsWith('bacnet://Grasshopper'),
+      )
       grasshopperNodes.forEach(ghNode => {
         // Find subnets connected to this Grasshopper node
         const connectedSubnets = edges
           .filter(e => e.from === ghNode.id || e.to === ghNode.id)
-          .map(e => e.from === ghNode.id ? e.to : e.from)
+          .map(e => (e.from === ghNode.id ? e.to : e.from))
           .filter(id => id.startsWith('bacnet://subnet/') && positions[id])
 
         if (connectedSubnets.length > 0 && positions[ghNode.id]) {
@@ -860,7 +873,9 @@ export default {
           let nearestSubnet = connectedSubnets[0]
           let nearestDist = Infinity
           connectedSubnets.forEach(subnetId => {
-            const dist = Math.abs(positions[ghNode.id].x - positions[subnetId].x)
+            const dist = Math.abs(
+              positions[ghNode.id].x - positions[subnetId].x,
+            )
             if (dist < nearestDist) {
               nearestDist = dist
               nearestSubnet = subnetId
@@ -870,7 +885,7 @@ export default {
           // Find the rightmost node in the subnet's subtree to place Grasshopper after it
           const subnetChildren = parentToChildren[nearestSubnet] || []
           let maxSubtreeX = positions[nearestSubnet].x
-          const getAllDescendantPositions = (nodeId) => {
+          const getAllDescendantPositions = nodeId => {
             if (positions[nodeId]) {
               maxSubtreeX = Math.max(maxSubtreeX, positions[nodeId].x)
             }
@@ -1086,8 +1101,9 @@ export default {
 
       // Helper to get edge style based on edge type
       // Use consistent width (2) for all colored edges to match bus thickness
-      const getEdgeStyle = (edgeLabel) => {
-        if (!edgeLabel) return { color: 'rgba(140, 140, 140, 0.7)', width: 2, dash: [] }
+      const getEdgeStyle = edgeLabel => {
+        if (!edgeLabel)
+          return { color: 'rgba(140, 140, 140, 0.7)', width: 2, dash: [] }
 
         if (edgeLabel.includes('bbmd-broadcast-domain')) {
           return { color: 'rgb(200, 100, 200)', width: 2, dash: [] } // Purple for BBMD→Subnet
@@ -1112,9 +1128,10 @@ export default {
 
       // Find edge label for a given parent-child pair
       const findEdgeLabel = (fromId, toId) => {
-        const edge = edges.find(e =>
-          (e.from === fromId && e.to === toId) ||
-          (e.from === toId && e.to === fromId)
+        const edge = edges.find(
+          e =>
+            (e.from === fromId && e.to === toId) ||
+            (e.from === toId && e.to === fromId),
         )
         return edge?.label || ''
       }
@@ -1147,9 +1164,10 @@ export default {
         canvasContext.setLineDash(style.dash)
 
         // Find the actual edge object for storing geometry
-        const edgeObj = edges.find(e =>
-          (e.from === parentId && e.to === childId) ||
-          (e.from === childId && e.to === parentId)
+        const edgeObj = edges.find(
+          e =>
+            (e.from === parentId && e.to === childId) ||
+            (e.from === childId && e.to === parentId),
         )
 
         // Device to Network connections (level 3 -> 4)
@@ -1175,7 +1193,7 @@ export default {
           // Simple vertical drop from device to its row's bus
           const points = [
             { x: childPos.x, y: childPos.y - 15 },
-            { x: childPos.x, y: busY }
+            { x: childPos.x, y: busY },
           ]
           canvasContext.beginPath()
           canvasContext.moveTo(points[0].x, points[0].y)
@@ -1192,7 +1210,7 @@ export default {
           // Nearly aligned - draw simple vertical line
           const points = [
             { x: parentPos.x, y: parentPos.y + 20 },
-            { x: childPos.x, y: childPos.y - 20 }
+            { x: childPos.x, y: childPos.y - 20 },
           ]
           canvasContext.beginPath()
           canvasContext.moveTo(points[0].x, points[0].y)
@@ -1206,7 +1224,7 @@ export default {
             { x: parentPos.x, y: parentPos.y + 20 },
             { x: parentPos.x, y: waypointY },
             { x: childPos.x, y: waypointY },
-            { x: childPos.x, y: childPos.y - 20 }
+            { x: childPos.x, y: childPos.y - 20 },
           ]
 
           canvasContext.beginPath()
@@ -1249,7 +1267,9 @@ export default {
         const grasshopperPos = networkInstance.getPosition(grasshopperId)
         const subnetPos = networkInstance.getPosition(subnetId)
         if (!grasshopperPos || !subnetPos) return
-        const dist = Math.abs(grasshopperPos.x - subnetPos.x) + Math.abs(grasshopperPos.y - subnetPos.y)
+        const dist =
+          Math.abs(grasshopperPos.x - subnetPos.x) +
+          Math.abs(grasshopperPos.y - subnetPos.y)
         if (dist < nearestDist) {
           nearestDist = dist
           nearestSubnetEdge = edge
@@ -1260,9 +1280,15 @@ export default {
       })
 
       if (nearestSubnetEdge) {
-        const fromIsGrasshopper = nearestSubnetEdge.from.startsWith('bacnet://Grasshopper')
-        const grasshopperId = fromIsGrasshopper ? nearestSubnetEdge.from : nearestSubnetEdge.to
-        const subnetId = fromIsGrasshopper ? nearestSubnetEdge.to : nearestSubnetEdge.from
+        const fromIsGrasshopper = nearestSubnetEdge.from.startsWith(
+          'bacnet://Grasshopper',
+        )
+        const grasshopperId = fromIsGrasshopper
+          ? nearestSubnetEdge.from
+          : nearestSubnetEdge.to
+        const subnetId = fromIsGrasshopper
+          ? nearestSubnetEdge.to
+          : nearestSubnetEdge.from
         const grasshopperPos = networkInstance.getPosition(grasshopperId)
         const subnetPos = networkInstance.getPosition(subnetId)
 
@@ -1275,7 +1301,7 @@ export default {
           // Draw horizontal line connecting Grasshopper to its nearest subnet
           const points = [
             { x: grasshopperPos.x, y: grasshopperPos.y },
-            { x: subnetPos.x, y: subnetPos.y }
+            { x: subnetPos.x, y: subnetPos.y },
           ]
           canvasContext.beginPath()
           canvasContext.moveTo(points[0].x, points[0].y)
@@ -1292,7 +1318,11 @@ export default {
         if (drawnEdges.has(`${edge.from}-${edge.to}`)) return
 
         // Skip BDT/FDT entries (BBMD connections) - handled separately when BBMD selected
-        if (edge.label && (edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry'))) return
+        if (
+          edge.label &&
+          (edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry'))
+        )
+          return
 
         // Skip device-on-network edges (handled by bus drawing)
         if (edge.label && edge.label.includes('device-on-network')) return
@@ -1323,7 +1353,7 @@ export default {
           // Same level - draw simple line
           const points = [
             { x: fromPos.x, y: fromPos.y },
-            { x: toPos.x, y: toPos.y }
+            { x: toPos.x, y: toPos.y },
           ]
           canvasContext.beginPath()
           canvasContext.moveTo(points[0].x, points[0].y)
@@ -1339,7 +1369,7 @@ export default {
         if (horizontalOffset < 30) {
           const points = [
             { x: parentPos.x, y: parentPos.y + 20 },
-            { x: childPos.x, y: childPos.y - 20 }
+            { x: childPos.x, y: childPos.y - 20 },
           ]
           canvasContext.beginPath()
           canvasContext.moveTo(points[0].x, points[0].y)
@@ -1352,7 +1382,7 @@ export default {
             { x: parentPos.x, y: parentPos.y + 20 },
             { x: parentPos.x, y: waypointY },
             { x: childPos.x, y: waypointY },
-            { x: childPos.x, y: childPos.y - 20 }
+            { x: childPos.x, y: childPos.y - 20 },
           ]
           canvasContext.beginPath()
           canvasContext.moveTo(points[0].x, points[0].y)
@@ -1385,7 +1415,8 @@ export default {
           // Determine if this edge connects to the selected BBMD (for highlighting)
           const fromLabel = nodeMap[edge.from]?.label
           const toLabel = nodeMap[edge.to]?.label
-          const isHighlighted = selectedBbmdLabel &&
+          const isHighlighted =
+            selectedBbmdLabel &&
             (fromLabel === selectedBbmdLabel || toLabel === selectedBbmdLabel)
 
           const opacity = isHighlighted ? 0.9 : 0.5
@@ -1406,7 +1437,7 @@ export default {
             { x: fromPos.x, y: fromPos.y - 20 },
             { x: fromPos.x, y: midY },
             { x: toPos.x, y: midY },
-            { x: toPos.x, y: toPos.y - 20 }
+            { x: toPos.x, y: toPos.y - 20 },
           ]
 
           canvasContext.beginPath()
@@ -2086,7 +2117,8 @@ export default {
           this.onBbmds.push(edge.from)
           return false
         } else if (
-          (edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry')) &&
+          (edge.label.includes('bdt-entry') ||
+            edge.label.includes('fdr-entry')) &&
           edge.from !== closestBbmd &&
           edge.to !== closestBbmd
         ) {
@@ -2097,13 +2129,17 @@ export default {
     },
     toggleBdtEdges(bdtEdges, visible) {
       bdtEdges.forEach(edge => {
-        const isBdtOrFdt = edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry')
+        // eslint-disable-next-line no-unused-vars
+        const isBdtOrFdt =
+          edge.label.includes('bdt-entry') || edge.label.includes('fdr-entry')
         // For BDT edges, both endpoints should be BBMDs
         // For FDT edges, only one endpoint (the BBMD with the FDT) needs to be a BBMD
-        const isBdtBetweenBbmds = edge.label.includes('bdt-entry') &&
+        const isBdtBetweenBbmds =
+          edge.label.includes('bdt-entry') &&
           this.allBbmds.includes(edge.from) &&
           this.allBbmds.includes(edge.to)
-        const isFdtFromBbmd = edge.label.includes('fdr-entry') &&
+        const isFdtFromBbmd =
+          edge.label.includes('fdr-entry') &&
           (this.allBbmds.includes(edge.from) || this.allBbmds.includes(edge.to))
 
         if (
@@ -2281,12 +2317,16 @@ export default {
           // Get edge color based on type
           const getEdgeColor = (label, from, to) => {
             // Check for Grasshopper connections first (by node ID)
-            const isGrasshopperEdge = from?.startsWith('bacnet://Grasshopper') || to?.startsWith('bacnet://Grasshopper')
+            const isGrasshopperEdge =
+              from?.startsWith('bacnet://Grasshopper') ||
+              to?.startsWith('bacnet://Grasshopper')
             if (isGrasshopperEdge) return 'rgb(0, 180, 180)'
 
             if (!label) return 'rgba(140, 140, 140, 0.7)'
-            if (label.includes('bbmd-broadcast-domain')) return 'rgb(200, 100, 200)'
-            if (label.includes('bacnet-router-on-subnet')) return 'rgb(220, 80, 80)'
+            if (label.includes('bbmd-broadcast-domain'))
+              return 'rgb(200, 100, 200)'
+            if (label.includes('bacnet-router-on-subnet'))
+              return 'rgb(220, 80, 80)'
             if (label.includes('device-on-subnet')) return 'rgb(100, 180, 100)'
             if (label.includes('device-on-network')) return 'rgb(140, 140, 140)'
             if (label.includes('bdt-entry')) return 'rgb(255, 165, 0)'
@@ -2295,7 +2335,10 @@ export default {
           }
 
           const edgeColor = getEdgeColor(edge.label, edge.from, edge.to)
-          const isBdtOrFdt = edge.label?.includes('bdt-entry') || edge.label?.includes('fdr-entry')
+          // eslint-disable-next-line no-unused-vars
+          const isBdtOrFdt =
+            edge.label?.includes('bdt-entry') ||
+            edge.label?.includes('fdr-entry')
 
           const base = {
             ...edge,
@@ -2323,7 +2366,8 @@ export default {
             this.allBbmds.includes(edge.from) &&
             this.allBbmds.includes(edge.to)
           ) {
-            const isConnectedToClosest = edge.from === closestBbmd || edge.to === closestBbmd
+            const isConnectedToClosest =
+              edge.from === closestBbmd || edge.to === closestBbmd
             return {
               ...base,
               dashes: true,
@@ -2340,9 +2384,11 @@ export default {
           // Handle FDT edges (BBMD to foreign device connections) - control visibility
           if (
             edge.label.includes('fdr-entry') &&
-            (this.allBbmds.includes(edge.from) || this.allBbmds.includes(edge.to))
+            (this.allBbmds.includes(edge.from) ||
+              this.allBbmds.includes(edge.to))
           ) {
-            const isConnectedToClosest = edge.from === closestBbmd || edge.to === closestBbmd
+            const isConnectedToClosest =
+              edge.from === closestBbmd || edge.to === closestBbmd
             return {
               ...base,
               dashes: true,
@@ -2492,15 +2538,19 @@ export default {
         // Tree mode edge click detection (edges are drawn on canvas, not vis-network)
         if (this.store.layoutMode === 'tree' && params.nodes.length === 0) {
           // Convert DOM coordinates to canvas coordinates
-          const canvasPos = this.network.DOMtoCanvas({ x: params.pointer.DOM.x, y: params.pointer.DOM.y })
+          const canvasPos = this.network.DOMtoCanvas({
+            x: params.pointer.DOM.x,
+            y: params.pointer.DOM.y,
+          })
           const clickedEdge = this.findEdgeAtPoint(canvasPos.x, canvasPos.y)
 
           if (clickedEdge) {
             // Show edge card like physics mode
-            const cleanedLabel = clickedEdge.label?.replace(
-              'http://data.ashrae.org/bacnet/2020#',
-              '',
-            ) || 'unknown'
+            const cleanedLabel =
+              clickedEdge.label?.replace(
+                'http://data.ashrae.org/bacnet/2020#',
+                '',
+              ) || 'unknown'
 
             this.selectedEdge = clickedEdge.id
             this.edgeInfo = {
