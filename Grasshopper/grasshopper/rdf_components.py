@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List, Optional, Union
 
-from bacpypes3.rdf.core import BACnetNS, BACnetURI
+from bacpypes3.rdf.core import BACNET, BACnetURI
 from rdflib import RDF, Graph, Literal, Namespace, URIRef  # type: ignore
 from rdflib.namespace import RDFS
 
@@ -78,7 +78,7 @@ class DeviceTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Device)
+        device.add_connection(RDF.type, BACNET.Device)
 
 
 class BBMDTypeHandler(BaseTypeHandler):
@@ -90,8 +90,18 @@ class BBMDTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.BBMD)
+        device.add_connection(RDF.type, BACNET.BBMD)
 
+class GrasshopperTypeHandler(BaseTypeHandler):
+    """
+    Handles assigning RDF.type for a Grasshopper specific BACnet device.
+
+    This type handler assigns the BACnet Device type to nodes in the RDF graph.
+    Grasshopper devices may have additional properties or behaviors specific to the Grasshopper platform.
+    """
+
+    def set_type(self, device):
+        device.add_connection(RDF.type, BACNET.Grasshopper)
 
 class RouterTypeHandler(BaseTypeHandler):
     """
@@ -102,7 +112,19 @@ class RouterTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Router)
+        device.add_connection(RDF.type, BACNET.Router)
+
+
+class DeviceRouterTypeHandler(BaseTypeHandler):
+    """
+    Handles assigning RDF.type for a BACnet device that also functions as a router.
+
+    This type handler assigns both the BACnet Device and Router types to nodes in the RDF graph.
+    This is used when a single physical device serves both functions.
+    """
+
+    def set_type(self, device):
+        device.add_connection(RDF.type, BACNET.Router)
 
 
 class SubnetTypeHandler(BaseTypeHandler):
@@ -114,7 +136,7 @@ class SubnetTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Subnet)
+        device.add_connection(RDF.type, BACNET.Subnet)
 
 
 class NetworkTypeHandler(BaseTypeHandler):
@@ -126,7 +148,7 @@ class NetworkTypeHandler(BaseTypeHandler):
     """
 
     def set_type(self, device):
-        device.add_connection(RDF.type, BACnetNS.Network)
+        device.add_connection(RDF.type, BACNET.Network)
 
 
 class BaseNode:
@@ -204,12 +226,44 @@ class SubnetNode(BaseNode):
     def __init__(self, graph, node_iri):
         super().__init__(graph, node_iri, SubnetTypeHandler())
 
+    def add_properties(
+        self,
+        subnet_cidr: Optional[str] = None,
+        bbmd_iri: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Add properties to the subnet node."""
+        super().add_properties(**kwargs)
+        if subnet_cidr:
+            self.add_connection(BACNET["subnet-cidr"], Literal(str(subnet_cidr)))
+        if bbmd_iri:
+            # Store BBMD as a literal to avoid edge-to-node conversion in build_networkx_graph
+            # which would incorrectly remove the BBMD node from the visualization
+            bbmd_id = str(bbmd_iri).replace("bacnet://", "")
+            self.add_connection(BACNET["bbmd"], Literal(bbmd_id))
+
 
 class NetworkNode(BaseNode):
     """A BACnet network node that can include subnet, or additional behavior via composition."""
 
     def __init__(self, graph, node_iri):
         super().__init__(graph, node_iri, NetworkTypeHandler())
+
+    def add_properties(
+        self,
+        network_number: Optional[int] = None,
+        router_iri: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """Add properties to the network node."""
+        super().add_properties(**kwargs)
+        if network_number is not None:
+            self.add_connection(BACNET["network-number"], Literal(network_number))
+        if router_iri:
+            # Store router as a literal to avoid edge-to-node conversion in build_networkx_graph
+            # which would incorrectly remove the router node from the visualization
+            router_id = str(router_iri).replace("bacnet://", "")
+            self.add_connection(BACNET["router"], Literal(router_id))
 
 
 class BaseBACnetComponent(ABC):
@@ -231,7 +285,7 @@ class SubnetComponent(BaseBACnetComponent):
         subnet = kwargs.get("subnet")
         if subnet:
             device.add_connection(
-                BACnetNS[self.edge_type.value], BACnetURI["//subnet/" + str(subnet)]
+                BACNET[self.edge_type.value], BACnetURI["//subnet/" + str(subnet)]
             )
 
 
@@ -242,7 +296,7 @@ class NetworkComponent(BaseBACnetComponent):
         network_id = kwargs.get("network_id")
         if network_id:
             device.add_connection(
-                BACnetNS[self.edge_type.value],
+                BACNET[self.edge_type.value],
                 BACnetURI["//network/" + str(network_id)],
             )
 
@@ -250,10 +304,14 @@ class NetworkComponent(BaseBACnetComponent):
 class AttachDeviceComponent(BaseBACnetComponent):
     """Component for attaching devices to a network/another device."""
 
+    def __init__(self, edge_type: BACnetEdgeType, kwarg_name: str = "device_iri"):
+        super().__init__(edge_type)
+        self.kwarg_name = kwarg_name
+
     def add_properties(self, device: BaseNode, **kwargs):
-        device_iri = kwargs.get("device_iri")
+        device_iri = kwargs.get(self.kwarg_name)
         if device_iri:
-            device.add_connection(BACnetNS[self.edge_type.value], device_iri)
+            device.add_connection(BACNET[self.edge_type.value], device_iri)
 
 
 class BACnetNode(BaseNode):
@@ -281,12 +339,12 @@ class BACnetNode(BaseNode):
         """Add properties common to all devices."""
         super().add_properties(label=label, **kwargs)
         if device_identifier:
-            self.add_connection(BACnetNS["device-instance"], Literal(device_identifier))
+            self.add_connection(BACNET["device-instance"], Literal(device_identifier))
         if device_address:
-            self.add_connection(BACnetNS["address"], Literal(str(device_address)))
+            self.add_connection(BACNET["address"], Literal(str(device_address)))
         if vendor_id:
             self.add_connection(
-                BACnetNS["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)]
+                BACNET["vendor-id"], BACnetURI["//vendor/" + str(vendor_id)]
             )
 
         for component in self.components:
@@ -298,8 +356,8 @@ class BBMDNode(BACnetNode):
 
     def __init__(self, graph, device_iri):
         components = [
-            AttachDeviceComponent(BACnetEdgeType.BDT_ENTRY),
-            # AttachDeviceComponent(BACnetEdgeType.FDR_ENTRY),
+            AttachDeviceComponent(BACnetEdgeType.BDT_ENTRY, kwarg_name="bdt_device_iri"),
+            AttachDeviceComponent(BACnetEdgeType.FDR_ENTRY, kwarg_name="fdt_device_iri"),
             # NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
             SubnetComponent(BACnetEdgeType.BBMD_BROADCAST_DOMAIN),
         ]
@@ -316,6 +374,15 @@ class DeviceNode(BACnetNode):
         ]
         super().__init__(graph, device_iri, DeviceTypeHandler(), components)
 
+class GrasshopperNode(BACnetNode):
+    """A Grasshopper specific BACnet device node that can include subnet, network, or additional behavior via composition."""
+
+    def __init__(self, graph, device_iri):
+        components = [
+            NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
+        ]
+        super().__init__(graph, device_iri, GrasshopperTypeHandler(), components)
 
 class RouterNode(BACnetNode):
     """A BACnet router node that can include subnet, network, or additional behavior via composition."""
@@ -323,6 +390,17 @@ class RouterNode(BACnetNode):
     def __init__(self, graph, device_iri):
         components = [
             NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
-            SubnetComponent(BACnetEdgeType.DEVICE_ON_SUBNET),
+            SubnetComponent(BACnetEdgeType.BACNET_ROUTER_ON_SUBNET),
         ]
         super().__init__(graph, device_iri, RouterTypeHandler(), components)
+
+
+class DeviceRouterNode(BACnetNode):
+    """A BACnet device that also functions as a router, combining both device and router properties."""
+
+    def __init__(self, graph, device_iri):
+        components = [
+            NetworkComponent(BACnetEdgeType.DEVICE_ON_NETWORK),
+            SubnetComponent(BACnetEdgeType.BACNET_ROUTER_ON_SUBNET),
+        ]
+        super().__init__(graph, device_iri, DeviceRouterTypeHandler(), components)

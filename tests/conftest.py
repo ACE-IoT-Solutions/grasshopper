@@ -30,6 +30,7 @@ def api_client():
         # Set up the task queues in app state
         app.state.task_queue = Queue()
         app.state.processing_task_queue = Queue()
+        app.state.finished_task_queue = Queue()
         
         # Set app state in both locations used by the code
         app.extra = {"agent_data_path": temp_dir}

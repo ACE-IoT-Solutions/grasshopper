@@ -1,8 +1,10 @@
 rdflib == 7.0.0
-bacpypes3@git+https://github.com/ACE-IoT-Solutions/BACpypes3.git@grasshopper-bandage
+# bacpypes3 >= 0.0.106
+git+https://github.com/ACE-IoT-Solutions/BACpypes3.git
 pyvis == 0.3.2
 pydantic == 2.6.4
 fastapi == 0.112.0
 uvicorn == 0.27.1
 pytest == 8.3.5
 httpx == 0.28.1
+python-multipart == 0.0.21

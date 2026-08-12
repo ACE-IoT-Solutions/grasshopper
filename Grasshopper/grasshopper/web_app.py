@@ -62,7 +62,7 @@ def create_app(config_class=None):
     # Apply CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=["*", "http://localhost:5173", "https://localhost:5173"],
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
@@ -145,9 +145,17 @@ def create_app(config_class=None):
         """
         response = await call_next(request)
 
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        # Enhanced CORS headers
+        origin = request.headers.get("origin")
+        if origin and (origin.startswith("http://localhost:") or origin.startswith("https://localhost:") or origin == "*"):
+            response.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin, X-Requested-With"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        
         response.headers["Strict-Transport-Security"] = (
             "max-age=63072000; includeSubDomains"
         )
@@ -156,7 +164,7 @@ def create_app(config_class=None):
             "script-src 'self' https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js 'unsafe-inline'; "
             "style-src 'self' https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css 'unsafe-inline'; "
             "img-src 'self' https://fastapi.tiangolo.com/img/favicon.png data:; "
-            "connect-src 'self' 'unsafe-inline'; "
+            "connect-src 'self' 'unsafe-inline' http://localhost:* https://localhost:*; "
             "worker-src 'self'; "
             "object-src 'none'; "
             "base-uri 'self';"
