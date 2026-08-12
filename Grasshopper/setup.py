@@ -30,7 +30,7 @@ setup(
     author="Justice Lee",
     author_email="justice@aceiotsolutions.com",
     description="Network Device monitoring using Bacnet Broadcast",
-    install_requires=["volttron"],
+    install_requires=["volttron", "netifaces"],
     packages=packages,
     package_data={
         "grasshopper": ["py.typed"],
