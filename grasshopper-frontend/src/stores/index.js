@@ -1,22 +1,48 @@
 import { defineStore } from 'pinia'
 import { reactive } from 'vue'
 import axios from 'axios'
-import router from '@/router'
-import { shallowRef } from 'vue'
+import router, { graphRoute } from '@/router'
+import { isCompareGraph, monthOf, monthsWithGraphs } from '@/utils/graphNames'
+
+// how long a generated compare keeps the queue button visible
+const RECENT_COMPARE_MS = 15 * 60 * 1000
+
+// per-viewer UI preference; storage can be unavailable (private mode, blocked site data)
+function readNavCollapsed() {
+  try {
+    return localStorage.getItem('navCollapsed') === 'true'
+  } catch {
+    return false
+  }
+}
+
+// the API answers errors as { detail } or, for uploads, { error }
+function errorDetail(error) {
+  const data = error.response?.data
+  return data?.detail || data?.error || null
+}
+
+function saveBlob(blob, fileName) {
+  const downloadUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = downloadUrl
+  link.setAttribute('download', fileName)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(downloadUrl)
+}
 
 export const useGrasshopperStore = defineStore('grasshopper', {
   state: () => ({
     controlMenu: false,
     menuType: null,
     menuTitle: null,
-    setupGraphs: [],
     diagramKey: 0,
     currentGraph: reactive({ nodes: [], edges: [] }),
     ipList: [],
+    graphList: [],
     compareList: [],
-    deleteList: [],
-    deleteCompareList: [],
-    compareLoad: false,
     configList: [],
     configSelect: false,
     currentConfig: 'Default',
@@ -77,94 +103,51 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     fileName: null,
     reloadKey: 0,
     bbmdList: [],
-    compareQueue: [],
-    currentTask: null,
     legendEnabled: false,
     showBdtEdges: false,
     selectedNode: null,
     showNoteCard: false,
-    isAuthenticated: false,
     loading: false,
-    permissions: null,
-    // gateway: null,
     globalError: false,
     errorMessage: null,
-    menuError: false,
     alertType: null,
     alertTitle: null,
-    host: window.location.protocol + '//' + window.location.host,
-    apiPrefix: import.meta.env.DEV
-      ? // ? '/api/v1'
-        'http://localhost:5010'
-      : `${import.meta.env.VITE_FLIGHT_DECK_API_URL}`,
-    processingQueue: null,
-    inQueue: [],
-    finishedQueue: [],
-    startMenu: true,
-    recentGraphs: [],
-    recentCompares: [],
-    timeRange: shallowRef(null),
-    gateway: sessionStorage.getItem('gateway') || null,
-    gatewayList: [],
-    gatewayLoad: false,
+    // same origin in production; the Vite dev server proxies /api to the agent
+    apiPrefix: '/api/operations',
+    graphFormsTab: 'single',
+    navCollapsed: readNavCollapsed(),
+    calendarMonth: null,
+    graphsFetched: false,
     fetchGraphLoad: false,
     fetchCompareLoad: false,
-    fetchQueueLoad: false,
     graphLoad: false,
     compareGraphLoad: false,
     createCompareLoad: false,
-    uploadLoad: false,
     uploadCompareLoad: false,
-    deleteLoad: false,
+    deleteGraphLoad: false,
+    deleteCompareLoad: false,
     timelineCard: false,
     nodeCard: false,
-    inputKeys: {
-      setupGraph: 0,
-      uploadGraph: 0,
-      uploadCompare: 0,
-      compareGraph: 0,
-      compareGraph1: 0,
-      compareGraph2: 0,
-      deleteGraph: 0,
-      deleteCompareGraph: 0,
-    },
     edgeMenu: false,
     hiddenMenu: false,
     searchMenu: false,
-    compareQueueRefresh: false,
-    gatewayInfo: JSON.parse(sessionStorage.getItem('gatewayInfo')) || null,
-    siteName: sessionStorage.getItem('siteName') || null,
-    deviceList: JSON.parse(sessionStorage.getItem('deviceList')) || null,
-    currentDeviceInfo: null,
-    nextDeviceInfo:
-      JSON.parse(sessionStorage.getItem('nextDeviceInfo')) || null,
+    // Grasshopper has no device observation history, so node cards never show a timeline
     deviceKey: 0,
     deviceTimeline: false,
-    graphIssues: reactive({ graph_analysis: {} }),
     objectCard: false,
     objectCardData: null,
     nodeLabel: null,
     treeLayout: false,
     minimapToggled: true,
+    processingQueue: null,
+    inQueue: [],
+    finishedQueue: [],
+    // finished compare task id -> when this session first saw it finished (0 = before load)
+    compareFinishedAt: null,
+    refreshInterval: null,
   }),
   getters: {
-    isTimeRangeValid: state =>
-      Array.isArray(state.timeRange) && state.timeRange.length >= 2,
-
-    timeRangeStartEnd: state => {
-      if (
-        Array.isArray(state.timeRange) &&
-        state.timeRange.length >= 2 &&
-        state.timeRange[0] &&
-        state.timeRange[state.timeRange.length - 1]
-      ) {
-        const start = new Date(state.timeRange[0])
-        const end = new Date(state.timeRange[state.timeRange.length - 1])
-        const fmt = d => d.toISOString().split('.')[0]
-        return [fmt(start), fmt(end)]
-      }
-      return []
-    },
+    graphMonths: state => monthsWithGraphs(state.graphList),
   },
   actions: {
     setControlMenu(show, type, title) {
@@ -178,33 +161,16 @@ export const useGrasshopperStore = defineStore('grasshopper', {
         this.menuTitle = null
       }
     },
-    setSetupGraphs(graphs) {
-      this.setupGraphs = graphs
-    },
     setReload() {
       this.diagramKey++
     },
     setCurrentGraph(graph, name) {
       this.currentGraph = graph
-      // this.graphIssues = graph.graph_analysis || {}
-      // console.log(this.graphIssues);
       this.fileName = name
       this.setReload()
     },
     setIpList(ips) {
       this.ipList = ips.sort()
-    },
-    setCompareList(compares) {
-      this.compareList = compares
-    },
-    setDeleteGraphs(list) {
-      this.deleteList = list
-    },
-    setDeleteCompareGraphs(list) {
-      this.deleteCompareList = list
-    },
-    setCompareLoad(load) {
-      this.compareLoad = load
     },
     setPhysicsConfig(config) {
       this.physicsConfig = config
@@ -218,10 +184,35 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     setBbmdList(list) {
       this.bbmdList = list.sort()
     },
+    // returns the tasks that finished since the last update (none on the first load)
     setQueue(processing, queue, finished) {
       this.processingQueue = processing
       this.inQueue = queue
       this.finishedQueue = finished
+
+      const firstLoad = this.compareFinishedAt === null
+      const seen = { ...this.compareFinishedAt }
+      const newlyFinished = []
+      for (const task of this.finishedQueue) {
+        if (task.id in seen) continue
+        seen[task.id] = firstLoad ? 0 : Date.now()
+        if (!firstLoad) newlyFinished.push(task)
+      }
+      this.compareFinishedAt = seen
+      return newlyFinished
+    },
+    recentFinishedCompares() {
+      const cutoff = Date.now() - RECENT_COMPARE_MS
+      return this.finishedQueue.filter(
+        task => this.compareFinishedAt?.[task.id] > cutoff,
+      )
+    },
+    hasCompareActivity() {
+      return (
+        !!this.processingQueue ||
+        this.inQueue.length > 0 ||
+        this.recentFinishedCompares().length > 0
+      )
     },
     setConfigList(list) {
       this.configList = list.sort()
@@ -250,6 +241,9 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     toggleTreeLayout() {
       this.treeLayout = !this.treeLayout
     },
+    setMinimapToggled(value) {
+      this.minimapToggled = value
+    },
     setSelectedNode(node) {
       this.selectedNode = node
     },
@@ -265,23 +259,8 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     setSearchMenu(show) {
       this.searchMenu = show
     },
-    setAuthenticationStatus(status) {
-      this.isAuthenticated = status
-    },
     setLoading(loading) {
       this.loading = loading
-    },
-    setPermissions(permissions) {
-      this.permissions = permissions
-    },
-    setGateway(gateway) {
-      this.gateway = gateway
-      this.siteName = this.matchGatewayToSite(gateway)
-      sessionStorage.setItem('siteName', this.siteName)
-    },
-    setGatewayInfo(value) {
-      this.gatewayInfo = value
-      // console.log(this.gatewayInfo)
     },
     setGlobalError(error, message, type, title) {
       this.globalError = error
@@ -289,33 +268,16 @@ export const useGrasshopperStore = defineStore('grasshopper', {
       this.alertType = type
       this.alertTitle = title
     },
-    setMenuAlert(error, message, type) {
-      this.menuAlert = error
-      this.errorMessage = message
-      this.alertType = type
+    setGraphFormsTab(tab) {
+      this.graphFormsTab = tab
     },
-    storeToken(token, expiration) {
-      const combined = 'Bearer ' + token
-      const now = Math.floor(Date.now() / 1000)
-      const expTime = expiration - now
-
-      document.cookie = `access_token=${combined}; path=/; max-age=${expTime}; secure; SameSite=Strict`
-    },
-    tokenHandoff(data) {
-      const { access_token, expiration } = data
-      this.storeToken(access_token, expiration)
-    },
-    setStartMenu(value) {
-      this.startMenu = value
-    },
-    setRecentGraphs(graphs) {
-      this.recentGraphs = graphs
-    },
-    setRecentCompares(compares) {
-      this.recentCompares = compares
-    },
-    setGatewayList(gateways) {
-      this.gatewayList = gateways
+    setNavCollapsed(collapsed) {
+      this.navCollapsed = collapsed
+      try {
+        localStorage.setItem('navCollapsed', String(collapsed))
+      } catch {
+        // preference just won't persist
+      }
     },
     setTimelineCard(value) {
       this.timelineCard = value
@@ -323,33 +285,11 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     setNodeCard(value) {
       this.nodeCard = value
     },
-    setCompareRefresh(value) {
-      this.compareQueueRefresh = value
-    },
-    setInQueue(list) {
-      this.inQueue = list
-    },
-    setOutQueue(list) {
-      this.outQueue = list
-    },
-    setTimeRange(range) {
-      this.timeRange = Array.isArray(range) ? range : []
-
-      if (this.gateway) {
-        this.runRouteWithCheck(() => this.refreshItems())
-      }
-    },
-    setDeviceInfo() {
-      this.incDeviceKey()
-      this.currentDeviceInfo = [...this.nextDeviceInfo].sort((a, b) =>
-        b.timestamp.localeCompare(a.timestamp),
-      )
-    },
     incDeviceKey() {
       this.deviceKey++
     },
-    setDeviceTimeline(value) {
-      this.deviceTimeline = value
+    setNodeLabel(label) {
+      this.nodeLabel = label
     },
     setObjectCard(value) {
       this.objectCard = value
@@ -357,250 +297,58 @@ export const useGrasshopperStore = defineStore('grasshopper', {
     setObjectCardData(data) {
       this.objectCardData = data
     },
-    setNodeLabel(label) {
-      this.nodeLabel = label
+    setCalendarMonth(month) {
+      this.calendarMonth = month
     },
-    setMinimapToggled(value) {
-      this.minimapToggled = value
-    },
-    matchGatewayToSite(gateway) {
-      if (!this.gatewayInfo) return null
-      const match = this.gatewayInfo.find(g => g.name === gateway)
-      return match ? match.site : null
-    },
-    matchDeviceToId(deviceID) {
-      if (!this.deviceList) return null
-      const match = this.deviceList.find(d => d.device_id === deviceID)
-      return match ? match.id : null
-    },
-    incrementKey(keys) {
-      const list = Array.isArray(keys) ? keys : [keys]
-      for (const name of list) {
-        if (!(name in this.inputKeys)) this.inputKeys[name] = 0
-        this.inputKeys[name] += 1
+    // open the calendar at the most recent graph the first time it's shown
+    async ensureCalendar() {
+      if (!this.graphsFetched) await this.fetchGraphs()
+      if (!this.calendarMonth) {
+        this.calendarMonth = this.graphMonths.at(-1) || monthOf()
       }
-    },
-    async runAndReset(
-      forms = [],
-      modelNames = [],
-      keyNames = [],
-      route,
-      ctx = null,
-    ) {
-      try {
-        await route()
-      } finally {
-        // reset models
-        for (const m of modelNames) {
-          // for file uploads
-          // nullify in parent context if provided
-          if (ctx) {
-            for (const m of modelNames) {
-              if (typeof m === 'string' && m in ctx) ctx[m] = null
-            }
-          }
-          if (typeof m === 'string') {
-            if (m in this) {
-              const val = this[m]
-              if (val && typeof val === 'object' && 'value' in val) {
-                val.value = null
-              } else {
-                this[m] = null
-              }
-            }
-          } else if (m && typeof m === 'object' && 'value' in m) {
-            m.value = null
-          }
-        }
-
-        // reset forms
-        for (const f of forms) {
-          const inst = f?.value ?? f
-          inst?.reset?.()
-          inst?.resetValidation?.()
-        }
-        this.incrementKey(keyNames)
-      }
-    },
-    // async refresh() {
-    //   await axios
-    //     .post(`${this.apiPrefix}/refresh`)
-    //     .then(response => {
-    //       this.tokenHandoff(response.data)
-    //       this.fetchPermissions()
-    //       this.fetchQueue()
-    //       this.setAuthenticationStatus(true)
-    //       this.triggerReload()
-    //     })
-    //     .catch(error => {
-    //       if (error.response.status === 401) {
-    //         this.logoutNoCred()
-    //         this.setGlobalError(
-    //           true,
-    //           'Session expired. Please log in again.',
-    //           'error',
-    //           'Unauthorized',
-    //         )
-    //       } else if (error.response.status === 500) {
-    //         this.setGlobalError(
-    //           true,
-    //           'Server error fetching permissions. Please try again later.',
-    //           'error',
-    //           'Server Error',
-    //         )
-    //       } else if (error.response.status === 404) {
-    //         this.setGlobalError(
-    //           true,
-    //           'No information found for this resource.',
-    //           'error',
-    //           'Not Found',
-    //         )
-    //       } else {
-    //         this.setGlobalError(true, 'Error fetching permissions.', 'error', 'Error')
-    //       }
-    //     })
-    // },
-    async fetchPermissions() {
-      await axios
-        .get(`${this.apiPrefix}/get_permissions`, {
-          withCredentials: true,
-        })
-        .then(response => {
-          this.setPermissions(response.data.permission)
-        })
-        .catch(error => {
-          if (error.response.status === 401) {
-            this.refresh()
-          } else if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to access this application.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 404) {
-            this.setGlobalError(
-              true,
-              'User permissions not found. Please contact an administrator.',
-              'error',
-              'Error',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error fetching permissions. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          }
-        })
-    },
-    async logout() {
-      await axios
-        .post(`${this.apiPrefix}/logout`, { withCredentials: true })
-        .then(() => {
-          document.cookie =
-            'access_token=; path=/; max-age=0; secure; SameSite=Strict'
-          this.$reset()
-          router.push('/')
-        })
-        .catch(error => {
-          if (
-            error.response.status === 401 ||
-            error.response.status === 403 ||
-            error.response.status === 500 ||
-            error.response.status === 404
-          ) {
-            this.logoutNoCred()
-          } else {
-            this.setGlobalError(
-              true,
-              'Error during logout. Please try again.',
-              'error',
-              'Logout Error',
-            )
-          }
-        })
     },
     async fetchQueue() {
-      // await this.fetchCompareGraphs()
-      this.fetchQueueLoad = true
+      try {
+        const { data } = await axios.get(
+          `${this.apiPrefix}/ttl_compare_queue`,
+          {
+            responseType: 'json',
+          },
+        )
+        const newlyFinished = this.setQueue(
+          data.processing_task,
+          data.queue,
+          data.finished,
+        )
 
-      const processingItem =
-        JSON.parse(sessionStorage.getItem('processingItem')) || null
-
-      await axios
-        .get(`${this.host}/api/operations/ttl_compare_queue`, {
-          responseType: 'json',
-        })
-        .then(async response => {
-          this.setQueue(
-            response.data.processing_task,
-            response.data.queue,
-            response.data.finished,
-          )
-          this.fetchQueueLoad = false
-
-          const taskCompleted =
-            processingItem != null &&
-            (response.data.processing_task === null ||
-              response.data.processing_task?.file_name !== processingItem)
-
-          response.data.processing_task
-            ? sessionStorage.setItem(
-                'processingItem',
-                JSON.stringify(response.data.processing_task.file_name),
-              )
-            : sessionStorage.setItem('processingItem', JSON.stringify(null))
-          sessionStorage.setItem('inQueue', JSON.stringify(response.data.queue))
-
-          if (taskCompleted) {
-            setTimeout(async () => {
-              await this.fetchCompareGraphs()
-              this.setGlobalError(
-                true,
-                `<strong>${processingItem}</strong> generated!`,
-                'success',
-                'Compare Generate Complete',
-              )
-            }, 1000)
-          }
-        })
-        .catch(error => {
-          this.fetchQueueLoad = false
-
-          if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to access the compare queue.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error fetching compare queue. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          } else if (error.response.status === 404) {
-            this.setGlobalError(
-              true,
-              'Compare queue not found. Please contact an administrator.',
-              'error',
-              'Error',
-            )
-          } else {
-            this.setGlobalError(
-              true,
-              'Error fetching compare queue. Please try again later.',
-              'error',
-              'Error',
-            )
-          }
-        })
+        // the worker only marks a task finished after saving the compare file, so a newly
+        // finished task means the saved list is out of date. This catches compares that
+        // finish between polls without ever being seen processing.
+        if (newlyFinished.length) await this.fetchCompareGraphs()
+      } catch {
+        this.setGlobalError(
+          true,
+          'Error fetching compare queue. Please try again later.',
+          'error',
+          'Error',
+        )
+      }
     },
-    async goToGraph(compare, graph) {
+    async runFetchCycle() {
+      // keep a single polling loop no matter how many callers start it
+      clearTimeout(this.refreshInterval)
+      await this.fetchQueue()
+      // poll faster while a compare is queued or generating so it shows up soon after finishing
+      const active = !!this.processingQueue || this.inQueue.length > 0
+
+      this.refreshInterval = setTimeout(
+        () => {
+          this.runFetchCycle()
+        },
+        active ? 3000 : 10000,
+      )
+    },
+    async goToGraph(compare, graph, navigate = true) {
       compare ? (this.compareGraphLoad = true) : (this.graphLoad = true)
       this.setNodeCard(false)
       this.setEdgeMenu(false)
@@ -608,43 +356,24 @@ export const useGrasshopperStore = defineStore('grasshopper', {
       this.setSearchMenu(false)
 
       try {
-        await axios
-          .get(
-            `${this.apiPrefix}/api/operations/${compare ? 'ttl_compare' : 'ttl_network'}/${graph}`,
-            {
-              responseType: 'json',
-              withCredentials: true,
-            },
-          )
-          .then(response => {
-            this.setCompareLoad(false)
-            this.setCompareMode(compare)
-            this.setCurrentGraph(response.data, graph)
-            this.setControlMenu(false, null, null)
-            this.setStartMenu(false)
-            compare ? (this.compareGraphLoad = false) : (this.graphLoad = false)
-            router.push({
-              params: { gatewayName: this.gateway, graphName: graph },
-            })
-          })
+        const { data } = await axios.get(
+          `${this.apiPrefix}/${compare ? 'ttl_compare' : 'ttl_network'}/${graph}`,
+          { responseType: 'json' },
+        )
+        this.setCompareMode(compare)
+        this.setCurrentGraph(data, graph)
+        this.setControlMenu(false, null, null)
+        if (navigate) router.push(graphRoute(compare, graph))
+        return true
       } catch (error) {
-        compare ? (this.compareGraphLoad = false) : (this.graphLoad = false)
-
-        if (error.response.status === 403) {
-          this.setGlobalError(
-            true,
-            'You do not have permission to access this graph.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response.status === 404) {
+        if (error.response?.status === 404) {
           this.setGlobalError(
             true,
             `Graph <strong>${graph}</strong> does not exist.`,
             'error',
             'Not Found',
           )
-        } else if (error.response.status === 500) {
+        } else if (error.response?.status === 500) {
           this.setGlobalError(
             true,
             'Server error fetching graph. Please try again later.',
@@ -659,296 +388,218 @@ export const useGrasshopperStore = defineStore('grasshopper', {
             'Graph Load Error',
           )
         }
+        return false
+      } finally {
+        compare ? (this.compareGraphLoad = false) : (this.graphLoad = false)
       }
     },
     async createCompare(graph1, graph2) {
-      const payload = {
-        ttl_1: graph1,
-        ttl_2: graph2,
-      }
-
       this.createCompareLoad = true
 
-      const compareItem = graph1.replace('.ttl', '') + '_vs_' + graph2
-
-      const processingItem =
-        JSON.parse(sessionStorage.getItem('processingItem')) || null
-      const inQueue = JSON.parse(sessionStorage.getItem('inQueue')) || []
-
-      await axios
-        .post(`${this.apiPrefix}/api/operations/ttl_compare_queue`, payload, {
-          withCredentials: true,
-        })
-        .then(async () => {
-          this.setGlobalError(
-            true,
-            `<strong>${compareItem}</strong> now generating.`,
-            'success',
-            'Compare Generating',
-          )
-          this.setControlMenu(false, null, null)
-          if (!this.startMenu) {
-            this.setCompareLoad(true)
-          }
-          this.incrementKey('compareGraph1')
-          this.incrementKey('compareGraph2')
-          graph1 = null
-          graph2 = null
-          this.createCompareLoad = false
-
-          if (inQueue.length === 0 && processingItem === null) {
-            sessionStorage.setItem(
-              'processingItem',
-              JSON.stringify(compareItem),
-            )
-          }
-
-          await this.fetchQueue()
-          this.setCompareRefresh(true)
-        })
-        .catch(error => {
-          this.createCompareLoad = false
-
-          if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to create compare graphs.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 404) {
-            this.setGlobalError(
-              true,
-              `One of the selected graphs does not exist.`,
-              'error',
-              'Not Found',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error generating compare graph. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          } else {
-            this.setGlobalError(
-              true,
-              `Error generating compare graph <strong>${compareItem}</strong>.`,
-              'error',
-              'Compare Graph Error',
-            )
-          }
-        })
-    },
-    async uploadGraph(compare, upload) {
-      compare ? (this.uploadCompareLoad = true) : (this.uploadGraphLoad = true)
-      const formData = new FormData()
-      formData.append('file', upload)
-
-      await axios
-        .post(
-          `${this.apiPrefix}/api/operations/${compare ? 'ttl_compare' : 'ttl'}`,
-          formData,
-          {
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
-            withCredentials: true,
-          },
-        )
-        .then(() => {
-          compare
-            ? (this.uploadCompareLoad = false)
-            : (this.uploadGraphLoad = false)
-          this.setGlobalError(
-            true,
-            `Graph <strong>${upload.name}</strong> uploaded.`,
-            'success',
-            'Success',
-          )
-          upload = null
-          this.refreshItems()
-        })
-        .catch(error => {
-          compare
-            ? (this.uploadCompareLoad = false)
-            : (this.uploadGraphLoad = false)
-
-          if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to upload graphs.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error uploading graph. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          } else {
-            this.setGlobalError(
-              true,
-              `Error uploading graph <strong>${upload.name}</strong>.`,
-              'error',
-              'Upload Error',
-            )
-          }
-        })
-    },
-    async deleteGraph(compare, deletedGraph) {
-      compare ? (this.deleteCompareLoad = true) : (this.deleteGraphLoad = true)
-
-      let fileDeleted
-
-      await axios
-        .delete(
-          `${this.apiPrefix}/api/operations/${compare ? 'ttl_compare' : 'ttl_file'}/${deletedGraph}`,
-          {
-            responseType: 'json',
-            withCredentials: true,
-          },
-        )
-        .then(() => {
-          compare
-            ? (this.deleteCompareLoad = false)
-            : (this.deleteGraphLoad = false)
-          fileDeleted = deletedGraph
-          deletedGraph = null
-          this.setGlobalError(
-            true,
-            `Graph <strong>${fileDeleted}</strong> deleted.`,
-            'success',
-            'Success',
-          )
-          this.refreshItems()
-        })
-        .catch(error => {
-          compare
-            ? (this.deleteCompareLoad = false)
-            : (this.deleteGraphLoad = false)
-
-          if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to delete graphs.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 404) {
-            this.setGlobalError(
-              true,
-              `Graph <strong>${fileDeleted}</strong> not found.`,
-              'error',
-              'Not Found',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error deleting graph. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          } else {
-            this.setGlobalError(
-              true,
-              `Error deleting graph <strong>${fileDeleted}</strong>.`,
-              'error',
-              'Delete Error',
-            )
-          }
-        })
-    },
-    async fetchGraphs() {
       try {
-        this.setRecentGraphs([])
-
-        this.fetchGraphLoad = true
-
-        const { data } = await axios.get(
-          `${this.apiPrefix}/api/operations/ttl`,
-          {
-            responseType: 'json',
-            withCredentials: true,
-          },
-        )
-
-        this.setSetupGraphs(data.data.sort().reverse())
-        this.setRecentGraphs(data.data.sort().slice(-5).reverse())
-        this.setDeleteGraphs(data.data.sort().reverse())
-        this.fetchGraphLoad = false
+        await axios.post(`${this.apiPrefix}/ttl_compare_queue`, {
+          ttl_1: graph1,
+          ttl_2: graph2,
+        })
+        // keep the Graphs dialog open so its queue line shows the compare generating
+        await this.runFetchCycle()
       } catch (error) {
-        if (error.response.status === 403) {
+        const compareItem = `${graph1.replace('.ttl', '')}_vs_${graph2}`
+        if (error.response?.status === 400) {
           this.setGlobalError(
             true,
-            'You do not have permission to access these graphs.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response.status === 500) {
-          this.setGlobalError(
-            true,
-            'Server error fetching graphs. Please try again later.',
-            'error',
-            'Server Error',
-          )
-        } else if (error.response.status === 404) {
-          this.setGlobalError(
-            true,
-            `The current agent does not contain any graphs.`,
+            `<strong>${compareItem}</strong> is already queued or generating.`,
             'warning',
-            'No Graphs Found',
+            'Already Queued',
+          )
+        } else if (error.response?.status === 404) {
+          this.setGlobalError(
+            true,
+            'One of the selected graphs does not exist.',
+            'error',
+            'Not Found',
           )
         } else {
-          this.setGlobalError(true, 'Error fetching graphs.', 'error', 'Error')
+          this.setGlobalError(
+            true,
+            `Error generating compare graph <strong>${compareItem}</strong>.`,
+            'error',
+            'Compare Graph Error',
+          )
         }
+      } finally {
+        this.createCompareLoad = false
+      }
+    },
+    // returns null on success, otherwise a short reason
+    async uploadFile(compare, file) {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      try {
+        await axios.post(
+          `${this.apiPrefix}/${compare ? 'ttl_compare' : 'ttl'}`,
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } },
+        )
+        return null
+      } catch (error) {
+        return errorDetail(error) || 'Upload failed'
+      }
+    },
+    async uploadGraph(compare, upload) {
+      if (compare) this.uploadCompareLoad = true
+      const error = await this.uploadFile(compare, upload)
+      if (compare) this.uploadCompareLoad = false
+
+      if (error) {
+        this.setGlobalError(
+          true,
+          `Error uploading graph <strong>${upload.name}</strong>: ${error}.`,
+          'error',
+          'Upload Error',
+        )
+      }
+      this.refreshItems()
+    },
+    async uploadGraphs(files, onStatus, concurrency = 3) {
+      // onStatus(file, status, error) with status 'uploading' | 'done' | 'error'
+      const queue = [...files]
+      let failed = 0
+
+      const worker = async () => {
+        while (queue.length) {
+          const file = queue.shift()
+          onStatus(file, 'uploading')
+          const error = await this.uploadFile(false, file)
+          if (error) failed++
+          onStatus(file, error ? 'error' : 'done', error)
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(concurrency, files.length) }, worker),
+      )
+
+      if (files.some(file => file.name === 'base.ttl') && !failed) {
+        this.setGlobalError(
+          true,
+          'The file <strong>base.ttl</strong> was uploaded. This will become the basis of all scans.',
+          'warning',
+          'Warning',
+        )
+      }
+      this.refreshItems()
+      return failed
+    },
+    async deleteGraph(compare, name) {
+      compare ? (this.deleteCompareLoad = true) : (this.deleteGraphLoad = true)
+
+      try {
+        await axios.delete(
+          `${this.apiPrefix}/${compare ? 'ttl_compare' : 'ttl_file'}/${name}`,
+        )
+        this.refreshItems()
+      } catch (error) {
+        if (error.response?.status === 404) {
+          this.setGlobalError(
+            true,
+            `Graph <strong>${name}</strong> not found.`,
+            'error',
+            'Not Found',
+          )
+        } else {
+          this.setGlobalError(
+            true,
+            `Error deleting graph <strong>${name}</strong>.`,
+            'error',
+            'Delete Error',
+          )
+        }
+      } finally {
+        compare
+          ? (this.deleteCompareLoad = false)
+          : (this.deleteGraphLoad = false)
+      }
+    },
+    // the agent has no bulk endpoint, so delete one at a time; mirrors Flightdeck's
+    // bulk_delete response so callers can treat both the same
+    async deleteGraphs(compare, names) {
+      const deleted = []
+      const errors = []
+      for (const name of names) {
+        try {
+          await axios.delete(
+            `${this.apiPrefix}/${compare ? 'ttl_compare' : 'ttl_file'}/${name}`,
+          )
+          deleted.push(name)
+        } catch (error) {
+          errors.push({ name, detail: errorDetail(error) })
+        }
+      }
+      if (errors.length) {
+        this.setGlobalError(
+          true,
+          `${deleted.length} deleted, ${errors.length} failed: ` +
+            errors.map(e => `<strong>${e.name}</strong>`).join(', '),
+          'error',
+          'Delete Incomplete',
+        )
+      }
+      this.refreshItems()
+      return { deleted, errors }
+    },
+    // no zip endpoint on the agent, so each graph downloads as its own TTL file
+    async downloadGraphs(names) {
+      let failed = 0
+      for (const name of names) {
+        try {
+          const { data } = await axios.get(
+            `${this.apiPrefix}/ttl_file/${name}`,
+            {
+              headers: { Accept: 'text/turtle' },
+              responseType: 'blob',
+            },
+          )
+          saveBlob(new Blob([data], { type: 'text/turtle' }), name)
+        } catch {
+          failed++
+        }
+      }
+      if (failed) {
+        this.setGlobalError(
+          true,
+          `${failed} of ${names.length} graphs could not be downloaded.`,
+          'error',
+          'Download Error',
+        )
+      }
+      return !failed
+    },
+    async fetchGraphs() {
+      this.fetchGraphLoad = true
+      try {
+        const { data } = await axios.get(`${this.apiPrefix}/ttl`, {
+          responseType: 'json',
+        })
+        this.graphList = data.data.filter(name => !isCompareGraph(name)).sort()
+        this.graphsFetched = true
+      } catch {
+        this.setGlobalError(true, 'Error fetching graphs.', 'error', 'Error')
+      } finally {
         this.fetchGraphLoad = false
       }
     },
     async fetchCompareGraphs() {
+      this.fetchCompareLoad = true
       try {
-        this.setRecentCompares([])
-
-        this.fetchCompareLoad = true
-
-        const { data } = await axios.get(
-          `${this.apiPrefix}/api/operations/ttl_compare`,
-          {
-            responseType: 'json',
-            withCredentials: true,
-          },
-        )
-
-        this.setCompareList(data.file_list.sort().reverse())
-        this.setRecentCompares(data.file_list.slice(-5).reverse())
-        this.setDeleteCompareGraphs(data.file_list.sort().reverse())
-        this.fetchCompareLoad = false
+        const { data } = await axios.get(`${this.apiPrefix}/ttl_compare`, {
+          responseType: 'json',
+        })
+        this.compareList = [...data.file_list].sort().reverse()
       } catch (error) {
-        this.fetchCompareLoad = false
-
-        if (error.response.status === 403) {
-          this.setGlobalError(
-            true,
-            'You do not have permission to access compare graphs.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response.status === 500) {
-          this.setGlobalError(
-            true,
-            'Server error fetching compare graphs. Please try again later.',
-            'error',
-            'Error',
-          )
-        } else if (error.response.status === 404) {
-          this.setGlobalError(
-            true,
-            `The gateway <strong>${this.gateway}</strong> does not contain any compare graphs.`,
-            'warning',
-            'No Compare Graphs Found',
-          )
+        // 404 just means no compares yet; the saved list says so
+        if (error.response?.status === 404) {
+          this.compareList = []
         } else {
           this.setGlobalError(
             true,
@@ -957,414 +608,76 @@ export const useGrasshopperStore = defineStore('grasshopper', {
             'Error',
           )
         }
-      }
-    },
-    async fetchGateways() {
-      const cachedGateways = sessionStorage.getItem('gatewayList')
-      if (cachedGateways) {
-        this.gatewayList = JSON.parse(cachedGateways)
-        return
-      }
-
-      try {
-        let pageIndex = 1
-        const allGateways = []
-
-        this.gatewayLoad = true
-
-        while (true) {
-          const { data } = await axios.get(`${this.apiPrefix}/gateways/items`, {
-            params: { page: pageIndex },
-            responseType: 'json',
-            withCredentials: true,
-            headers: {
-              Authorization: this.accessCookie(),
-            },
-          })
-
-          allGateways.push(...data.items)
-
-          const page = data.page
-          const total_pages = data.pages
-          if (page == total_pages) break
-
-          pageIndex++
-        }
-
-        this.gatewayList = allGateways.map(item => item.name).sort()
-        this.setGatewayInfo(
-          allGateways.map(item => ({ name: item.name, site: item.site.name })),
-        )
-        sessionStorage.setItem('gatewayList', JSON.stringify(this.gatewayList))
-        sessionStorage.setItem('gatewayInfo', JSON.stringify(this.gatewayInfo))
-        this.gatewayLoad = false
-      } catch (error) {
-        console.log(error)
-        this.gatewayLoad = false
-
-        if (error.response.status === 403) {
-          this.setGlobalError(
-            true,
-            'You do not have permission to access gateways.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response.status === 500) {
-          this.setGlobalError(
-            true,
-            'Server error fetching gateways. Please try again later.',
-            'error',
-            'Server Error',
-          )
-        } else if (error.response.status === 404) {
-          this.setGlobalError(
-            true,
-            'No gateways found. Please refresh the page or contact an administrator.',
-            'error',
-            'Error',
-          )
-        } else {
-          this.setGlobalError(
-            true,
-            'Error fetching gateways.',
-            'error',
-            'Error',
-          )
-        }
+      } finally {
+        this.fetchCompareLoad = false
       }
     },
     async refreshItems() {
-      await Promise.all([
-        // this.fetchDevices(),
-        this.fetchGraphs(),
-        this.fetchCompareGraphs(),
-        // this.fetchQueue(),
-        // this.runFetchCycle(),
-      ])
+      await Promise.all([this.fetchGraphs(), this.fetchCompareGraphs()])
     },
     async exportTtl(compare, fileName) {
-      await axios
-        .get(
-          `${this.apiPrefix}/api/operations/${compare ? 'ttl_compare_file' : 'ttl_file'}/${fileName}`,
-          {
-            headers: {
-              Accept: 'text/turtle',
-            },
-            responseType: 'blob',
-            withCredentials: true,
-          },
+      try {
+        const { data } = await axios.get(
+          `${this.apiPrefix}/${compare ? 'ttl_compare_file' : 'ttl_file'}/${fileName}`,
+          { headers: { Accept: 'text/turtle' }, responseType: 'blob' },
         )
-        .then(response => {
-          const blob = new Blob([response.data], { type: 'text/turtle' })
-
-          const downloadUrl = URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = downloadUrl
-
-          link.setAttribute('download', `${fileName}`)
-
-          document.body.appendChild(link)
-          link.click()
-          link.remove()
-
-          URL.revokeObjectURL(downloadUrl)
-        })
-        .catch(error => {
-          if (error.response.status === 404) {
-            this.setGlobalError(
-              true,
-              `Graph <strong>${fileName}</strong> does not exist.`,
-              'error',
-              'Error',
-            )
-          } else if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to export graphs.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error exporting TTL. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          } else {
-            this.setGlobalError(true, `Error exporting TTL.`, 'error', 'Error')
-          }
-        })
+        saveBlob(new Blob([data], { type: 'text/turtle' }), fileName)
+      } catch (error) {
+        this.exportError(error, fileName, 'TTL')
+      }
     },
     async exportCsv(compare, fileName) {
-      await axios
-        .get(`${this.apiPrefix}/api/operations/csv_export/${fileName}`, {
-          headers: {
-            Accept: 'text/csv',
-          },
-          responseType: 'blob',
-          withCredentials: true,
-        })
-        .then(response => {
-          const blob = new Blob([response.data], { type: 'text/csv' })
-
-          const downloadUrl = URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = downloadUrl
-
-          link.setAttribute('download', `${fileName.replace('.ttl', '.csv')}`)
-
-          document.body.appendChild(link)
-          link.click()
-          link.remove()
-
-          URL.revokeObjectURL(downloadUrl)
-        })
-        .catch(error => {
-          if (error.response.status === 404) {
-            this.setGlobalError(
-              true,
-              `Graph <strong>${fileName}</strong> does not exist.`,
-              'error',
-              'Error',
-            )
-          } else if (error.response.status === 403) {
-            this.setGlobalError(
-              true,
-              'You do not have permission to export graphs.',
-              'error',
-              'Forbidden',
-            )
-          } else if (error.response.status === 500) {
-            this.setGlobalError(
-              true,
-              'Server error exporting CSV. Please try again later.',
-              'error',
-              'Server Error',
-            )
-          } else {
-            this.setGlobalError(true, `Error exporting CSV.`, 'error', 'Error')
-          }
-        })
+      try {
+        const { data } = await axios.get(
+          `${this.apiPrefix}/csv_export/${fileName}`,
+          { headers: { Accept: 'text/csv' }, responseType: 'blob' },
+        )
+        saveBlob(
+          new Blob([data], { type: 'text/csv' }),
+          fileName.replace('.ttl', '.csv'),
+        )
+      } catch (error) {
+        this.exportError(error, fileName, 'CSV')
+      }
     },
     async exportJson(compare, fileName) {
       try {
-        const response = await axios.get(
-          `${this.apiPrefix}/api/operations/${compare ? 'ttl_compare' : 'ttl_network'}/${fileName}`,
-          {
-            headers: {
-              Accept: 'application/json',
-            },
-            responseType: 'json',
-            withCredentials: true,
-          },
-        )
-
-        const jsonString = JSON.stringify(response.data, null, 2)
-        const blob = new Blob([jsonString], { type: 'application/json' })
-
-        const downloadUrl = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = downloadUrl
-
-        link.setAttribute('download', `${fileName.replace('.ttl', '.json')}`)
-
-        document.body.appendChild(link)
-        link.click()
-        link.remove()
-
-        URL.revokeObjectURL(downloadUrl)
-      } catch (error) {
-        if (error.response?.status === 404) {
-          this.setGlobalError(
-            true,
-            `Graph <strong>${fileName}</strong> does not exist.`,
-            'error',
-            'Error',
-          )
-        } else if (error.response?.status === 403) {
-          this.setGlobalError(
-            true,
-            'You do not have permission to export graphs.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response?.status === 500) {
-          this.setGlobalError(
-            true,
-            'Server error exporting JSON. Please try again later.',
-            'error',
-            'Server Error',
-          )
-        } else {
-          this.setGlobalError(true, `Error exporting JSON.`, 'error', 'Error')
-        }
-      }
-    },
-    async fetchDevices() {
-      try {
-        const { data } = await axios.get(`${this.apiPrefix}/devices`, {
-          params: { site_name: this.siteName },
-          headers: { Authorization: this.accessCookie() },
-          withCredentials: true,
-        })
-        const rows =
-          Array.isArray(data) && data.length === 1 && Array.isArray(data[0])
-            ? data[0]
-            : data
-
-        this.deviceList = rows
-          .filter(d => d?.collect_config?.device_id)
-          .map(d => ({
-            id: d.id,
-            device_id: d.collect_config.device_id,
-          }))
-
-        sessionStorage.setItem('deviceList', JSON.stringify(this.deviceList))
-      } catch (error) {
-        if (error.response.status === 403) {
-          this.setGlobalError(
-            true,
-            'You do not have permission to access devices.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response.status === 500) {
-          this.setGlobalError(
-            true,
-            'Server error fetching devices. Please try again later.',
-            'error',
-            'Server Error',
-          )
-        } else if (error.response.status === 404) {
-          this.setGlobalError(
-            true,
-            `No devices found for site <strong>${this.siteName}</strong>. Please contact an administrator.`,
-            'error',
-            'No Devices Found',
-          )
-        } else {
-          this.setGlobalError(true, 'Error fetching devices.', 'error', 'Error')
-        }
-      }
-    },
-    async getDeviceInfo(nodeID) {
-      const match = this.matchDeviceToId(nodeID)
-      try {
         const { data } = await axios.get(
-          `${this.apiPrefix}/devices/${match}/observations`,
-          {
-            headers: { Authorization: this.accessCookie() },
-            withCredentials: true,
-          },
+          `${this.apiPrefix}/${compare ? 'ttl_compare' : 'ttl_network'}/${fileName}`,
+          { headers: { Accept: 'application/json' }, responseType: 'json' },
         )
-        const rows =
-          Array.isArray(data) && data.length === 1 && Array.isArray(data[0])
-            ? data[0]
-            : data
-        this.nextDeviceInfo = rows.map(d => ({
-          timestamp: d.ts,
-          present: d.present,
-        }))
-
-        sessionStorage.setItem(
-          'nextDeviceInfo',
-          JSON.stringify(this.nextDeviceInfo),
+        saveBlob(
+          new Blob([JSON.stringify(data, null, 2)], {
+            type: 'application/json',
+          }),
+          fileName.replace('.ttl', '.json'),
         )
       } catch (error) {
-        if (error.response.status === 403) {
-          this.setGlobalError(
-            true,
-            'You do not have permission to access device information.',
-            'error',
-            'Forbidden',
-          )
-        } else if (error.response.status === 500) {
-          this.setGlobalError(
-            true,
-            'Server error fetching device information. Please try again later.',
-            'error',
-            'Server Error',
-          )
-        } else if (error.response.status === 404) {
-          this.setGlobalError(
-            true,
-            `No information found for device <strong>${nodeID}</strong>. Please contact an administrator.`,
-            'error',
-            'No Device Information Found',
-          )
-        } else {
-          this.setGlobalError(
-            true,
-            'Error fetching device information.',
-            'error',
-            'Error',
-          )
-        }
+        this.exportError(error, fileName, 'JSON')
       }
     },
-    accessCookie() {
-      const cookie = decodeURIComponent(document.cookie)
-      for (const c of cookie.split(';')) {
-        const [key, value] = c.trim().split('=')
-        if (key === 'access_token') {
-          return value
-        }
-      }
-      return null
-    },
-    isCookieValid(cookie) {
-      const token = cookie
-      if (!token) {
-        return false
-      }
-
-      try {
-        const payloadBase64 = token.split('.')[1]
-        if (!payloadBase64) {
-          return false
-        }
-
-        const decodedPayload = atob(
-          payloadBase64.replace(/-/g, '+').replace(/_/g, '/'),
-        )
-        const payload = JSON.parse(decodedPayload)
-
-        if (typeof payload.exp !== 'number') {
-          return false
-        }
-
-        const expirationTimeInSeconds = payload.exp
-        const currentTimeInSeconds = Math.floor(Date.now() / 1000)
-
-        return expirationTimeInSeconds > currentTimeInSeconds
-      } catch (error) {
-        console.error('Failed to parse JWT token:', error)
-        return false
-      }
-    },
-    checkFileName() {
-      if (this.fileUpload && this.fileUpload.name === 'base.ttl') {
+    exportError(error, fileName, format) {
+      if (error.response?.status === 404) {
         this.setGlobalError(
           true,
-          'The file <strong>base.ttl</strong> was uploaded. This will become the basis of all scans.',
-          'warning',
-          'Warning',
+          `Graph <strong>${fileName}</strong> does not exist.`,
+          'error',
+          'Error',
         )
-      }
-    },
-    logoutNoCred() {
-      document.cookie =
-        'access_token=; path=/; max-age=0; secure; SameSite=Strict'
-      this.$reset()
-      router.push('/')
-    },
-    async runRouteWithCheck(route) {
-      if (this.isCookieValid(this.accessCookie())) {
-        return await route()
+      } else if (error.response?.status === 500) {
+        this.setGlobalError(
+          true,
+          `Server error exporting ${format}. Please try again later.`,
+          'error',
+          'Server Error',
+        )
       } else {
-        await this.refresh()
-        return await route()
+        this.setGlobalError(
+          true,
+          `Error exporting ${format}.`,
+          'error',
+          'Error',
+        )
       }
     },
   },

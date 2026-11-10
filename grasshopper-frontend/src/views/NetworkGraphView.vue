@@ -2,57 +2,56 @@
   <div>
     <NetworkHeader :store="store" />
     <NetworkDiagram :store="store" :key="store.diagramKey" />
-    <ControlMenus v-if="store.controlMenu" :store="store"/>
-    <CompareLoad v-if="store.compareLoad" :store="store" />
+    <ControlMenus v-if="store.controlMenu" :store="store" />
     <div v-if="store.controlMenu" class="overlay"></div>
     <LegendMenu v-if="store.legendEnabled" :store="store" />
   </div>
 </template>
 
 <script>
-import NetworkHeader from '@/components/NetworkHeader.vue';
-import NetworkDiagram from '@/components/NetworkDiagram.vue';
-import ControlMenus from '../components/ControlMenus.vue';
-import CompareLoad from '../components/CompareLoad.vue';
-import LegendMenu from '../components/LegendMenu.vue';
+import { defineAsyncComponent } from 'vue'
+
 export default {
-  props: ["store"],
+  props: ['store'],
   components: {
-    NetworkDiagram,
-    NetworkHeader,
-    ControlMenus,
-    CompareLoad,
-    LegendMenu,
+    NetworkHeader: defineAsyncComponent(
+      () => import('@/components/NetworkHeader.vue'),
+    ),
+    NetworkDiagram: defineAsyncComponent(
+      () => import('@/components/NetworkDiagram.vue'),
+    ),
+    ControlMenus: defineAsyncComponent(
+      () => import('../components/ControlMenus.vue'),
+    ),
+    LegendMenu: defineAsyncComponent(
+      () => import('../components/LegendMenu.vue'),
+    ),
   },
   watch: {
-  },
-  computed: {
-    graphName() {
-      return this.$route.params.graphName;
+    '$route.fullPath'() {
+      this.loadFromRoute()
     },
   },
-  setup() {
-    return {}
-  },
-  created() {
-  },
-  mounted() {
-  },
-  beforeUnmount() {
-    if (this.refreshInterval) {
-      clearInterval(this.refreshInterval);
-    }
-  },
-  data() {
-    return {
-      host: window.location.protocol + '//' + window.location.host,
-      refreshInterval: null,
-      defaultInterval: 300000,
-      genInterval: 300000,
-      loadError: false,
-    };
+  async mounted() {
+    await this.loadFromRoute()
+    this.store.setLoading(false)
   },
   methods: {
+    async loadFromRoute() {
+      const { name, params, meta } = this.$route
+      if (name !== 'graph' && name !== 'compare') return
+
+      const { graph } = params
+      const compare = meta.compare
+
+      // already loaded, e.g. navigated here from goToGraph
+      if (this.store.fileName === graph && this.store.compareMode === compare) {
+        return
+      }
+
+      const loaded = await this.store.goToGraph(compare, graph, false)
+      if (!loaded) this.$router.replace({ name: 'start' })
+    },
   },
 }
 </script>

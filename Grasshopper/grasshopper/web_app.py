@@ -4,7 +4,7 @@ import os
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import api_router
@@ -106,21 +106,23 @@ def create_app(config_class=None):
         """
         Catch-all route for the frontend single-page application.
 
-        This route handler redirects all non-API requests to the root path,
-        allowing the SPA to handle client-side routing.
+        This route handler serves the index HTML for all non-API requests so the
+        SPA can handle client-side routing, e.g. deep links such as
+        `/graphs/<name>.ttl` survive a page refresh.
 
         Args:
             path (str): The requested path
 
         Returns:
-            RedirectResponse: A redirect to the root path
+            HTMLResponse: The contents of the index.html file
 
         Raises:
-            HTTPException: If the path starts with 'api' but doesn't match any API routes
+            HTTPException: If the path starts with 'api' but doesn't match any API routes,
+                or the index file cannot be found
         """
         if path.startswith("api"):
             raise HTTPException(status_code=404, detail="API endpoint not found")
-        return RedirectResponse("/")
+        return HTMLResponse(await index())
 
     # Security headers middleware
     @app.middleware("http")

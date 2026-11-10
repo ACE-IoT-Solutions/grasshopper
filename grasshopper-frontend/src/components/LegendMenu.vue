@@ -1,9 +1,7 @@
 <template>
   <div class="legend-menu">
     <div class="header">
-      <v-icon size="small" color="#FDFD94" class="legend-icon"
-        >mdi-compass</v-icon
-      >
+      <v-icon size="small" color="#FDFD94" class="legend-icon">mdi-map-legend</v-icon>
       <v-btn
         variant="plain"
         :ripple="false"

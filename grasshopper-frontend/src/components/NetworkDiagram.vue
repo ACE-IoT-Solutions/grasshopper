@@ -1,6 +1,6 @@
 <template>
   <div class="network-page">
-    <div class="network-wrapper">
+    <div class="network-wrapper" :class="{ 'nav-collapsed': store.navCollapsed }">
       <!-- search -->
       <v-progress-circular
         v-if="store.loading"
@@ -34,8 +34,6 @@
           >
             <v-icon>mdi-plus</v-icon>
           </v-btn>
-        </div>
-        <div class="layout-toggle">
           <v-btn
             @click="store.toggleTreeLayout()"
             variant="plain"
@@ -48,8 +46,8 @@
             <v-tooltip
               :text="
                 store.treeLayout
-                  ? 'Switch to Classic Layout'
-                  : 'Switch to Tree Layout'
+                  ? 'Switch to Classic Layout (T)'
+                  : 'Switch to Tree Layout (T)'
               "
               bottom
               delay="1000"
@@ -142,6 +140,7 @@
           v-if="!store.treeLayout && showHiddenMenuButton"
           @click="(store.setHiddenMenu(true), store.setNodeCard(false))"
           variant="plain"
+          size="small"
           >Hidden Items
         </v-btn>
         <v-btn
@@ -175,6 +174,9 @@ import HiddenItemsMenu from '@/components/HiddenItemsMenu.vue'
 import EdgeCard from '@/components/EdgeCard.vue'
 import ConfigMenu from '@/components/ConfigMenu.vue'
 import NetworkMinimap from '@/components/NetworkMinimap.vue'
+
+// matches the navbar's collapse transition (NetworkHeader / .network-wrapper)
+const NAV_TRANSITION_MS = 260
 // import NoteCard from '@/components/NoteCard.vue'
 
 import routerSvg from '@/assets/router.svg'
@@ -212,6 +214,14 @@ export default {
     this.generate()
   },
   watch: {
+    'store.navCollapsed'() {
+      // the container animates to its new height with the navbar; resize the canvas after
+      clearTimeout(this.navResizeTimer)
+      this.navResizeTimer = setTimeout(() => {
+        this.network?.setSize('100%', '100%')
+        this.network?.redraw()
+      }, NAV_TRANSITION_MS)
+    },
     // eslint-disable-next-line no-unused-vars
     'store.physicsConfig'(newVal, oldVal) {
       this.network.setOptions({ physics: newVal })
@@ -420,9 +430,6 @@ export default {
     }
   },
   methods: {
-    toggleLayout() {
-      this.store.toggleLayoutMode()
-    },
     // Helper to calculate distance from point to line segment
     pointToSegmentDistance(px, py, x1, y1, x2, y2) {
       const dx = x2 - x1
@@ -2169,31 +2176,76 @@ export default {
       if (!startNode) return null
       const startId = startNode.id
 
-      // search
-      const queue = [startId]
-      const parent = { [startId]: null }
+      // Parse Grasshopper's IP for subnet-proximity tiebreaking
+      const grasshopperAddr = startNode.data?.address || ''
+      const grasshopperIp = grasshopperAddr.split('/')[0].split(':')[0]
+      const grasshopperOctets = grasshopperIp.split('.').map(Number)
+      const grasshopperSubnetPrefix = grasshopperOctets.slice(0, 3).join('.')
+      const grasshopperLastOctet = grasshopperOctets[3] ?? 0
+
+      // A BBMD is "online" only if it has a self-loop edge (bdt-entry to itself)
+      const onlineBbmds = new Set(
+        edges.filter(e => e.from === e.to).map(e => e.from),
+      )
+
+      const nodeById = new Map(nodes.map(n => [n.id, n]))
+
+      // BFS level-by-level so all BBMDs at the minimum hop-distance are collected
+      // before a winner is chosen, making the result independent of edge ordering.
+      let currentLevel = [startId]
       const visited = new Set([startId])
 
-      while (queue.length) {
-        const current = queue.shift()
+      while (currentLevel.length) {
+        const nextLevel = []
+        const bbmdsFound = []
 
-        for (const next of graph.get(current)) {
-          if (visited.has(next)) continue
-          visited.add(next)
-          parent[next] = current
-
-          // check if this neighbour is a BBMD
-          const node = nodes.find(node => node.id === next)
-          if (node?.data?.type === 'BBMD') {
-            const path = []
-            for (let p = next; p != null; p = parent[p]) {
-              path.unshift(p)
+        for (const current of currentLevel) {
+          for (const next of graph.get(current) ?? []) {
+            if (visited.has(next)) continue
+            visited.add(next)
+            const node = nodeById.get(next)
+            if (node?.data?.type === 'BBMD' && onlineBbmds.has(next)) {
+              bbmdsFound.push(node)
             }
-            return next
+            nextLevel.push(next)
           }
-
-          queue.push(next)
         }
+
+        if (bbmdsFound.length > 0) {
+          if (bbmdsFound.length === 1) return bbmdsFound[0].id
+
+          // Tiebreak: prefer BBMDs physically on the same /24 subnet as Grasshopper
+          const onSameSubnet = bbmdsFound.filter(n => {
+            const addr = (n.data?.address || '').split('/')[0].split(':')[0]
+            return addr.startsWith(grasshopperSubnetPrefix + '.')
+          })
+          const pool = onSameSubnet.length > 0 ? onSameSubnet : bbmdsFound
+
+          // Among those, pick the one with the closest IP to Grasshopper
+          pool.sort((a, b) => {
+            const aOctet =
+              parseInt(
+                (a.data?.address || '')
+                  .split('/')[0]
+                  .split(':')[0]
+                  .split('.')[3],
+              ) || 0
+            const bOctet =
+              parseInt(
+                (b.data?.address || '')
+                  .split('/')[0]
+                  .split(':')[0]
+                  .split('.')[3],
+              ) || 0
+            return (
+              Math.abs(aOctet - grasshopperLastOctet) -
+              Math.abs(bOctet - grasshopperLastOctet)
+            )
+          })
+          return pool[0].id
+        }
+
+        currentLevel = nextLevel
       }
 
       return null
@@ -2536,7 +2588,7 @@ export default {
 
       this.network.on('click', params => {
         // Tree mode edge click detection (edges are drawn on canvas, not vis-network)
-        if (this.store.layoutMode === 'tree' && params.nodes.length === 0) {
+        if (this.store.treeLayout && params.nodes.length === 0) {
           // Convert DOM coordinates to canvas coordinates
           const canvasPos = this.network.DOMtoCanvas({
             x: params.pointer.DOM.x,
@@ -2574,7 +2626,7 @@ export default {
           }
 
           // Clear selected BBMD for tree layout when clicking empty space
-          if (this.store.layoutMode === 'tree' && this.selectedBbmdForTree) {
+          if (this.store.treeLayout && this.selectedBbmdForTree) {
             this.selectedBbmdForTree = null
             this.network.redraw()
           }
@@ -2622,7 +2674,7 @@ export default {
               )
               this.toggleBdtEdges(matchingEdges, true)
               // For tree layout, track selected BBMD to draw BDT connections
-              if (this.store.layoutMode === 'tree') {
+              if (this.store.treeLayout) {
                 this.selectedBbmdForTree = clickedNode.id
                 this.network.redraw() // Trigger redraw to show BDT edges
               }
@@ -2830,9 +2882,15 @@ export default {
     },
   },
   beforeUnmount() {
-    this.network.destroy()
+    clearTimeout(this.navResizeTimer)
+    this.network?.destroy()
     this.store.setTreeLayout(false)
     this.store.setMinimapToggled(false)
+    this.store.setEdgeMenu(false)
+    this.store.setNodeCard(false)
+    this.store.setHiddenMenu(false)
+    this.store.setObjectCard(false)
+    this.store.setObjectCardData(null)
   },
 }
 </script>
@@ -2845,17 +2903,27 @@ export default {
   width: 100%;
 }
 .network-wrapper {
-  margin: 20px 1.5vw 0 1.5vw;
-  width: 95%;
-  height: 85vh;
+  /* fill the viewport below the 50px header (12px gutters all round) */
+  margin: 12px;
+  width: calc(100% - 24px);
+  height: calc(100dvh - 50px - 36px);
   background-color: #121212;
   border-radius: 15px;
   position: relative;
   box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5);
+  transition: height 0.25s ease;
+}
+/* vis-network's canvas wrapper is focusable; pressing a hotkey after clicking the graph
+   would otherwise draw the browser's keyboard focus ring around the whole diagram */
+.network-graph :deep(.vis-network:focus-visible) {
+  outline: none;
+}
+.network-wrapper.nav-collapsed {
+  height: calc(100dvh - 24px);
 }
 .network-graph {
   width: 100%;
-  height: 85vh;
+  height: 100%;
   background-color: #121212;
   border-radius: 15px;
   overflow: hidden;
@@ -2952,10 +3020,6 @@ export default {
   gap: 20px;
 }
 .zoom {
-  display: flex;
-  gap: 10px;
-}
-.layout-toggle {
   display: flex;
   gap: 10px;
 }
